@@ -26,7 +26,11 @@ python -m pip install --upgrade pip setuptools wheel
 Install dependencies
 
 ```bash
-python -m pip install -r requirements.txt
+# Install core dependencies
+pip install -e .
+
+# Or install with optional LLM dependencies for testing llava
+pip install -e .[llava]
 ```
 
 Install niivue-streamlit component 
