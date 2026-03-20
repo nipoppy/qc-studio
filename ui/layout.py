@@ -1,10 +1,14 @@
 import os
 from pathlib import Path
 from datetime import datetime
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 from niivue_component import niivue_viewer
 from utils import parse_qc_config, load_mri_data, load_svg_data, save_qc_results_to_csv
 from models import MetricQC, QCRecord
+from iqm_distribution_config import IQM_DISTRIBUTION_GROUPS, REFRENCE_DATA_PATHS
+
 
 def niivue_viewer_from_path(filepath: str, height: int = 600, key: str | None = None) -> None:
 	"""Helper to read a local NIfTI file and call the niivue component (if available).
@@ -122,8 +126,142 @@ def app(participant_id, session_id, qc_pipeline, qc_task, qc_config_path, out_di
 		rating_col, iqm_col = st.columns([0.4, 0.6], gap="small")
 		with iqm_col:
 			st.subheader("QC Metrics")
-			# Placeholder: user may compute or display metrics here
-			st.write("Add QC metrics here (e.g., SNR, motion). This is a placeholder area.")
+
+			import json
+			# Read and parse JSON file
+			with open(qc_config_path, 'r') as f:
+				data = json.load(f)
+
+			group_cfg = data.get("iqm_distribution", None)
+
+			if not group_cfg:
+				st.info("No IQM distribution configuration found in qc_config. Please check your qc_config file.")
+			else:
+
+				modality = st.selectbox(
+					"Select modality for IQM distributions", 
+					options=list(IQM_DISTRIBUTION_GROUPS.keys()),
+					key="iqm_modality_select",
+				)
+				modality_path = group_cfg.get(modality, "")
+				print(f"Selected modality: {modality}, path: {modality_path}")
+
+				try:
+					df = pd.read_csv(modality_path, sep="\t")
+					distribution_groups = IQM_DISTRIBUTION_GROUPS[modality]
+
+					group_name = st.selectbox("Select group", options=list(distribution_groups.keys()), key="iqm_group_name_select")
+
+					mode = st.radio(
+						"Display mode",
+						["Dataset only", "Dataset + reference"],
+						horizontal=True
+					)
+
+					cols = distribution_groups[group_name]
+
+					fig = go.Figure()
+
+					if mode == "Dataset only":
+						for i, col in enumerate(cols):
+							if col not in df.columns:
+								continue
+
+							values = df[col].dropna()
+
+							fig.add_trace(go.Box(
+								x=[col] * len(values),
+								y=values,
+								name="Dataset",
+								legendgroup="dataset",
+								showlegend=(i == 0),
+								boxpoints="all",
+								jitter=0.45,
+								pointpos=0,
+								marker=dict(
+									size=4,
+									symbol="circle",
+									color="rgba(31, 119, 180, 0.55)",
+								),
+								line=dict(
+									color="rgba(31, 119, 180, 1.0)"
+								),
+								fillcolor="rgba(31, 119, 180, 0.25)",
+								hovertemplate=f"Source: Dataset<br>Metric: {col}<br>Value: %{{y}}<extra></extra>",
+							))
+					elif mode == "Dataset + reference":
+						ref_path = REFRENCE_DATA_PATHS.get(modality, "")
+						if not ref_path:
+							st.warning(f"No reference data path configured for modality {modality}. Cannot display reference distributions.")
+						else:
+							try:
+								ref_df = pd.read_csv(ref_path, sep="\t")
+								
+								for i, col in enumerate(cols):
+									if col in df.columns:
+										values = df[col].dropna()
+										fig.add_trace(go.Box(
+											x=[col] * len(values),
+											y=values,
+											name="Dataset",
+											legendgroup="dataset",
+											showlegend=(i == 0),
+											offsetgroup="dataset",
+											boxpoints="all",
+											jitter=0.45,
+											pointpos=-0.3,
+											marker=dict(
+												size=4,
+												symbol="circle",
+												color="rgba(31, 119, 180, 0.55)",
+											),
+											line=dict(
+												color="rgba(31, 119, 180, 1.0)"
+											),
+											fillcolor="rgba(31, 119, 180, 0.25)",
+											hovertemplate=f"Source: Dataset<br>Metric: {col}<br>Value: %{{y}}<extra></extra>",
+										))
+
+									if col in ref_df.columns:
+										values = ref_df[col].dropna()
+										fig.add_trace(go.Box(
+											x=[col] * len(values),
+											y=values,
+											name="Reference",
+											legendgroup="reference",
+											showlegend=(i == 0),
+											offsetgroup="reference",
+											boxpoints="all",
+											jitter=0.45,
+											pointpos=0.3,
+											marker=dict(
+												size=4,
+												symbol="diamond",
+												color="rgba(214, 39, 40, 0.55)",
+											),
+											line=dict(
+												color="rgba(214, 39, 40, 1.0)"
+											),
+											fillcolor="rgba(214, 39, 40, 0.25)",
+											hovertemplate=f"Source: Reference<br>Metric: {col}<br>Value: %{{y}}<extra></extra>",
+										))
+							except Exception as e:
+								st.warning(f"Failed to read reference data from {ref_path}: {e}")
+								# If reference data can't be loaded, fall back to dataset only
+		
+					fig.update_layout(
+					title=f"{group_name} distributions",
+					xaxis_title="Metric",
+					yaxis_title="Value",
+					template="plotly_white",
+					height=650,
+					boxmode="group",
+					legend_title="Source"
+					)
+
+					st.plotly_chart(fig, use_container_width=True)
+				except Exception as e:
+					st.error(f"Failed to read IQM distribution data from {modality_path}: {e}")				
 
 		with rating_col:
 			st.subheader("QC Rating")
