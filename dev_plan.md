@@ -1,6 +1,6 @@
 # QC-Studio MVP Scope
 
-## Desgin Overview
+## Design Overview
 ![overview](assets/nipoppy-qc-studio_overview.jpg)
 
 
