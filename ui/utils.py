@@ -93,6 +93,7 @@ def parse_qc_config(qc_json, qc_task) -> dict:
 	  - 'overlay_mri_image_path': Path | None
 	  - 'svg_montage_path': list[Path] | None
 	  - 'iqm_path': list[Path] | None
+	  - 'mesh_path': list[Path] | None
 
 	If the file is missing, invalid, or the requested qc_task is not present,
 	all values will be None.
@@ -109,7 +110,6 @@ def parse_qc_config(qc_json, qc_task) -> dict:
 			"overlay_mri_image_path": None,
 			"svg_montage_path": None,
 			"iqm_path": None,
-			"mesh_paths": None,
 			"mesh_paths": None,
 		}
 
