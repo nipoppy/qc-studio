@@ -79,6 +79,10 @@ class QCTask(BaseModel):
     iqm_path: Annotated[
         Optional[List[Path]], Field(description="Path(s) to IQM TSV/JSON or other QC files")
     ] = None
+
+    mesh_paths: Annotated[
+        Optional[List[Path]], Field(description="Paths to FreeSurfer surface meshes (e.g. lh.pial, rh.pial, lh.white, rh.white)")
+    ] = None
 =======
     base_mri_image_path: Annotated[Optional[Path], Field(description="Path to base MRI image")] = None
     overlay_mri_image_path: Annotated[Optional[Path], Field(description="Path to overlay MRI image (mask etc.)")] = None
