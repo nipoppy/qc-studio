@@ -20,6 +20,6 @@
             "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-02_task-rest_run-02_desc-sdc_bold.svg",
             "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-02_task-rest_run-02_desc-coreg_bold.svg"
         ],
-        "iqm_path": "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-01_task-rest_run-02_desc-confoundcorr_bold.svg"
+        "iqm_path": ["/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-01_task-rest_run-02_desc-confoundcorr_bold.svg"]
     }
 }

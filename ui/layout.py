@@ -58,9 +58,7 @@ def _render_task_panels(
 	"""
 	PANEL_HEIGHT = 600
 
-	# ------------------------------------------------------------------
 	# Middle: side-by-side viewers
-	# ------------------------------------------------------------------
 	has_niivue   = bool(qc_config.get("base_mri_image_path"))
 	has_svg      = bool(qc_config.get("svg_montage_path"))
 	has_iqm_plot = bool(qc_config.get("iqm_path"))
@@ -181,9 +179,7 @@ def _render_task_panels(
 						key_prefix = f"{task_key}_ses{ses_val}_task{task_val}_run{run_val}"
 						_render_svg_items([(p.name, p.read_text()) for p in paths], key_prefix)
 
-	# ------------------------------------------------------------------
 	# Bottom: IQM plot + QC rating
-	# ------------------------------------------------------------------
 	st.divider()
 	if has_iqm_plot:
 		bot_left, bot_right = st.columns([0.4, 0.6], gap="small")
@@ -194,18 +190,14 @@ def _render_task_panels(
 	if has_iqm_plot and bot_right:
 		with bot_right:
 			st.subheader("IQM distributions")
-			iqm_path = qc_config.get("iqm_path")
-			if iqm_path and iqm_path.is_file() and iqm_path.suffix == ".svg":
-				iqm_content = iqm_path.read_text()
-				iqm_name    = iqm_path.name
-				if st.button("🔍 View full size", key=f"{task_key}_expand_iqm_0"):
-					show_svg_dialog(iqm_name, iqm_content)
-				st.markdown(
-					f'<div class="{task_key}-iqm-svg-wrap" style="width:100%;overflow-y:auto;overflow-x:hidden">'
-					f'<style>.{task_key}-iqm-svg-wrap svg{{width:100%!important;height:auto!important;}}</style>'
-					f'{iqm_content}</div>',
-					unsafe_allow_html=True,
-				)
+			iqm_paths = qc_config.get("iqm_path") or []
+			svg_iqms = [
+				(p.name, p.read_text())
+				for p in iqm_paths
+				if p and p.is_file() and p.suffix == ".svg"
+			]
+			if svg_iqms:
+				_render_svg_items(svg_iqms, f"{task_key}_iqm")
 			else:
 				st.info("IQM file not found or unsupported format.")
 

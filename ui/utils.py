@@ -149,6 +149,19 @@ def load_mri_data(path_dict: dict) -> dict:
 	return file_bytes_dict
 
 
+def load_mesh_data(path_dict: dict) -> list:
+	"""Load FreeSurfer surface mesh files as bytes for niivue_viewer."""
+	mesh_paths = path_dict.get("mesh_paths")
+	if not mesh_paths:
+		return []
+	meshes = []
+	for mesh_path in mesh_paths:
+		p = Path(mesh_path)
+		if p.is_file():
+			meshes.append({"data": p.read_bytes(), "name": p.name})
+	return meshes
+
+
 def load_svg_data(path_dict: dict) -> str | None:
 	"""Load SVG montage file content as string."""
 	svg_montage_path = path_dict.get("svg_montage_path")
