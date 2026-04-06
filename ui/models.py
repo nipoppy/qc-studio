@@ -60,6 +60,7 @@ class QCRecord(BaseModel):
 
 class QCTask(BaseModel):
     """Represents one QC entry in <pipeline>_qc.json (i.e. single QC task)."""
+<<<<<<< Updated upstream
 
     base_mri_image_path: Annotated[
         Optional[Path], Field(description="Path to base MRI image")
@@ -78,6 +79,13 @@ class QCTask(BaseModel):
     iqm_path: Annotated[
         Optional[List[Path]], Field(description="Path(s) to IQM TSV/JSON or other QC files")
     ] = None
+=======
+    base_mri_image_path: Annotated[Optional[Path], Field(description="Path to base MRI image")] = None
+    overlay_mri_image_path: Annotated[Optional[Path], Field(description="Path to overlay MRI image (mask etc.)")] = None
+    svg_montage_path: Annotated[Optional[List[Path]], Field(description="Paths to SVG montages for visual QC")] = None
+    iqm_path: Annotated[Optional[Path], Field(description="Path to an IQM or other QC SVG/file")] = None
+    mesh_paths: Annotated[Optional[List[Path]], Field(description="Paths to FreeSurfer surface meshes (e.g. lh.pial, rh.pial, lh.white, rh.white)")] = None
+>>>>>>> Stashed changes
 
 
 class QCConfig(RootModel[Dict[str, QCTask]]):

@@ -1,0 +1,25 @@
+{
+    "anat_wf_qc": {
+        "base_mri_image_path": "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sourcedata/freesurfer/sub-CMH0066/mri/T1.mgz",
+        "svg_montage_path": [
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_desc-reconall_T1w.svg"
+        ],
+        "mesh_paths": [
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sourcedata/freesurfer/sub-CMH0066/surf/lh.white",
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sourcedata/freesurfer/sub-CMH0066/surf/rh.white",
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sourcedata/freesurfer/sub-CMH0066/surf/lh.pial",
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sourcedata/freesurfer/sub-CMH0066/surf/rh.pial"
+        ]
+    },
+    "func_wf_qc": {
+        "base_mri_image_path": "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/ses-01/func/sub-CMH0053_ses-01_task-rest_run-02_space-MNI152NLin2009cAsym_boldref.nii.gz",
+        "overlay_mri_image_path": "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/anat/sub-CMH0053_space-MNI152NLin2009cAsym_desc-brain_mask.nii.gz",
+        "svg_montage_path": [
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-01_task-rest_run-02_desc-sdc_bold.svg",
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-01_task-rest_run-02_desc-coreg_bold.svg",
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-02_task-rest_run-02_desc-sdc_bold.svg",
+            "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-02_task-rest_run-02_desc-coreg_bold.svg"
+        ],
+        "iqm_path": "/projects/ttan/ASCEND/data/derivatives/fmriprep/23.2.3/sub-CMH0053/figures/sub-CMH0053_ses-01_task-rest_run-02_desc-confoundcorr_bold.svg"
+    }
+}

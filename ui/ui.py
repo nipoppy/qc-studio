@@ -34,9 +34,12 @@ def parse_args(args=None):
     )
     parser.add_argument(
         "--qc_task",
-        help=("Specific workflow output to QC"),
+        help=("One or more workflow keys to QC (e.g. anat_wf_qc func_wf_qc). "
+              "Omit to render all tasks found in the config file."),
         dest="qc_task",
-        required=True,
+        nargs="*",
+        default=None,
+        required=False,
     )
     parser.add_argument(
         "--output_dir",
@@ -59,7 +62,14 @@ args = parse_args()
 participant_list = args.participant_list
 session_list = args.session_list
 qc_pipeline = args.qc_pipeline
-qc_task = args.qc_task
+# None → render all; single item list → unwrap to string; multiple → keep list
+_qc_task_arg = args.qc_task
+if _qc_task_arg is None or len(_qc_task_arg) == 0:
+    qc_task = None
+elif len(_qc_task_arg) == 1:
+    qc_task = _qc_task_arg[0]
+else:
+    qc_task = _qc_task_arg
 qc_json = args.qc_json
 out_dir = args.out_dir
 
@@ -86,7 +96,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 qc_config_path = os.path.join(current_dir, qc_json)
 # print(f"qc path: {qc_config_path}")
 
-participant_id = "sub-ED01"
+participant_id = "sub-CMH0053"
 session_id = "ses-01"
 
 app(
