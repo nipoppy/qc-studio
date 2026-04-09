@@ -8,8 +8,6 @@ import pandas as pd
 import streamlit as st
 from layout import app
 
-import streamlit as st
-
 def parse_args(args=None):
     parser = ArgumentParser("QC-Studio")
 
@@ -86,8 +84,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 qc_config_path = os.path.join(current_dir, qc_json)
 # print(f"qc path: {qc_config_path}")
 
-participant_id = "sub-ED01"
-session_id = "ses-01"
+page_idx = min(st.session_state.get("current_page", 1) - 1, len(participants_df) - 1)
+participant_id = participants_df["participant_id"].iloc[page_idx]
+session_id = session_list
 
 app(
     participant_id=participant_id,
