@@ -53,14 +53,21 @@ def niivue_viewer_from_path(baseimage_fpath: str, overlay_fpath: str, height: in
         )
 
 
-baseimage_fpath = "../sample_data/derivatives/fmriprep/23.1.3/output/sub-ED01/ses-01/anat/sub-ED01_ses-01_run-1_desc-preproc_T1w.nii.gz"
-overlay_fpath = "../sample_data/derivatives/fmriprep/23.1.3/output/sub-ED01/ses-01/anat/sub-ED01_ses-01_run-1_desc-brain_mask.nii.gz"
+# Text inputs so any user can specify local filepaths without editing the source
+baseimage_input = st.text_input(
+    "Path to base NIfTI image",
+    placeholder="e.g. sample_data/derivatives/fmriprep/.../sub-ED01_ses-01_run-1_desc-preproc_T1w.nii.gz",
+)
+overlay_input = st.text_input(
+    "Path to overlay NIfTI image",
+    placeholder="e.g. sample_data/derivatives/fmriprep/.../sub-ED01_ses-01_run-1_desc-brain_mask.nii.gz",
+)
 
-try:
-    niivue_viewer_from_path(baseimage_fpath, overlay_fpath, height=600, key="niivue_viewer_path")
-
-except Exception as e:
-    st.error(f"Failed to load file: {e}")
+if baseimage_input and overlay_input:
+    try:
+        niivue_viewer_from_path(baseimage_input, overlay_input, height=600, key="niivue_viewer_path")
+    except Exception as e:
+        st.error(f"Failed to load file: {e}")
 
 
 
