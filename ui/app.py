@@ -36,6 +36,7 @@ def app(dataset_dir, participant_id, session_id, qc_pipeline, qc_task, qc_config
 	display_qc_viewers(
 		dataset_dir=dataset_dir,			
 		qc_config=qc_config,
+		qc_config_path=qc_config_path,
 		participant_id=participant_id,
 		session_id=session_id,
 		qc_pipeline=qc_pipeline,

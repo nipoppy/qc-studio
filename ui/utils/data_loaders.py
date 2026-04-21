@@ -5,8 +5,9 @@ from files and directories.
 """
 
 import json
+import re
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 
 
 def load_mri_data(dataset_dir, path_dict: dict) -> dict:
@@ -228,3 +229,125 @@ def _load_image_from_file(file_path, dpi=96):
 		img = img.convert('RGB')
 	
 	return img
+
+
+def _resolve_metadata_path(image_path: Union[Path, str]) -> Path:
+	"""Returning the JSON sidecar path for a BIDS image file."""
+	if not image_path:
+		return None
+	image_path = Path(image_path)
+	image_name = image_path.name
+	if image_name.endswith('.nii.gz'):
+		json_name = image_name.replace('.nii.gz', '.json')
+	elif image_name.endswith('.nii'):
+		json_name = image_name.replace('.nii', '.json')
+	else:
+		return None
+	
+	return image_path.parent / json_name
+
+
+def _infer_bids_ids_from_path(image_path: Union[Path, str]) -> tuple:
+	"""Infer BIDS participant/session IDs from a file path string."""
+	if not image_path:
+		return None, None
+
+	path_str = str(image_path)
+	participant_match = re.search(r"(sub-[A-Za-z0-9]+)", path_str)
+	session_match = re.search(r"(ses-[A-Za-z0-9]+)", path_str)
+
+	participant_id = participant_match.group(1) if participant_match else None
+	session_id = session_match.group(1) if session_match else None
+	return participant_id, session_id
+
+
+def _infer_dataset_root_from_path(image_path: Union[Path, str]) -> Optional[Path]:
+	"""Infer dataset root from a path containing BIDS-like folders."""
+	if not image_path:
+		return None
+
+	path_obj = Path(image_path)
+	parts = path_obj.parts
+
+	if "derivatives" in parts:
+		idx = parts.index("derivatives")
+		return Path(*parts[:idx]) if idx > 0 else Path(".")
+
+	if "bids" in parts:
+		idx = parts.index("bids")
+		return Path(*parts[:idx]) if idx > 0 else Path(".")
+
+	return None
+
+
+def _find_bids_metadata_sidecar(dataset_root: Union[Path, str], participant_id: str = None, session_id: str = None) -> Optional[Path]:
+	"""Find a likely raw BIDS metadata sidecar, prioritizing anat T1w JSON files."""
+	if not dataset_root:
+		return None
+
+	dataset_root = Path(dataset_root)
+	bids_root = dataset_root / "bids"
+	if not bids_root.is_dir():
+		bids_root = dataset_root
+
+	if session_id and not session_id.startswith("ses-"):
+		session_id = f"ses-{session_id}"
+
+	search_patterns = []
+	if participant_id and session_id:
+		search_patterns.extend([
+			f"{participant_id}/{session_id}/anat/*T1w*.json",
+			f"{participant_id}/{session_id}/anat/*.json",
+			f"{participant_id}/{session_id}/**/*T1w*.json",
+		])
+
+	if participant_id:
+		search_patterns.extend([
+			f"{participant_id}/**/*T1w*.json",
+			f"{participant_id}/**/anat/*.json",
+			f"{participant_id}/**/*.json",
+		])
+
+	search_patterns.extend([
+		"**/*T1w*.json",
+		"**/anat/*.json",
+	])
+
+	for pattern in search_patterns:
+		matches = sorted(bids_root.glob(pattern))
+		for match in matches:
+			if match.is_file():
+				return match
+
+	return None
+
+
+def _load_scanner_metadata(image_path:Union[Path, str], participant_id: str = None,
+							 session_id: str = None) -> dict:
+	"""Load scanner metadata from the JSON sidecar of a BIDS image file."""
+	json_path = _resolve_metadata_path(image_path)
+	dataset_root = _infer_dataset_root_from_path(image_path)
+
+	# Prefer IDs inferred from image path when explicit IDs are not provided.
+	inferred_participant, inferred_session = _infer_bids_ids_from_path(image_path)
+	participant_id = participant_id or inferred_participant
+	session_id = session_id or inferred_session
+
+	if not json_path or not Path(json_path).is_file():
+		json_path = _find_bids_metadata_sidecar(dataset_root, participant_id, session_id)
+
+	# Metadata sidecar may be absent for derivative images. Fall back to
+	# unknown values instead of failing the whole IQM panel.
+	if not json_path or not Path(json_path).is_file():
+		return {
+			"Manufacturer": "Unknown",
+			"MagneticFieldStrength": "Unknown"
+		}
+
+	with open(json_path, 'r') as f:
+		metadata = json.load(f)
+
+	return {
+		"Manufacturer": metadata.get("Manufacturer", "Unknown"),
+		"MagneticFieldStrength": metadata.get("MagneticFieldStrength", "Unknown")
+	}

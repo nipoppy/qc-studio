@@ -1,7 +1,7 @@
 """Tests for utils.py module."""
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -10,7 +10,11 @@ from utils.config import parse_qc_config
 from utils.data_loaders import (
     load_mri_data,
     load_svg_data,
-    load_iqm_data,
+    _resolve_metadata_path,
+    _infer_bids_ids_from_path,
+    _infer_dataset_root_from_path,
+    _find_bids_metadata_sidecar,
+    _load_scanner_metadata,
 )
 from utils.export import save_qc_results_to_csv
 
@@ -18,9 +22,25 @@ from utils.export import save_qc_results_to_csv
 class TestParseQcConfig:
     """Test parse_qc_config function."""
 
-    def test_parse_valid_qc_config(self, sample_qc_config):
+    substitution_values = {
+        "participant_id": "sub-ED01",
+        "session_id": "ses-01",
+    }
+
+    def test_parse_valid_qc_config(self, temp_dir):
         """Test parsing a valid QC config file."""
-        result = parse_qc_config(str(sample_qc_config), "anat_wf_qc")
+        qc_config = {
+            "anat_wf_qc": {
+                "base_mri_image_path": str(temp_dir / "base.nii.gz"),
+                "overlay_mri_image_path": str(temp_dir / "overlay.nii.gz"),
+                "svg_montage_path": [str(temp_dir / "montage.svg")],
+                "iqm_path": str(temp_dir / "iqm.json"),
+            }
+        }
+        config_path = temp_dir / "qc_config.json"
+        config_path.write_text(json.dumps(qc_config))
+
+        result = parse_qc_config(str(config_path), "anat_wf_qc", self.substitution_values)
         
         assert result is not None
         assert "base_mri_image_path" in result
@@ -29,7 +49,7 @@ class TestParseQcConfig:
 
     def test_parse_qc_config_nonexistent_task(self, sample_qc_config):
         """Test parsing QC config with non-existent task."""
-        result = parse_qc_config(str(sample_qc_config), "nonexistent_task")
+        result = parse_qc_config(str(sample_qc_config), "nonexistent_task", self.substitution_values)
         
         assert result["base_mri_image_path"] is None
         assert result["overlay_mri_image_path"] is None
@@ -38,7 +58,7 @@ class TestParseQcConfig:
 
     def test_parse_qc_config_invalid_file(self, temp_dir):
         """Test parsing non-existent QC config file."""
-        result = parse_qc_config(str(temp_dir / "nonexistent.json"), "anat_wf_qc")
+        result = parse_qc_config(str(temp_dir / "nonexistent.json"), "anat_wf_qc", self.substitution_values)
         
         assert result["base_mri_image_path"] is None
         assert result["overlay_mri_image_path"] is None
@@ -48,13 +68,13 @@ class TestParseQcConfig:
         bad_json_file = temp_dir / "bad.json"
         bad_json_file.write_text("{ invalid json }")
         
-        result = parse_qc_config(str(bad_json_file), "anat_wf_qc")
+        result = parse_qc_config(str(bad_json_file), "anat_wf_qc", self.substitution_values)
         
         assert result["base_mri_image_path"] is None
 
     def test_parse_qc_config_none_input(self):
         """Test parsing with None input."""
-        result = parse_qc_config(None, "anat_wf_qc")
+        result = parse_qc_config(None, "anat_wf_qc", self.substitution_values)
         
         assert result["base_mri_image_path"] is None
 
@@ -75,7 +95,7 @@ class TestLoadMriData:
             "overlay_mri_image_path": overlay_file
         }
         
-        result = load_mri_data(path_dict)
+        result = load_mri_data(temp_dir, path_dict)
         
         assert "base_mri_image_bytes" in result
         assert "overlay_mri_image_bytes" in result
@@ -89,10 +109,10 @@ class TestLoadMriData:
         
         path_dict = {
             "base_mri_image_path": base_file,
-            "overlay_mri_image_path": None
+            "overlay_mri_image_path": "nonexistent_overlay.nii.gz"
         }
         
-        result = load_mri_data(path_dict)
+        result = load_mri_data(temp_dir, path_dict)
         
         assert "base_mri_image_bytes" in result
         assert "overlay_mri_image_bytes" not in result
@@ -101,10 +121,10 @@ class TestLoadMriData:
         """Test loading non-existent MRI file."""
         path_dict = {
             "base_mri_image_path": temp_dir / "nonexistent.nii.gz",
-            "overlay_mri_image_path": None
+            "overlay_mri_image_path": "nonexistent_overlay.nii.gz"
         }
         
-        result = load_mri_data(path_dict)
+        result = load_mri_data(temp_dir, path_dict)
         
         assert result == {}
 
@@ -114,10 +134,9 @@ class TestLoadMriData:
             "base_mri_image_path": None,
             "overlay_mri_image_path": None
         }
-        
-        result = load_mri_data(path_dict)
-        
-        assert result == {}
+
+        with pytest.raises(TypeError):
+            load_mri_data("", path_dict)
 
 
 class TestLoadSvgData:
@@ -176,7 +195,8 @@ class TestLoadSvgData:
         
         path_dict = {"svg_montage_path": [svg_file, png_file]}
         
-        result = load_svg_data(temp_dir, path_dict)
+        with patch("utils.data_loaders._load_image_from_file", return_value=img):
+            result = load_svg_data(temp_dir, path_dict)
         
         assert result is not None
         assert isinstance(result, dict)
@@ -198,7 +218,8 @@ class TestLoadSvgData:
         
         path_dict = {"svg_montage_path": jpeg_file}
         
-        result = load_svg_data(temp_dir, path_dict)
+        with patch("utils.data_loaders._load_image_from_file", return_value=img):
+            result = load_svg_data(temp_dir, path_dict)
         
         assert result is not None
         assert isinstance(result, dict)
@@ -260,8 +281,8 @@ class TestLoadSvgData:
         """Test loading unreadable SVG file."""
         svg_file = temp_dir / "montage.svg"
         svg_file.write_text("valid content")
-        
-        with patch("builtins.open", side_effect=IOError("Permission denied")):
+
+        with patch.object(Path, "read_text", side_effect=IOError("Permission denied")):
             path_dict = {"svg_montage_path": svg_file}
             result = load_svg_data(temp_dir, path_dict)
         
@@ -276,47 +297,114 @@ class TestLoadSvgData:
         assert result is None
 
 
-class TestLoadIqmData:
-    """Test load_iqm_data function."""
+class TestScannerMetadataHelpers:
+    """Test scanner metadata helper functions in data_loaders."""
 
-    def test_load_valid_iqm_json(self, temp_dir):
-        """Test loading valid IQM JSON file."""
-        iqm_data = {"metric1": 0.95, "metric2": 0.87}
-        iqm_file = temp_dir / "iqm.json"
-        iqm_file.write_text(json.dumps(iqm_data))
-        
-        path_dict = {"iqm_path": iqm_file}
-        
-        result = load_iqm_data(path_dict)
-        
-        assert result == iqm_data
+    def test_resolve_metadata_path_for_nii_gz(self, temp_dir):
+        """Test sidecar path resolution for .nii.gz images."""
+        image_path = temp_dir / "sub-01_T1w.nii.gz"
+        expected = temp_dir / "sub-01_T1w.json"
 
-    def test_load_iqm_nonexistent_file(self, temp_dir):
-        """Test loading non-existent IQM file."""
-        path_dict = {"iqm_path": temp_dir / "nonexistent.json"}
-        
-        result = load_iqm_data(path_dict)
-        
-        assert result is None
+        result = _resolve_metadata_path(image_path)
 
-    def test_load_iqm_malformed_json(self, temp_dir):
-        """Test loading malformed IQM JSON file."""
-        iqm_file = temp_dir / "bad_iqm.json"
-        iqm_file.write_text("{ invalid json }")
-        
-        path_dict = {"iqm_path": iqm_file}
-        
-        result = load_iqm_data(path_dict)
-        
-        assert result is None
+        assert result == expected
 
-    def test_load_iqm_with_none_path(self):
-        """Test loading IQM with None path."""
-        path_dict = {"iqm_path": None}
-        
-        result = load_iqm_data(path_dict)
-        
-        assert result is None
+    def test_resolve_metadata_path_for_nii(self, temp_dir):
+        """Test sidecar path resolution for .nii images."""
+        image_path = temp_dir / "sub-01_T1w.nii"
+        expected = temp_dir / "sub-01_T1w.json"
+
+        result = _resolve_metadata_path(str(image_path))
+
+        assert result == expected
+
+    def test_resolve_metadata_path_with_none(self):
+        """Test sidecar path resolution with empty path."""
+        assert _resolve_metadata_path(None) is None
+
+    def test_resolve_metadata_path_with_unsupported_extension(self, temp_dir):
+        """Unsupported image extensions should not produce sidecar paths."""
+        image_path = temp_dir / "sub-01_T1w.mgz"
+        assert _resolve_metadata_path(image_path) is None
+
+    def test_infer_bids_ids_from_path(self):
+        """Infer participant/session IDs from standard BIDS-like paths."""
+        participant_id, session_id = _infer_bids_ids_from_path(
+            "derivatives/fmriprep/sub-01/ses-02/anat/sub-01_ses-02_T1w.nii.gz"
+        )
+        assert participant_id == "sub-01"
+        assert session_id == "ses-02"
+
+    def test_infer_dataset_root_from_derivatives_path(self):
+        """Infer dataset root from derivatives path."""
+        root = _infer_dataset_root_from_path(
+            "/tmp/project/derivatives/fmriprep/sub-01/ses-01/anat/sub-01_ses-01_T1w.nii.gz"
+        )
+        assert str(root).endswith("/tmp/project")
+
+    def test_find_bids_metadata_sidecar_prefers_participant_session(self, temp_dir):
+        """Find participant/session-specific sidecar under bids directory."""
+        sidecar = temp_dir / "bids" / "sub-01" / "ses-01" / "anat" / "sub-01_ses-01_T1w.json"
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(json.dumps({"Manufacturer": "Siemens"}))
+
+        result = _find_bids_metadata_sidecar(temp_dir, participant_id="sub-01", session_id="ses-01")
+        assert result == sidecar
+
+    def test_load_scanner_metadata_reads_sidecar(self, temp_dir):
+        """Test loading scanner metadata from a valid sidecar."""
+        image_path = temp_dir / "sub-01_T1w.nii.gz"
+        image_path.write_text("dummy")
+        sidecar_path = temp_dir / "sub-01_T1w.json"
+        sidecar_path.write_text(
+            json.dumps({
+                "Manufacturer": "Siemens",
+                "MagneticFieldStrength": 3,
+            })
+        )
+
+        result = _load_scanner_metadata(image_path)
+
+        assert result["Manufacturer"] == "Siemens"
+        assert result["MagneticFieldStrength"] == 3
+
+    def test_load_scanner_metadata_defaults_when_keys_missing(self, temp_dir):
+        """Test loading scanner metadata defaults missing keys to Unknown."""
+        image_path = temp_dir / "sub-01_T1w.nii.gz"
+        image_path.write_text("dummy")
+        sidecar_path = temp_dir / "sub-01_T1w.json"
+        sidecar_path.write_text(json.dumps({}))
+
+        result = _load_scanner_metadata(image_path)
+
+        assert result["Manufacturer"] == "Unknown"
+        assert result["MagneticFieldStrength"] == "Unknown"
+
+    def test_load_scanner_metadata_falls_back_to_bids_sidecar(self, temp_dir):
+        """If derivative sidecar is missing, use raw BIDS sidecar lookup."""
+        image_path = temp_dir / "derivatives" / "fmriprep" / "sub-01" / "ses-01" / "anat" / "sub-01_ses-01_T1w.nii.gz"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("dummy")
+
+        bids_sidecar = temp_dir / "bids" / "sub-01" / "ses-01" / "anat" / "sub-01_ses-01_T1w.json"
+        bids_sidecar.parent.mkdir(parents=True, exist_ok=True)
+        bids_sidecar.write_text(json.dumps({"Manufacturer": "GE", "MagneticFieldStrength": 1.5}))
+
+        result = _load_scanner_metadata(image_path, participant_id="sub-01", session_id="ses-01")
+
+        assert result["Manufacturer"] == "GE"
+        assert result["MagneticFieldStrength"] == 1.5
+
+    def test_load_scanner_metadata_returns_unknown_when_no_sidecar(self, temp_dir):
+        """When no sidecar is available anywhere, return Unknown values."""
+        image_path = temp_dir / "derivatives" / "fmriprep" / "sub-99" / "anat" / "sub-99_T1w.nii.gz"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("dummy")
+
+        result = _load_scanner_metadata(image_path, participant_id="sub-99")
+
+        assert result["Manufacturer"] == "Unknown"
+        assert result["MagneticFieldStrength"] == "Unknown"
 
 
 class TestSaveQcResultsToCsv:

@@ -7,11 +7,13 @@ from utils.data_loaders import load_svg_data
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
+from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 
 def display_qc_viewers(
 	dataset_dir,
 	qc_config,
+	qc_config_path: str = None,
 	participant_id: str = None,
 	session_id: str = None,
 	qc_pipeline: str = None,
@@ -65,7 +67,6 @@ def display_qc_viewers(
 		'svg': selected_panels.get('svg_col', selected_panels.get('svg', True)),
 		'iqm': selected_panels.get('iqm_col', selected_panels.get('iqm', False))
 	}
-	
 	show_niivue = selected_panels.get('niivue', True)
 	show_svg = selected_panels.get('svg', True)
 	show_iqm = selected_panels.get('iqm', False)
@@ -93,23 +94,41 @@ def display_qc_viewers(
 			qc_pipeline=qc_pipeline,
 			qc_task=qc_task
 		)
-	
+
 	# Right column: Viewer panels based on selection
 	with panels_col:
 		# All three panels selected
 		if show_niivue and show_svg and show_iqm:
-			_display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config,
-			                                      participant_id, session_id)
+			_display_niivue_with_secondary_panel(
+				dataset_dir,
+				selected_panels,
+				qc_config,
+				qc_config_path=qc_config_path,
+				participant_id=participant_id,
+				session_id=session_id,
+			)
 			st.divider()
-			_display_iqm_panel()
+			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir)
 		# Niivue + SVG (no IQM)
 		elif show_niivue and show_svg:
-			_display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config,
-			                                      participant_id, session_id)
+			_display_niivue_with_secondary_panel(
+				dataset_dir,
+				selected_panels,
+				qc_config,
+				qc_config_path=qc_config_path,
+				participant_id=participant_id,
+				session_id=session_id,
+			)
 		# Niivue + IQM (no SVG)
 		elif show_niivue and show_iqm:
-			_display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config,
-			                                      participant_id, session_id)
+			_display_niivue_with_secondary_panel(
+				dataset_dir,
+				selected_panels,
+				qc_config,
+				qc_config_path=qc_config_path,
+				participant_id=participant_id,
+				session_id=session_id,
+			)
 		# Full-width Niivue only
 		elif show_niivue:
 			_display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id)
@@ -118,7 +137,7 @@ def display_qc_viewers(
 			_display_svg_panel(dataset_dir, qc_config)
 		# Full-width IQM only
 		elif show_iqm:
-			_display_iqm_panel()
+			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir)
 	
 	# Autoplay rerun loop: panels have now rendered; keep refreshing so the
 	# countdown display stays live and the timer expiry check fires on time
@@ -129,7 +148,7 @@ def display_qc_viewers(
 			st.rerun()
 
 
-def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_config,
+def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_config, qc_config_path: str = None,
                                            participant_id: str = None, session_id: str = None) -> None:
 	"""Display 3-column layout: Niivue with hidden controls | Secondary panel.
 	
@@ -163,7 +182,7 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 		if selected_panels.get('svg', False):
 			_display_svg_panel(dataset_dir, qc_config)
 		else:
-			_display_iqm_panel()
+			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir)
 
 
 def _display_niivue_full_width(dataset_dir, qc_config,
@@ -405,12 +424,6 @@ def _display_pagination_in_sidebar(
 	if st.button(MESSAGES['back_landing_button'], use_container_width=True, key="pag_landing"):
 		SessionManager.set_landing_page_complete(False)
 		st.rerun()
-
-
-def _display_iqm_panel() -> None:
-	"""Display IQM metrics panel."""
-	st.subheader(MESSAGES['metrics_header'])
-	st.write("Add QC metrics here (e.g., SNR, motion). This is a placeholder area.")
 
 
 def _save_qc_record(participant_id: str, session_id: str, qc_pipeline: str, 
