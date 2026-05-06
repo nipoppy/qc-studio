@@ -1,0 +1,10 @@
+{
+    "base_url": "model-store-url",
+    "default_model": "gemma4:latest",
+    "timeout": 120,
+    "endpoints": {
+        "signin": "/api/v1/auths/signin",
+        "models": "/api/models",
+        "chat_completions": "/api/v1/chat/completions"
+    }
+}
