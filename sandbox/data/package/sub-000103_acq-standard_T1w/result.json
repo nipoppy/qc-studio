@@ -1,0 +1,29 @@
+{
+  "decision": "uncertain",
+  "confidence": "medium",
+  "summary": "This T1w scan shows a concerning pattern of elevated blurring (fwhm_avg at 96th percentile) alongside a provenance warning for large rotation in a single frame, but primary SNR and CNR metrics remain in acceptable ranges, creating a genuine conflict that warrants visual review.",
+  "flagged_metrics": [
+    "fwhm_avg",
+    "cjv",
+    "large_rot_frame",
+    "tpm_overlap_csf",
+    "tpm_overlap_gm",
+    "tpm_overlap_wm",
+    "snr_gm"
+  ],
+  "reasons": [
+    "fwhm_avg=4.638, percentile=95.8 \u2014 image spatial sharpness is in the highest 5% of blurring relative to reference population, indicating potential motion blur or smoothing artifact.",
+    "large_rot_frame provenance warning is TRUE \u2014 at least one frame had a large rotation displacement, consistent with intermittent head motion that could produce blurring or ringing.",
+    "cjv=0.308, percentile=6.4 \u2014 gray-white matter separability is at the low end of the distribution, which could reflect reduced tissue contrast or motion-related boundary blurring; however, lower CJV nominally indicates better separation, so this is mildly reassuring.",
+    "snr_gm=14.23, percentile=34.9 (high-evidence metric) \u2014 tissue SNR is below median but not extreme; combined with fwhm elevation and motion warning, this is consistent with mild motion degradation rather than a clean scan.",
+    "tpm_overlap for CSF (1.6th percentile), GM (3.3rd percentile), and WM (4.7th percentile) are all at extremely low percentiles, suggesting poor tissue segmentation or registration consistency with the template, which may reflect image quality issues affecting automated processing.",
+    "cnr=4.29, percentile=67.8 \u2014 gray-white contrast is near-normal and does not independently support failure, but does not offset the blurring and motion evidence."
+  ],
+  "recommended_followup": [
+    "Perform visual inspection of axial, coronal, and sagittal slices to assess for motion ringing, blurring bands, or ghosting artifacts.",
+    "Review snrd_gm=137.3 (99.7th percentile) and snrd_wm=192.2 (99.7th percentile) in context of background mask validity \u2014 extremely high SNR-to-background ratios may indicate background suppression affecting interpretation.",
+    "Investigate low tpm_overlap values across all three tissue classes (CSF, GM, WM all \u22645th percentile) to determine whether this reflects registration failure or true image degradation.",
+    "Check the specific motion-corrupted frame identified by large_rot_frame warning to assess whether it is isolated or part of a broader motion episode.",
+    "Consider reprocessing with motion correction or excluding the scan if visual review confirms pervasive blurring or ringing artifact."
+  ]
+}

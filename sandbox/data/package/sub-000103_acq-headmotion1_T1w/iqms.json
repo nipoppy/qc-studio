@@ -1,0 +1,1242 @@
+{
+  "iqms": [
+    {
+      "name": "cjv",
+      "reference_stats": {
+        "percentile": 15.022,
+        "z_score": -0.851
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "not specific to one artifact type",
+          "interpret with CNR, SNR, EFC, and visual report"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Coefficient of Joint Variation",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate reduced gray-white matter separability, heavy head motion, or intensity non-uniformity artifacts"
+      },
+      "value": 0.3739716838563581
+    },
+    {
+      "name": "cnr",
+      "reference_stats": {
+        "percentile": 58.933,
+        "z_score": -0.319
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "depends on tissue segmentation quality"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Contrast-to-Noise Ratio",
+        "evidence_strength": "medium",
+        "qc_interpretation": "lower values may indicate poor gray-white matter contrast or increased noise"
+      },
+      "value": 3.6335669203129974
+    },
+    {
+      "name": "efc",
+      "reference_stats": {
+        "percentile": 75.02,
+        "z_score": 1.107
+      },
+      "semantic_context": {
+        "category": "information_theory",
+        "caveats": [
+          "not specific to motion by itself",
+          "interpret with SNR, FWHM, CJV, and visual report"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Entropy Focus Criterion",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate ghosting, blurring, or motion-related degradation"
+      },
+      "value": 0.5867911377233324
+    },
+    {
+      "name": "fber",
+      "reference_stats": {
+        "percentile": 96.635,
+        "z_score": 1.06
+      },
+      "semantic_context": {
+        "category": "information_theory",
+        "caveats": [
+          "special values can occur when background signal is absent or post-processed"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Foreground-Background Energy Ratio",
+        "evidence_strength": "medium",
+        "qc_interpretation": "lower values may indicate weak foreground signal relative to background noise"
+      },
+      "value": 8524.744963842973
+    },
+    {
+      "name": "fwhm_avg",
+      "reference_stats": {
+        "percentile": 95.961,
+        "z_score": 1.753
+      },
+      "semantic_context": {
+        "category": "sharpness_blur",
+        "caveats": [
+          "interpret with acquisition resolution and preprocessing context"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Full Width Half Maximum Smoothness",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate a blurrier or less spatially sharp image"
+      },
+      "value": 4.677219999999999
+    },
+    {
+      "name": "fwhm_x",
+      "reference_stats": {
+        "percentile": 31.665,
+        "z_score": -1.173
+      },
+      "semantic_context": {
+        "category": "sharpness_blur",
+        "caveats": [
+          "interpret with acquisition resolution and preprocessing context"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Full Width Half Maximum Smoothness",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate a blurrier or less spatially sharp image"
+      },
+      "value": 4.35619
+    },
+    {
+      "name": "fwhm_y",
+      "reference_stats": {
+        "percentile": 90.281,
+        "z_score": 0.994
+      },
+      "semantic_context": {
+        "category": "sharpness_blur",
+        "caveats": [
+          "interpret with acquisition resolution and preprocessing context"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Full Width Half Maximum Smoothness",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate a blurrier or less spatially sharp image"
+      },
+      "value": 4.87416
+    },
+    {
+      "name": "fwhm_z",
+      "reference_stats": {
+        "percentile": 33.14,
+        "z_score": -1.163
+      },
+      "semantic_context": {
+        "category": "sharpness_blur",
+        "caveats": [
+          "interpret with acquisition resolution and preprocessing context"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Full Width Half Maximum Smoothness",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate a blurrier or less spatially sharp image"
+      },
+      "value": 4.80131
+    },
+    {
+      "name": "icvs_csf",
+      "reference_stats": {
+        "percentile": 27.701,
+        "z_score": -0.817
+      },
+      "semantic_context": {
+        "category": "anatomical_context",
+        "caveats": [
+          "do not treat as direct artifact evidence without reference distribution"
+        ],
+        "direction_of_concern": "normative_range",
+        "display_name": "Intracranial Volume Fractions",
+        "evidence_strength": "low",
+        "qc_interpretation": "unusual tissue fractions may provide anatomical or segmentation context but are weak standalone QC evidence"
+      },
+      "value": 0.21770812889975574
+    },
+    {
+      "name": "icvs_gm",
+      "reference_stats": {
+        "percentile": 33.448,
+        "z_score": -0.297
+      },
+      "semantic_context": {
+        "category": "anatomical_context",
+        "caveats": [
+          "do not treat as direct artifact evidence without reference distribution"
+        ],
+        "direction_of_concern": "normative_range",
+        "display_name": "Intracranial Volume Fractions",
+        "evidence_strength": "low",
+        "qc_interpretation": "unusual tissue fractions may provide anatomical or segmentation context but are weak standalone QC evidence"
+      },
+      "value": 0.41252537417360013
+    },
+    {
+      "name": "icvs_wm",
+      "reference_stats": {
+        "percentile": 20.709,
+        "z_score": -1.18
+      },
+      "semantic_context": {
+        "category": "anatomical_context",
+        "caveats": [
+          "do not treat as direct artifact evidence without reference distribution"
+        ],
+        "direction_of_concern": "normative_range",
+        "display_name": "Intracranial Volume Fractions",
+        "evidence_strength": "low",
+        "qc_interpretation": "unusual tissue fractions may provide anatomical or segmentation context but are weak standalone QC evidence"
+      },
+      "value": 0.3697664969266441
+    },
+    {
+      "name": "inu_med",
+      "reference_stats": {
+        "percentile": 13.544,
+        "z_score": -0.894
+      },
+      "semantic_context": {
+        "category": "bias_field",
+        "caveats": [
+          "interpret with CJV and visual intensity shading"
+        ],
+        "direction_of_concern": "closer_to_1_or_lower_range_better",
+        "display_name": "Intensity Non-Uniformity Field Summary",
+        "evidence_strength": "medium",
+        "qc_interpretation": "values further from uniformity may indicate RF bias-field or intensity inhomogeneity"
+      },
+      "value": 1.005744457244873
+    },
+    {
+      "name": "inu_range",
+      "reference_stats": {
+        "percentile": 22.997,
+        "z_score": -0.845
+      },
+      "semantic_context": {
+        "category": "bias_field",
+        "caveats": [
+          "interpret with CJV and visual intensity shading"
+        ],
+        "direction_of_concern": "closer_to_1_or_lower_range_better",
+        "display_name": "Intensity Non-Uniformity Field Summary",
+        "evidence_strength": "medium",
+        "qc_interpretation": "values further from uniformity may indicate RF bias-field or intensity inhomogeneity"
+      },
+      "value": 0.40393374562263484
+    },
+    {
+      "name": "qi_1",
+      "reference_stats": {
+        "percentile": 26.226,
+        "z_score": -0.767
+      },
+      "semantic_context": {
+        "category": "artifact_detection",
+        "caveats": [
+          "near-zero is expected for clean background",
+          "negative or special values may indicate missing background mask context"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Mortamet Quality Index 1",
+        "evidence_strength": "medium",
+        "qc_interpretation": "higher values may indicate artifactual intensity voxels in the background region"
+      },
+      "value": 0.0
+    },
+    {
+      "name": "qi_2",
+      "reference_stats": {
+        "percentile": 28.475,
+        "z_score": -1.298
+      },
+      "semantic_context": {
+        "category": "artifact_detection",
+        "caveats": [
+          "less directly interpretable than QI1"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Mortamet Quality Index 2",
+        "evidence_strength": "low",
+        "qc_interpretation": "higher values may indicate abnormal background noise structure after detected artifacts are removed"
+      },
+      "value": 0.011595898273842763
+    },
+    {
+      "name": "rpve_csf",
+      "reference_stats": {
+        "percentile": 18.468,
+        "z_score": -1.097
+      },
+      "semantic_context": {
+        "category": "segmentation_quality",
+        "caveats": [
+          "weak standalone artifact evidence",
+          "depends on segmentation quality"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Residual Partial Volume Error",
+        "evidence_strength": "low",
+        "qc_interpretation": "higher values may indicate greater partial-volume uncertainty or poorer tissue segmentation"
+      },
+      "value": 25.559157092830375
+    },
+    {
+      "name": "rpve_gm",
+      "reference_stats": {
+        "percentile": 27.127,
+        "z_score": -1.057
+      },
+      "semantic_context": {
+        "category": "segmentation_quality",
+        "caveats": [
+          "weak standalone artifact evidence",
+          "depends on segmentation quality"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Residual Partial Volume Error",
+        "evidence_strength": "low",
+        "qc_interpretation": "higher values may indicate greater partial-volume uncertainty or poorer tissue segmentation"
+      },
+      "value": 13.907486124545807
+    },
+    {
+      "name": "rpve_wm",
+      "reference_stats": {
+        "percentile": 86.937,
+        "z_score": 1.183
+      },
+      "semantic_context": {
+        "category": "segmentation_quality",
+        "caveats": [
+          "weak standalone artifact evidence",
+          "depends on segmentation quality"
+        ],
+        "direction_of_concern": "higher_worse",
+        "display_name": "Residual Partial Volume Error",
+        "evidence_strength": "low",
+        "qc_interpretation": "higher values may indicate greater partial-volume uncertainty or poorer tissue segmentation"
+      },
+      "value": 18.678940310623354
+    },
+    {
+      "name": "size_x",
+      "reference_stats": {
+        "percentile": 79.639,
+        "z_score": 0.114
+      },
+      "semantic_context": {
+        "category": "image_geometry",
+        "caveats": [
+          "do not use as QC failure evidence by itself"
+        ],
+        "direction_of_concern": "not_quality_metric",
+        "display_name": "Image Matrix Size",
+        "evidence_strength": "none",
+        "qc_interpretation": "describes image dimensions; useful for comparability but not direct artifact evidence"
+      },
+      "value": 192.0
+    },
+    {
+      "name": "size_y",
+      "reference_stats": {
+        "percentile": 94.552,
+        "z_score": 1.207
+      },
+      "semantic_context": {
+        "category": "image_geometry",
+        "caveats": [
+          "do not use as QC failure evidence by itself"
+        ],
+        "direction_of_concern": "not_quality_metric",
+        "display_name": "Image Matrix Size",
+        "evidence_strength": "none",
+        "qc_interpretation": "describes image dimensions; useful for comparability but not direct artifact evidence"
+      },
+      "value": 256.0
+    },
+    {
+      "name": "size_z",
+      "reference_stats": {
+        "percentile": 31.51,
+        "z_score": -1.204
+      },
+      "semantic_context": {
+        "category": "image_geometry",
+        "caveats": [
+          "do not use as QC failure evidence by itself"
+        ],
+        "direction_of_concern": "not_quality_metric",
+        "display_name": "Image Matrix Size",
+        "evidence_strength": "none",
+        "qc_interpretation": "describes image dimensions; useful for comparability but not direct artifact evidence"
+      },
+      "value": 256.0
+    },
+    {
+      "name": "snr_csf",
+      "reference_stats": {
+        "percentile": 49.8,
+        "z_score": -0.629
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "the QC book found SNR-derived metrics informative for motion in a T1w motion dataset",
+          "interpret by tissue and with visual evidence"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Signal-to-Noise Ratio",
+        "evidence_strength": "high",
+        "qc_interpretation": "lower values may indicate poor tissue-specific or overall signal quality and can support assessment of motion-related degradation"
+      },
+      "value": 3.401899366884514
+    },
+    {
+      "name": "snr_gm",
+      "reference_stats": {
+        "percentile": 33.702,
+        "z_score": -1.288
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "the QC book found SNR-derived metrics informative for motion in a T1w motion dataset",
+          "interpret by tissue and with visual evidence"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Signal-to-Noise Ratio",
+        "evidence_strength": "high",
+        "qc_interpretation": "lower values may indicate poor tissue-specific or overall signal quality and can support assessment of motion-related degradation"
+      },
+      "value": 13.448547897532716
+    },
+    {
+      "name": "snr_total",
+      "reference_stats": {
+        "percentile": 32.07,
+        "z_score": -0.532
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "the QC book found SNR-derived metrics informative for motion in a T1w motion dataset",
+          "interpret by tissue and with visual evidence"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Signal-to-Noise Ratio",
+        "evidence_strength": "high",
+        "qc_interpretation": "lower values may indicate poor tissue-specific or overall signal quality and can support assessment of motion-related degradation"
+      },
+      "value": 12.51556078325578
+    },
+    {
+      "name": "snr_wm",
+      "reference_stats": {
+        "percentile": 26.906,
+        "z_score": -1.036
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "the QC book found SNR-derived metrics informative for motion in a T1w motion dataset",
+          "interpret by tissue and with visual evidence"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Signal-to-Noise Ratio",
+        "evidence_strength": "high",
+        "qc_interpretation": "lower values may indicate poor tissue-specific or overall signal quality and can support assessment of motion-related degradation"
+      },
+      "value": 20.696235085350107
+    },
+    {
+      "name": "snrd_csf",
+      "reference_stats": {
+        "percentile": 36.084,
+        "z_score": -1.207
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "depends on valid air/background estimation"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Dietrich Signal-to-Noise Ratio",
+        "evidence_strength": "medium",
+        "qc_interpretation": "lower values may indicate poor signal quality relative to background air noise"
+      },
+      "value": 60.670504547020776
+    },
+    {
+      "name": "snrd_gm",
+      "reference_stats": {
+        "percentile": 99.28,
+        "z_score": 3.857
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "depends on valid air/background estimation"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Dietrich Signal-to-Noise Ratio",
+        "evidence_strength": "medium",
+        "qc_interpretation": "lower values may indicate poor signal quality relative to background air noise"
+      },
+      "value": 120.11846675915379
+    },
+    {
+      "name": "snrd_total",
+      "reference_stats": {
+        "percentile": 36.063,
+        "z_score": -0.783
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "depends on valid air/background estimation"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Dietrich Signal-to-Noise Ratio",
+        "evidence_strength": "medium",
+        "qc_interpretation": "lower values may indicate poor signal quality relative to background air noise"
+      },
+      "value": 114.82323821226036
+    },
+    {
+      "name": "snrd_wm",
+      "reference_stats": {
+        "percentile": 99.474,
+        "z_score": 3.639
+      },
+      "semantic_context": {
+        "category": "noise_and_tissue_contrast",
+        "caveats": [
+          "depends on valid air/background estimation"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Dietrich Signal-to-Noise Ratio",
+        "evidence_strength": "medium",
+        "qc_interpretation": "lower values may indicate poor signal quality relative to background air noise"
+      },
+      "value": 163.68074333060653
+    },
+    {
+      "name": "spacing_x",
+      "reference_stats": {
+        "percentile": 26.577,
+        "z_score": -0.92
+      },
+      "semantic_context": {
+        "category": "image_geometry",
+        "caveats": [
+          "do not use as QC failure evidence by itself"
+        ],
+        "direction_of_concern": "not_quality_metric",
+        "display_name": "Voxel Spacing",
+        "evidence_strength": "none",
+        "qc_interpretation": "describes image resolution; useful for comparability but not direct artifact evidence"
+      },
+      "value": 1.0
+    },
+    {
+      "name": "spacing_y",
+      "reference_stats": {
+        "percentile": 90.244,
+        "z_score": 1.034
+      },
+      "semantic_context": {
+        "category": "image_geometry",
+        "caveats": [
+          "do not use as QC failure evidence by itself"
+        ],
+        "direction_of_concern": "not_quality_metric",
+        "display_name": "Voxel Spacing",
+        "evidence_strength": "none",
+        "qc_interpretation": "describes image resolution; useful for comparability but not direct artifact evidence"
+      },
+      "value": 1.0
+    },
+    {
+      "name": "spacing_z",
+      "reference_stats": {
+        "percentile": 29.566,
+        "z_score": -0.837
+      },
+      "semantic_context": {
+        "category": "image_geometry",
+        "caveats": [
+          "do not use as QC failure evidence by itself"
+        ],
+        "direction_of_concern": "not_quality_metric",
+        "display_name": "Voxel Spacing",
+        "evidence_strength": "none",
+        "qc_interpretation": "describes image resolution; useful for comparability but not direct artifact evidence"
+      },
+      "value": 1.0
+    },
+    {
+      "name": "summary_bg_k",
+      "reference_stats": {
+        "percentile": 28.711,
+        "z_score": -0.628
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 15.44389008983542
+    },
+    {
+      "name": "summary_bg_mad",
+      "reference_stats": {
+        "percentile": 60.932,
+        "z_score": -0.27
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 4.002525754027393
+    },
+    {
+      "name": "summary_bg_mean",
+      "reference_stats": {
+        "percentile": 4.538,
+        "z_score": -1.43
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 7.019241958650284
+    },
+    {
+      "name": "summary_bg_median",
+      "reference_stats": {
+        "percentile": 5.33,
+        "z_score": -0.895
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 5.309336438775063
+    },
+    {
+      "name": "summary_bg_n",
+      "reference_stats": {
+        "percentile": 86.033,
+        "z_score": 1.172
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 2909314.0
+    },
+    {
+      "name": "summary_bg_p05",
+      "reference_stats": {
+        "percentile": 13.006,
+        "z_score": -0.239
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 0.0
+    },
+    {
+      "name": "summary_bg_p95",
+      "reference_stats": {
+        "percentile": 68.003,
+        "z_score": -0.189
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 20.742407612502575
+    },
+    {
+      "name": "summary_bg_stdv",
+      "reference_stats": {
+        "percentile": 3.353,
+        "z_score": -1.38
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 7.260049553076591
+    },
+    {
+      "name": "summary_csf_k",
+      "reference_stats": {
+        "percentile": 8.02,
+        "z_score": -0.962
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 0.013907901966372371
+    },
+    {
+      "name": "summary_csf_mad",
+      "reference_stats": {
+        "percentile": 15.708,
+        "z_score": -1.332
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 114.87248914058618
+    },
+    {
+      "name": "summary_csf_mean",
+      "reference_stats": {
+        "percentile": 84.899,
+        "z_score": 1.3
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 379.91337469923525
+    },
+    {
+      "name": "summary_csf_median",
+      "reference_stats": {
+        "percentile": 87.076,
+        "z_score": 1.372
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 370.66367442905903
+    },
+    {
+      "name": "summary_csf_n",
+      "reference_stats": {
+        "percentile": 85.501,
+        "z_score": 0.339
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 22498.0
+    },
+    {
+      "name": "summary_csf_p05",
+      "reference_stats": {
+        "percentile": 26.135,
+        "z_score": -1.011
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 220.78740597516298
+    },
+    {
+      "name": "summary_csf_p95",
+      "reference_stats": {
+        "percentile": 81.668,
+        "z_score": 0.973
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 567.9640158191323
+    },
+    {
+      "name": "summary_csf_stdv",
+      "reference_stats": {
+        "percentile": 69.678,
+        "z_score": 0.382
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 108.95543831861929
+    },
+    {
+      "name": "summary_gm_k",
+      "reference_stats": {
+        "percentile": 6.306,
+        "z_score": -1.764
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": -0.003977510435878351
+    },
+    {
+      "name": "summary_gm_mad",
+      "reference_stats": {
+        "percentile": 4.305,
+        "z_score": -1.115
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 54.63447654247392
+    },
+    {
+      "name": "summary_gm_mean",
+      "reference_stats": {
+        "percentile": 25.343,
+        "z_score": -0.618
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 734.9692262309987
+    },
+    {
+      "name": "summary_gm_median",
+      "reference_stats": {
+        "percentile": 88.173,
+        "z_score": 1.411
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 733.8582823425531
+    },
+    {
+      "name": "summary_gm_n",
+      "reference_stats": {
+        "percentile": 87.85,
+        "z_score": 0.3
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 30326.0
+    },
+    {
+      "name": "summary_gm_p05",
+      "reference_stats": {
+        "percentile": 91.287,
+        "z_score": 1.502
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 647.1091242581606
+    },
+    {
+      "name": "summary_gm_p95",
+      "reference_stats": {
+        "percentile": 82.067,
+        "z_score": 1.303
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 826.2317375019193
+    },
+    {
+      "name": "summary_gm_stdv",
+      "reference_stats": {
+        "percentile": 2.79,
+        "z_score": -1.312
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 54.56694569137784
+    },
+    {
+      "name": "summary_wm_k",
+      "reference_stats": {
+        "percentile": 15.494,
+        "z_score": -0.463
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 0.5583283513878192
+    },
+    {
+      "name": "summary_wm_mad",
+      "reference_stats": {
+        "percentile": 45.356,
+        "z_score": -0.234
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 44.894997207673924
+    },
+    {
+      "name": "summary_wm_mean",
+      "reference_stats": {
+        "percentile": 74.962,
+        "z_score": 1.311
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 998.8022241707796
+    },
+    {
+      "name": "summary_wm_median",
+      "reference_stats": {
+        "percentile": 69.14,
+        "z_score": 1.315
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 1000.0000199303031
+    },
+    {
+      "name": "summary_wm_n",
+      "reference_stats": {
+        "percentile": 88.675,
+        "z_score": 0.944
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 225138.0
+    },
+    {
+      "name": "summary_wm_p05",
+      "reference_stats": {
+        "percentile": 87.203,
+        "z_score": 1.319
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 915.5455750524998
+    },
+    {
+      "name": "summary_wm_p95",
+      "reference_stats": {
+        "percentile": 9.402,
+        "z_score": -0.532
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 1075.5005838647485
+    },
+    {
+      "name": "summary_wm_stdv",
+      "reference_stats": {
+        "percentile": 73.094,
+        "z_score": 0.847
+      },
+      "semantic_context": {
+        "category": "distribution_summary",
+        "caveats": [
+          "usually do not send all summary fields to the model unless specifically flagged"
+        ],
+        "direction_of_concern": "context_dependent",
+        "display_name": "Tissue or Background Summary Statistics",
+        "evidence_strength": "low",
+        "qc_interpretation": "describes intensity distributions for tissue or background compartments; useful for derived checks but weak as direct model evidence"
+      },
+      "value": 48.31786046803988
+    },
+    {
+      "name": "tpm_overlap_csf",
+      "reference_stats": {
+        "percentile": 1.484,
+        "z_score": -1.315
+      },
+      "semantic_context": {
+        "category": "registration_segmentation_quality",
+        "caveats": [
+          "can reflect anatomy, registration, or segmentation rather than raw image quality alone"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Template Tissue Probability Map Overlap",
+        "evidence_strength": "low",
+        "qc_interpretation": "lower values may indicate poorer tissue alignment or segmentation consistency with the template"
+      },
+      "value": 0.1670532077550888
+    },
+    {
+      "name": "tpm_overlap_gm",
+      "reference_stats": {
+        "percentile": 3.141,
+        "z_score": -1.193
+      },
+      "semantic_context": {
+        "category": "registration_segmentation_quality",
+        "caveats": [
+          "can reflect anatomy, registration, or segmentation rather than raw image quality alone"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Template Tissue Probability Map Overlap",
+        "evidence_strength": "low",
+        "qc_interpretation": "lower values may indicate poorer tissue alignment or segmentation consistency with the template"
+      },
+      "value": 0.4575272798538208
+    },
+    {
+      "name": "tpm_overlap_wm",
+      "reference_stats": {
+        "percentile": 4.523,
+        "z_score": -1.109
+      },
+      "semantic_context": {
+        "category": "registration_segmentation_quality",
+        "caveats": [
+          "can reflect anatomy, registration, or segmentation rather than raw image quality alone"
+        ],
+        "direction_of_concern": "lower_worse",
+        "display_name": "Template Tissue Probability Map Overlap",
+        "evidence_strength": "low",
+        "qc_interpretation": "lower values may indicate poorer tissue alignment or segmentation consistency with the template"
+      },
+      "value": 0.5112560391426086
+    },
+    {
+      "name": "wm2max",
+      "reference_stats": {
+        "percentile": 69.17,
+        "z_score": 0.499
+      },
+      "semantic_context": {
+        "category": "artifact_detection",
+        "caveats": [
+          "treat as supportive evidence, not a standalone failure criterion"
+        ],
+        "direction_of_concern": "target_range",
+        "display_name": "White Matter to Maximum Intensity Ratio",
+        "evidence_strength": "medium",
+        "expected_range": [
+          0.6,
+          0.8
+        ],
+        "qc_interpretation": "values outside the expected range may indicate abnormal high-intensity tails from vessels, fat, or other hyperintense signal"
+      },
+      "value": 0.4906712955128367
+    }
+  ]
+}

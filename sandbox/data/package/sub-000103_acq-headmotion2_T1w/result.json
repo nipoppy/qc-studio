@@ -1,0 +1,29 @@
+{
+  "decision": "fail",
+  "confidence": "high",
+  "summary": "This headmotion2 acquisition shows a coherent pattern of motion-related degradation: a provenance warning flags a large rotation frame, and primary high-evidence metrics (SNR, FWHM) are consistently impaired, with extreme blurring and reduced tissue contrast supporting a motion-artifact failure.",
+  "flagged_metrics": [
+    "fwhm_avg",
+    "snr_gm",
+    "snr_wm",
+    "snr_total",
+    "efc",
+    "tpm_overlap_csf",
+    "tpm_overlap_gm",
+    "tpm_overlap_wm"
+  ],
+  "reasons": [
+    "large_rot_frame provenance warning is true, indicating at least one frame with a large rotation occurred during acquisition \u2014 directly consistent with motion artifact.",
+    "fwhm_avg=4.58, percentile=95.6 \u2014 severely elevated spatial blurring, at the 96th percentile, consistent with motion-induced image smoothing.",
+    "snr_gm=12.00, percentile=28.7 and snr_wm=16.08, percentile=11.9 \u2014 tissue-specific SNR is reduced, particularly in white matter (bottom 12%), reinforcing motion-related signal degradation.",
+    "snr_total=10.55, percentile=22.5 \u2014 overall SNR is depressed, consistent with the motion-blurring pattern flagged by fwhm_avg and the provenance warning.",
+    "efc=0.598, percentile=76.8 \u2014 moderately elevated entropy-focus criterion, suggesting ghosting or blurring consistent with head motion.",
+    "tpm_overlap across all three tissue classes is extremely low (CSF percentile=1.3, GM percentile=3.1, WM percentile=4.4), indicating poor alignment or segmentation consistency likely driven by motion-distorted anatomy."
+  ],
+  "recommended_followup": [
+    "Visually inspect the scan for ringing, ghosting, or blurring artifacts around cortical boundaries and sulci.",
+    "Review the motion trace or framewise displacement profile to quantify the severity and timing of the large rotation frame.",
+    "Consider excluding this scan from structural analyses given converging primary-metric evidence of motion degradation.",
+    "If motion correction was not applied, assess whether retrospective correction (e.g., prospective or retrospective motion correction pipeline) could salvage the scan."
+  ]
+}

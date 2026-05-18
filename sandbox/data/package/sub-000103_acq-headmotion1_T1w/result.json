@@ -1,0 +1,30 @@
+{
+  "decision": "uncertain",
+  "confidence": "medium",
+  "summary": "This headmotion1 acquisition shows a provenance warning for large rotation frames alongside elevated FWHM and modestly reduced SNR, but primary contrast metrics remain in acceptable range, warranting uncertain status pending visual review.",
+  "flagged_metrics": [
+    "fwhm_avg",
+    "fwhm_y",
+    "efc",
+    "snr_gm",
+    "snr_wm",
+    "snr_total",
+    "tpm_overlap_csf",
+    "tpm_overlap_gm",
+    "tpm_overlap_wm"
+  ],
+  "reasons": [
+    "fwhm_avg=4.677, percentile=95.96 \u2014 spatial blurring is at the high extreme, consistent with motion-induced blur flagged by the large_rot_frame provenance warning.",
+    "fwhm_y=4.874, percentile=90.28 \u2014 directional blurring in the y-axis further supports motion-related spatial smoothing.",
+    "efc=0.587, percentile=75.02 \u2014 modestly elevated entropy focus criterion may reflect motion-related ghosting or blurring, consistent with the large rotation provenance warning.",
+    "snr_gm=13.45 (percentile=33.70), snr_wm=20.70 (percentile=26.91), snr_total=12.52 (percentile=32.07) \u2014 all SNR metrics are in the lower third of the reference population, suggesting mild signal degradation potentially linked to motion.",
+    "tpm_overlap_csf=0.167 (percentile=1.48), tpm_overlap_gm=0.458 (percentile=3.14), tpm_overlap_wm=0.511 (percentile=4.52) \u2014 all tissue probability map overlaps are at extreme low percentiles, which may reflect misregistration or segmentation inconsistency driven by image degradation.",
+    "cjv=0.374, percentile=15.02 and cnr=3.63, percentile=58.93 \u2014 CJV is slightly favorable and CNR is mid-range, providing weak counterevidence against severe motion artifact, but insufficient to override the blurring and SNR pattern."
+  ],
+  "recommended_followup": [
+    "Perform visual inspection of the T1w volume for motion ringing, ghosting, or cortical blurring artifacts.",
+    "Review snrd_gm=120.12 (percentile=99.28) and snrd_wm=163.68 (percentile=99.47) \u2014 extremely high SNRd values may indicate a near-absent or atypical background mask; verify air mask validity given small_air_mask=false.",
+    "Verify tpm_overlap results are not driven by registration failure rather than true image quality degradation.",
+    "Cross-reference with other scans from this participant to assess whether blurring and SNR pattern is consistent with intentional motion in a headmotion paradigm."
+  ]
+}
