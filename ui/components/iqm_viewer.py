@@ -16,14 +16,19 @@ Data sources
   TSV.  A subject may have multiple rows (multiple runs).
 """
 
-import json
 from pathlib import Path
 from typing import Optional, Union
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
-from utils.data_loaders import _load_scanner_metadata
+from utils.data_loaders import (
+    _load_scanner_metadata,
+    load_iqm_config,
+    resolve_iqm_data_path,
+    resolve_reference_data_path,
+    load_reference_iqm_data,
+)
 from constants import MESSAGES, ERROR_MESSAGES
 from utils.iqm_distribution_config import IQM_DISTRIBUTION_GROUPS, REFERENCE_DATA_PATHS
 
@@ -39,64 +44,10 @@ SUBJECT_MARKER_STYLE = dict(size=12, symbol='diamond', color="rgba(255, 127, 14,
 MAX_REFERENCE_ROWS = 50000
 
 
-def _load_iqm_config(qc_config_path: str) -> dict:
-    """Load IQM configuration from the QC config file."""
-    with open(qc_config_path, 'r') as f:
-        qc_config = json.load(f)
-    iqm_config = qc_config.get("iqm_distributions", {})
-    if not iqm_config:
-        st.warning(ERROR_MESSAGES['iqm_config_missing'])
-    return iqm_config
-
-
-def _resolve_iqm_data_path(modality_path: str, qc_config_path: str = None, dataset_dir: str = None) -> Path:
-    """Resolve IQM data path across common runtime contexts."""
-    path = Path(modality_path)
-
-    if path.is_absolute() and path.is_file():
-        return path
-
-    candidates = [
-        Path.cwd() / path,
-    ]
-
-    if dataset_dir:
-        candidates.append(Path(dataset_dir) / path)
-
-    if qc_config_path:
-        candidates.append(Path(qc_config_path).parent / path)
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-
-    # Let caller surface the original path in the error for clearer feedback.
-    return path
-
-
-def _resolve_reference_data_path(ref_path: str) -> Path:
-    """Resolve reference data path across runtime contexts."""
-    path = Path(ref_path)
-
-    if path.is_absolute() and path.is_file():
-        return path
-
-    candidates = [
-        Path.cwd() / path,
-        Path(__file__).resolve().parent / path,
-    ]
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-
-    return path
-    
-
 @st.cache_data(show_spinner="Loading reference data…")
-def _load_reference_data(modality: str, scanner_meta: Optional[Union[dict, str]] = None) -> pd.DataFrame:
-    """Load reference IQM data for the given modality and scanner manufacturer."""
-    ref_path = REFERENCE_DATA_PATHS.get((modality))
+def _load_reference_data(modality: str, scanner_meta: Optional[Union[dict, str]] = None) -> "pd.DataFrame":
+    """Cached thin wrapper: resolves path + manufacturer, then delegates to load_reference_iqm_data."""
+    ref_path = REFERENCE_DATA_PATHS.get(modality)
     if ref_path is None:
         raise ValueError(f"No reference data path defined for modality '{modality}'")
 
@@ -107,29 +58,15 @@ def _load_reference_data(modality: str, scanner_meta: Optional[Union[dict, str]]
     else:
         manufacturer = "Unknown"
 
-    resolved_ref_path = _resolve_reference_data_path(ref_path)
-    data = pd.read_csv(resolved_ref_path, sep='\t')
-
-    if "Manufacturer" in data.columns:
-        # Include "Unknown" reference rows as a fallback context.
-        manufacturer_series = data["Manufacturer"].astype(str).str.strip().str.lower()
-        subject_manufacturer = str(manufacturer).strip().lower()
-        unknown_labels = {"", "unknown", "nan", "none", "na", "n/a"}
-
-        if subject_manufacturer in unknown_labels:
-            data = data[manufacturer_series.isin(unknown_labels)]
-        else:
-            data = data[
-                (manufacturer_series == subject_manufacturer)
-                | (manufacturer_series.isin(unknown_labels))
-            ]
-    return data
-           
+    resolved_ref_path = resolve_reference_data_path(
+        ref_path, base_dir=Path(__file__).resolve().parent
+    )
+    return load_reference_iqm_data(resolved_ref_path, manufacturer)
 
 def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str=None)-> pd.DataFrame:
     """Extract subject-specific data for the given participant ID and columns."""
     if "bids_name" not in data.columns:
-         raise ValueError("Expected 'bids_name' column not found in data.")
+        raise ValueError("Expected 'bids_name' column not found in data.")
 
     participant_mask = data["bids_name"].str.startswith(participant_id)
     mask = participant_mask
@@ -253,7 +190,7 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
       
    #____________Load TSV file ____________
     try:
-        resolved_modality_path = _resolve_iqm_data_path(modality_path, qc_config_path, dataset_dir)
+        resolved_modality_path = resolve_iqm_data_path(modality_path, qc_config_path, dataset_dir)
         iqm_data = pd.read_csv(resolved_modality_path, sep='\t')
     except Exception as e:
         st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=modality, error=e))
@@ -339,7 +276,12 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         participant_id: ID of the participant whose data to display
     """
 
-    iqm_config = _load_iqm_config(qc_config_path)
+
+    iqm_config = load_iqm_config(qc_config_path)
+    if not iqm_config:
+        st.warning(ERROR_MESSAGES['iqm_config_missing'])
+        st.error(ERROR_MESSAGES['iqm_config_load_error'])
+        return
 
     scanner_metadata = _load_scanner_metadata(
         qc_config.get("base_mri_image_path"),
@@ -347,10 +289,6 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         session_id=session_id,
     )
 
-    if iqm_config is None:
-        st.error(ERROR_MESSAGES['iqm_config_load_error'])
-        return
-    
     _render_iqm_distributions(
         iqm_config,
         scanner_metadata,

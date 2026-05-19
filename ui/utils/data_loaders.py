@@ -5,6 +5,7 @@ from files and directories.
 """
 
 import json
+import pandas as pd
 import re
 from pathlib import Path
 from typing import Optional, Dict, List, Union
@@ -351,3 +352,95 @@ def _load_scanner_metadata(image_path:Union[Path, str], participant_id: str = No
 		"Manufacturer": metadata.get("Manufacturer", "Unknown"),
 		"MagneticFieldStrength": metadata.get("MagneticFieldStrength", "Unknown")
 	}
+
+
+def load_iqm_config(qc_config_path: str) -> dict:
+	"""Load the ``iqm_distributions`` block from a QC config JSON file.
+
+	Returns an empty dict if the key is absent; does not emit UI warnings.
+	"""
+	with open(qc_config_path, 'r') as f:
+		qc_config = json.load(f)
+	return qc_config.get("iqm_distributions", {})
+
+
+def resolve_iqm_data_path(
+	modality_path: str,
+	qc_config_path: str = None,
+	dataset_dir: str = None,
+) -> Path:
+	"""Resolve an IQM dataset TSV path across common runtime contexts."""
+	path = Path(modality_path)
+
+	if path.is_absolute() and path.is_file():
+		return path
+
+	candidates = [Path.cwd() / path]
+
+	if dataset_dir:
+		candidates.append(Path(dataset_dir) / path)
+
+	if qc_config_path:
+		candidates.append(Path(qc_config_path).parent / path)
+
+	for candidate in candidates:
+		if candidate.is_file():
+			return candidate
+
+	# Return original path so callers can surface it in error messages.
+	return path
+
+
+def resolve_reference_data_path(ref_path: str, base_dir: Optional[Path] = None) -> Path:
+	"""Resolve a reference population TSV path across runtime contexts.
+
+	Args:
+		ref_path: Relative or absolute path to the reference TSV.
+		base_dir: Optional caller-supplied directory (e.g. the importing
+		          module's own directory) added as an additional candidate.
+	"""
+	path = Path(ref_path)
+
+	if path.is_absolute() and path.is_file():
+		return path
+
+	candidates = [Path.cwd() / path]
+
+	if base_dir:
+		candidates.append(Path(base_dir) / path)
+
+	for candidate in candidates:
+		if candidate.is_file():
+			return candidate
+
+	return path
+
+
+def load_reference_iqm_data(ref_path: Union[Path, str], manufacturer: str = "Unknown") -> pd.DataFrame:
+	"""Load and manufacturer-filter a reference IQM TSV.
+
+	Args:
+		ref_path: Resolved path to the reference TSV file.
+		manufacturer: Scanner manufacturer used to filter rows.
+		              Rows with unknown/missing manufacturer are always
+		              included as fallback context.
+
+	Returns:
+		Filtered :class:`pandas.DataFrame`.
+	"""
+	data = pd.read_csv(ref_path, sep='\t')
+
+	if "Manufacturer" not in data.columns:
+		return data
+
+	manufacturer_series = data["Manufacturer"].astype(str).str.strip().str.lower()
+	subject_manufacturer = str(manufacturer).strip().lower()
+	unknown_labels = {"", "unknown", "nan", "none", "na", "n/a"}
+
+	if subject_manufacturer in unknown_labels:
+		return data[manufacturer_series.isin(unknown_labels)]
+
+	return data[
+		(manufacturer_series == subject_manufacturer)
+		| (manufacturer_series.isin(unknown_labels))
+	]
