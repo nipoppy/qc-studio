@@ -303,3 +303,44 @@ class TestSessionManagerIntegration:
         assert SessionManager.is_landing_page_complete() is True
         assert SessionManager.get_panel_count() == 2
         assert SessionManager.get_qc_record_count() == 2
+
+
+class TestTaskAwareRecordLookup:
+    """Tests for task-aware participant/session record lookup."""
+
+    def test_lookup_filters_by_qc_task(self, mock_session_state):
+        """Lookup should return the matching task record when tasks share the same session."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        rec_task_a = {
+            'participant_id': 'sub-ED01',
+            'session_id': 'ses-01',
+            'qc_task': 'anat_wf_qc',
+            'final_qc': 'PASS',
+        }
+        rec_task_b = {
+            'participant_id': 'sub-ED01',
+            'session_id': 'ses-01',
+            'qc_task': 'func_wf_qc',
+            'final_qc': 'FAIL',
+        }
+        SessionManager.set_qc_records([rec_task_a, rec_task_b])
+
+        record = SessionManager.get_qc_record_for_participant('sub-ED01', 'ses-01', 'anat_wf_qc')
+        assert record is not None
+        assert record.get('qc_task') == 'anat_wf_qc'
+        assert record.get('final_qc') == 'PASS'
+
+    def test_lookup_without_qc_task_keeps_backwards_compat(self, mock_session_state):
+        """Lookup without task should still return the latest matching record."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        older_record = {'participant_id': 'sub-ED02', 'session_id': 'ses-01', 'qc_task': 'anat_wf_qc'}
+        newer_record = {'participant_id': 'sub-ED02', 'session_id': 'ses-01', 'qc_task': 'func_wf_qc'}
+        SessionManager.set_qc_records([older_record, newer_record])
+
+        record = SessionManager.get_qc_record_for_participant('sub-ED02', 'ses-01')
+        assert record is not None
+        assert record.get('qc_task') == 'func_wf_qc'

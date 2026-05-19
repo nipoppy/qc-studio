@@ -17,6 +17,9 @@ class SessionManager:
             SESSION_KEYS['rater_experience']: None,
             SESSION_KEYS['rater_fatigue']: None,
             SESSION_KEYS['notes']: '',
+            SESSION_KEYS['notes_version']: 0,
+            SESSION_KEYS['rating_version']: 0,
+            SESSION_KEYS['participant_order']: [],
             SESSION_KEYS['landing_page_complete']: False,
             SESSION_KEYS['selected_panels']: DEFAULT_PANELS.copy(),
             SESSION_KEYS['montage_max_rows']: DEFAULT_MONTAGE_MAX_ROWS,
@@ -156,16 +159,19 @@ class SessionManager:
     def set_current_page(page: int):
         """Set current page number."""
         st.session_state[SESSION_KEYS['current_page']] = page
+        SessionManager.reset_for_new_participant()
     
     @staticmethod
     def next_page():
         """Move to next page."""
         st.session_state[SESSION_KEYS['current_page']] += 1
+        SessionManager.reset_for_new_participant()
     
     @staticmethod
     def previous_page():
         """Move to previous page."""
         st.session_state[SESSION_KEYS['current_page']] -= 1
+        SessionManager.reset_for_new_participant()
     
     @staticmethod
     def get_batch_size() -> int:
@@ -188,9 +194,57 @@ class SessionManager:
         }
     
     @staticmethod
+    def get_notes_version() -> int:
+        """Get the current notes widget version counter."""
+        return st.session_state.get(SESSION_KEYS['notes_version'], 0)
+
+    @staticmethod
+    def get_rating_version() -> int:
+        """Get the current qc_rating widget version counter."""
+        return st.session_state.get(SESSION_KEYS['rating_version'], 0)
+
+    @staticmethod
+    def get_participant_ids() -> list:
+        """Get the stored (optionally sorted) participant ID list."""
+        return st.session_state.get(SESSION_KEYS['participant_order'], [])
+
+    @staticmethod
+    def set_participant_ids(ids: list):
+        """Store the participant ID list (used to persist sort order after CSV upload)."""
+        st.session_state[SESSION_KEYS['participant_order']] = ids
+
+    @staticmethod
+    def get_qc_record_for_participant(participant_id: str, session_id: str, qc_task: str = None):
+        """Return the most recent QCRecord for a given participant/session/task, or None.
+        
+        Normalises sub-/ses- prefixes and leading zeros so that records saved
+        during a session (e.g. sub-QPNNC000421 / ses-01) match records loaded
+        from a CSV (e.g. QPNNC000421 / 1).
+        """
+        def _bare(val: str, prefix: str) -> str:
+            val = str(val)
+            if val.startswith(prefix):
+                val = val[len(prefix):]
+            return val.lstrip("0") or "0"
+
+        bare_pid = _bare(participant_id, "sub-")
+        bare_sid = _bare(session_id, "ses-")
+        for record in reversed(SessionManager.get_qc_records()):
+            rec_pid = record.participant_id if hasattr(record, 'participant_id') else record.get('participant_id', '')
+            rec_sid = record.session_id if hasattr(record, 'session_id') else record.get('session_id', '')
+            rec_task = record.qc_task if hasattr(record, 'qc_task') else record.get('qc_task', '')
+            if qc_task is not None and str(rec_task) != str(qc_task):
+                continue
+            if _bare(str(rec_pid), "sub-") == bare_pid and _bare(str(rec_sid), "ses-") == bare_sid:
+                return record
+        return None
+
+    @staticmethod
     def reset_for_new_participant():
         """Reset session state for next participant."""
         st.session_state[SESSION_KEYS['notes']] = ''
+        st.session_state[SESSION_KEYS['notes_version']] = SessionManager.get_notes_version() + 1
+        st.session_state[SESSION_KEYS['rating_version']] = SessionManager.get_rating_version() + 1
     
     # Montage Grid Settings Methods
     @staticmethod

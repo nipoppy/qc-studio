@@ -44,6 +44,9 @@ PANEL_CONFIG = {
 QC_RATINGS = ["PASS", "FAIL", "UNCERTAIN"]
 DEFAULT_QC_RATING = "PASS"
 
+# Columns used to identify duplicate QC rows when merging/saving results
+QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]
+
 # Viewer settings
 NIIVUE_HEIGHT = 600
 SVG_HEIGHT = 600
@@ -77,6 +80,9 @@ SESSION_KEYS = {
     'rater_experience': 'rater_experience',
     'rater_fatigue': 'rater_fatigue',
     'notes': 'notes',
+    'notes_version': 'notes_version',
+    'rating_version': 'rating_version',
+    'participant_order': 'participant_order',
     'landing_page_complete': 'landing_page_complete',
     'selected_panels': 'selected_panels',
     'montage_max_rows': 'montage_max_rows',

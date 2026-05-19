@@ -37,14 +37,14 @@ def show_congratulations_page(qc_task: str, out_dir: str, total_participants: in
 	# Action buttons
 	col1, col2, col3 = st.columns([1, 1, 1])
 	with col1:
-		if st.button(MESSAGES['export_results_button'], use_container_width=True):
+		if st.button(MESSAGES['export_results_button'], width='stretch'):
 			_export_qc_results(rater_id, out_dir, record_list, drop_duplicates)
 	with col2:
-		if st.button(MESSAGES['previous_button'], use_container_width=True):
+		if st.button(MESSAGES['previous_button'], width='stretch'):
 			SessionManager.previous_page()
 			st.rerun()
 	with col3:
-		if st.button(MESSAGES['start_over_button'], use_container_width=True):
+		if st.button(MESSAGES['start_over_button'], width='stretch'):
 			SessionManager.set_landing_page_complete(False)
 			st.rerun()
 

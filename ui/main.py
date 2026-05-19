@@ -77,7 +77,9 @@ def main():
 
     participants_df = pd.read_csv(participant_list, delimiter="\t")
 
-    participant_ids = participants_df['participant_id'].tolist()
+    # Use session-stored order (set after CSV upload) if available, else use file order
+    stored_ids = SessionManager.get_participant_ids()
+    participant_ids = stored_ids if stored_ids else participants_df['participant_id'].tolist()
     total_participants = len(participant_ids)
 
     # Initialize session state

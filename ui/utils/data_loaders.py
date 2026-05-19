@@ -99,7 +99,13 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
 		full_path = Path(dataset_dir).joinpath(str(svg_path)) if dataset_dir else Path(svg_path)
 		
 		if not full_path.is_file():
-			continue
+			# Some pipelines omit session entity in generated figure names.
+			no_ses_name = re.sub(r'_ses-[^_]+', '', full_path.name)
+			fallback_path = full_path.parent / no_ses_name
+			if fallback_path.is_file():
+				full_path = fallback_path
+			else:
+				continue
 		
 		file_ext = full_path.suffix.lower()
 		
@@ -194,7 +200,6 @@ def _load_image_from_file(file_path, dpi=96):
 	"""
 	from io import BytesIO
 	from PIL import Image
-	import cairosvg
 	
 	file_path = Path(file_path)
 	file_ext = file_path.suffix.lower()
@@ -204,6 +209,7 @@ def _load_image_from_file(file_path, dpi=96):
 	
 	if file_ext == '.svg':
 		try:			
+			import cairosvg
 			# Convert SVG to PNG in memory
 			png_data = cairosvg.svg2png(bytestring=file_path.read_bytes(), dpi=dpi)
 			img = Image.open(BytesIO(png_data))
