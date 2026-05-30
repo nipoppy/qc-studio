@@ -205,7 +205,7 @@ All fixtures are defined in `conftest.py` and available to all tests:
 - **`sample_participant_list`** - Sample participants TSV file with 3 participants
 - **`sample_qc_config`** - Sample QC configuration JSON with multiple tasks
 - **`sample_qc_results_csv`** - Sample QC results with 2 records
-- **`sample_svg_content`** - Sample SVG montage content
+- **`sample_svg_content`** - Sample 2D image montage content
 
 ### Data Fixtures
 - **`sample_session_state`** - Mock Streamlit session state with all required keys
