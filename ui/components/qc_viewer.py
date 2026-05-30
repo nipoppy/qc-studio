@@ -125,9 +125,10 @@ def display_qc_viewers(
 				qc_config_path=qc_config_path,
 				participant_id=participant_id,
 				session_id=session_id,
+				qc_task=qc_task,
 			)
 			st.divider()
-			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir)
+			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir, qc_task=qc_task)
 		# Niivue + SVG (no IQM)
 		elif show_niivue and show_svg:
 			_display_niivue_with_secondary_panel(
@@ -137,6 +138,7 @@ def display_qc_viewers(
 				qc_config_path=qc_config_path,
 				participant_id=participant_id,
 				session_id=session_id,
+				qc_task=qc_task,
 			)
 		# Niivue + IQM (no SVG)
 		elif show_niivue and show_iqm:
@@ -147,6 +149,7 @@ def display_qc_viewers(
 				qc_config_path=qc_config_path,
 				participant_id=participant_id,
 				session_id=session_id,
+				qc_task=qc_task,
 			)
 		# Full-width Niivue only
 		elif show_niivue:
@@ -156,7 +159,7 @@ def display_qc_viewers(
 			_display_svg_panel(dataset_dir, qc_config)
 		# Full-width IQM only
 		elif show_iqm:
-			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir)
+			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir, qc_task=qc_task)
 	
 	# Autoplay rerun loop: panels have now rendered; keep refreshing so the
 	# countdown display stays live and the timer expiry check fires on time
@@ -168,7 +171,7 @@ def display_qc_viewers(
 
 
 def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_config, qc_config_path: str = None,
-                                           participant_id: str = None, session_id: str = None) -> None:
+                                           participant_id: str = None, session_id: str = None, qc_task: str = None) -> None:
 	"""Display 3-column layout: Niivue with hidden controls | Secondary panel.
 	
 	Niivue controls are hidden in an expander attached to the Niivue viewer column.
@@ -180,6 +183,7 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 		qc_config: QC configuration object
 		participant_id: Current participant ID
 		session_id: Current session ID
+		qc_task: The QC task for which to display IQM distributions
 	"""
 	viewer_col, panel_col = st.columns([0.3, 0.7], gap="small")
 	
@@ -201,8 +205,7 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 		if selected_panels.get('svg', False):
 			_display_svg_panel(dataset_dir, qc_config)
 		else:
-			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir)
-
+			display_iqm_distribution_panel(qc_config, qc_config_path, participant_id, session_id, dataset_dir, qc_task=qc_task)
 
 def _display_niivue_full_width(dataset_dir, qc_config,
                                participant_id: str = None, session_id: str = None) -> None:

@@ -32,6 +32,10 @@ from utils.data_loaders import (
 from constants import MESSAGES, ERROR_MESSAGES
 from utils.iqm_distribution_config import IQM_DISTRIBUTION_GROUPS, REFERENCE_DATA_PATHS
 
+MODALITY_KEYWORDS = {
+    "bold": ("bold", "func", "sbref"),
+    "t1w": ("anat", "t1w"),
+}
 
 DATASET_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(31, 119, 180, 0.55)"),
                 line=dict(color="rgba(31, 119, 180, 0.8)", width=1),
@@ -42,6 +46,14 @@ REFERENCE_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(214, 39,
 SUBJECT_MARKER_STYLE = dict(size=12, symbol='diamond', color="rgba(255, 127, 14, 0.9)",
                         line=dict(color="rgba(255, 127, 14, 1.0)", width=2))
 MAX_REFERENCE_ROWS = 50000
+
+
+def _load_iqm_config(qc_config_path: str) -> dict:
+    """Load IQM configuration from the QC config file."""
+    iqm_config = load_iqm_config(qc_config_path)
+    if not iqm_config:
+        st.warning(ERROR_MESSAGES['iqm_config_missing'])
+    return iqm_config
 
 
 @st.cache_data(show_spinner="Loading reference data…")
@@ -168,7 +180,8 @@ def _add_subject_overlay(
  
 
 def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, session_id,
-                              qc_config_path: str = None, dataset_dir: str = None):
+                              qc_config_path: str = None, dataset_dir: str = None,
+                              qc_task: str = None, qc_config: dict = None):
     #___________Modality selection___________
     available_modalities = [
         m for m in IQM_DISTRIBUTION_GROUPS if m in iqm_config
@@ -181,7 +194,15 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         return
     
     st.subheader(MESSAGES['iqm_distribution_header'])
-    modality = st.selectbox(MESSAGES['modality_select_label'], options=available_modalities, key="iqm_modality_select")
+    modality = _infer_iqm_modality(qc_task, qc_config, iqm_config)
+    if modality is None:
+        st.warning(
+            f"Could not infer IQM modality from QC task '{qc_task}'. "
+            "Please make the task name or configured paths indicate anat/t1w or bold/func."
+        )
+        return
+
+    st.caption(f"IQM modality: {modality}")
     modality_path = iqm_config.get(modality)
 
     if modality_path is None:
@@ -267,19 +288,19 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
 
 
 def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str, session_id: str,
-                       dataset_dir: str = None) -> None:
+                       dataset_dir: str = None, qc_task: str = None) -> None:
     """Display the IQM distribution panel.
     
     Args:
         qc_config: QC configuration object
         qc_config_path: Path to the QC configuration file
         participant_id: ID of the participant whose data to display
+        qc_task: The QC task for which to display IQM distributions
     """
 
 
-    iqm_config = load_iqm_config(qc_config_path)
+    iqm_config = _load_iqm_config(qc_config_path)
     if not iqm_config:
-        st.warning(ERROR_MESSAGES['iqm_config_missing'])
         st.error(ERROR_MESSAGES['iqm_config_load_error'])
         return
 
@@ -296,4 +317,33 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         session_id,
         qc_config_path=qc_config_path,
         dataset_dir=dataset_dir,
+        qc_task=qc_task,
+        qc_config=qc_config,
     )
+
+
+def _infer_iqm_modality(qc_task: str, qc_config: dict, iqm_config: dict) -> Optional[str]:
+    """Infer IQM modality from the selected QC task/config."""
+    task_name = str(qc_task or "").lower()
+
+    # First try to infer modality from the QC task name itself, as this is most likely to reflect the rater's intent.
+    for modality, keywords in MODALITY_KEYWORDS.items():
+        if modality in iqm_config and any(keyword in task_name for keyword in keywords):
+            return modality
+    
+    # If that fails, look for modality keywords in the paths of the selected QC task config, as a secondary signal.
+    path_values = []
+    for value in (qc_config or {}).values():
+        if isinstance(value, list):
+            path_values.extend(str(item) for item in value if item)
+        elif value:
+            path_values.append(str(value))
+    path_text = " ".join(path_values).lower()
+    for modality, keywords in MODALITY_KEYWORDS.items():
+        if modality in iqm_config and any(keyword in path_text for keyword in keywords):
+            return modality
+    # If that also fails, but there's only one modality available in the config, return that one as a last resort since it's the only option.
+    available_modalities = [m for m in IQM_DISTRIBUTION_GROUPS if m in iqm_config]
+    if len(available_modalities) == 1:
+        return available_modalities[0]
+    return None

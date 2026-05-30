@@ -17,6 +17,7 @@ class _StreamlitStub:
     def __init__(self):
         self.warning = MagicMock()
         self.error = MagicMock()
+        self.info = MagicMock()
         self.subheader = MagicMock()
         self.selectbox = MagicMock()
         self.radio = MagicMock()
@@ -177,6 +178,60 @@ def test_add_subject_overlay_draws_all_points_and_keeps_first_legend(iqm_viewer_
     assert "Source: sub-01 (dataset)" in fig.data[0].hovertemplate
 
 
+def test_infer_iqm_modality_from_anat_task(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    modality = module._infer_iqm_modality(
+        "anat_wf_qc",
+        {},
+        {"t1w": "group_T1w.tsv", "bold": "group_bold.tsv"},
+    )
+
+    assert modality == "t1w"
+
+
+def test_infer_iqm_modality_from_func_task(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    modality = module._infer_iqm_modality(
+        "func_wf_qc",
+        {},
+        {"t1w": "group_T1w.tsv", "bold": "group_bold.tsv"},
+    )
+
+    assert modality == "bold"
+
+
+def test_infer_iqm_modality_from_config_path_list(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    modality = module._infer_iqm_modality(
+        "preproc_qc",
+        {
+            "base_mri_image_path": "derivatives/fmriprep/sub-01/anat/sub-01_T1w.nii.gz",
+            "svg_montage_path": [
+                "figures/sub-01_desc-reconall_T1w.svg",
+                "figures/sub-01_space-MNI152NLin2009cAsym_T1w.svg",
+            ],
+        },
+        {"t1w": "group_T1w.tsv", "bold": "group_bold.tsv"},
+    )
+
+    assert modality == "t1w"
+
+
+def test_infer_iqm_modality_returns_none_when_ambiguous(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    modality = module._infer_iqm_modality(
+        "preproc_qc",
+        {},
+        {"t1w": "group_T1w.tsv", "bold": "group_bold.tsv"},
+    )
+
+    assert modality is None
+
+
 def test_render_iqm_distributions_dataset_only(iqm_viewer_module, temp_dir, monkeypatch):
     module, streamlit_stub = iqm_viewer_module
 
@@ -188,15 +243,22 @@ def test_render_iqm_distributions_dataset_only(iqm_viewer_module, temp_dir, monk
         }
     ).to_csv(dataset_path, sep="\t", index=False)
 
-    monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "T1w", {"EFC": ["efc"]})
-    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "T1w", str(dataset_path))
+    monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
+    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "t1w", str(dataset_path))
 
-    streamlit_stub.selectbox.side_effect = ["T1w", "EFC"]
+    streamlit_stub.selectbox.return_value = "EFC"
     streamlit_stub.radio.return_value = "Dataset"
 
-    module._render_iqm_distributions({"T1w": str(dataset_path)}, {"Manufacturer": "Siemens"}, "sub-01", None)
+    module._render_iqm_distributions(
+        {"t1w": str(dataset_path)},
+        {"Manufacturer": "Siemens"},
+        "sub-01",
+        None,
+        qc_task="anat_wf_qc",
+    )
 
     streamlit_stub.plotly_chart.assert_called_once()
+    streamlit_stub.selectbox.assert_called_once()
     fig = streamlit_stub.plotly_chart.call_args.args[0]
     assert len(fig.data) == 2
 
@@ -221,13 +283,19 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
         }
     ).to_csv(reference_path, sep="\t", index=False)
 
-    monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "T1w", {"EFC": ["efc"]})
-    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "T1w", str(reference_path))
+    monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
+    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "t1w", str(reference_path))
 
-    streamlit_stub.selectbox.side_effect = ["T1w", "EFC"]
+    streamlit_stub.selectbox.return_value = "EFC"
     streamlit_stub.radio.return_value = "Dataset + reference"
 
-    module._render_iqm_distributions({"T1w": str(dataset_path)}, {"Manufacturer": "Siemens"}, "sub-01", None)
+    module._render_iqm_distributions(
+        {"t1w": str(dataset_path)},
+        {"Manufacturer": "Siemens"},
+        "sub-01",
+        None,
+        qc_task="anat_wf_qc",
+    )
 
     streamlit_stub.plotly_chart.assert_called_once()
     fig = streamlit_stub.plotly_chart.call_args.args[0]
@@ -262,4 +330,6 @@ def test_display_iqm_panel_calls_loader_and_renderer(iqm_viewer_module, monkeypa
         "ses-01",
         qc_config_path="qc_config.json",
         dataset_dir=None,
+        qc_task=None,
+        qc_config=qc_config,
     )
