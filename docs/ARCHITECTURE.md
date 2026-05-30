@@ -221,22 +221,21 @@ Components are reusable UI building blocks that can appear within pages.
 
 ---
 
-#### `qc_viewer.py` (79 lines)
-**Responsibility**: Orchestrate viewer display (Niivue, SVG, IQM)
+#### `components/qc_viewer.py` (79 lines)
+**Responsibility**: Display SVG montage and IQM components
 
 **Public Functions**:
-- `display_qc_viewers(qc_config)` - Main viewer orchestration
-  - Determines which viewers to show based on panel selection
-  - Initializes each viewer component
+- `display_qc_components(svg_paths: list[str] | None = None, iqm_data=None)` - Main component orchestration
+  - Shows empty QC panel if no data is available
+  - Displays SVG montage and/or IQM table when data is provided
 
 **Private Functions**:
-- `_display_niivue_section()` - Niivue with controls
-- `_display_svg_and_iqm()` - SVG and metrics panels
+- `_display_svg_montage()` - SVG visualization with status colors
+- `_display_iqm_dataframe()` - IQM table rendering
 
 **Dependencies**: 
-- NiivueViewerManager (viewer configuration and rendering)
-- load_svg_data() from utils
-- SessionManager (panel selection state)
+- `empty_qc_panel()` from `ui.utils.display_utils`
+- Streamlit (`st`) UI primitives
 
 ---
 
