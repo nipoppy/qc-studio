@@ -1,0 +1,31 @@
+[flake8]
+max-line-length = 150
+max-complexity = 10
+
+extend-ignore =
+    E203,
+    W503,
+    E712,
+    E741,
+    F405,
+    F403,
+    C901
+
+exclude =
+    .git,
+    __pycache__,
+    */.pytest_cache,
+    build,
+    dist,
+    .venv,
+    venv,
+    env,
+    .env,
+    .eggs,
+    output,
+    docs,
+    assets,
+    sample_data,
+    sandbox,
+    tums_mci,
+    ui/node_modules
