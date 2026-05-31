@@ -9,7 +9,7 @@ jobs:
   basic-checks:
     runs-on: ubuntu-latest
     steps:
-      - name: Chcekout code
+      - name: Checkout code
         uses: actions/checkout@v4
       
       - name: Set up Python
