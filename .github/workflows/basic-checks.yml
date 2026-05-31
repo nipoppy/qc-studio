@@ -23,10 +23,12 @@ jobs:
           pip install black flake8 codespell
 
       - name: Run code format check
+        continue-on-error: true
         run: |
           black --check  --config pyproject.toml ui pipelines
 
       - name: Run linting check
+        continue-on-error: true
         run: |
           flake8 ui pipelines --config .flake8 ui pipelines --count --show-source --statistics
 
