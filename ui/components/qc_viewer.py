@@ -8,7 +8,7 @@ from utils.data_loaders import load_svg_data
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
-
+import streamlit_hotkeys as hotkeys
 
 def _clean_filename(filename: str) -> str:
 	"""Return a compact tab label from an internal image key."""
@@ -55,6 +55,21 @@ def display_qc_viewers(
 	"""
 	st.title("🧠 QC-Studio")
 	
+	hotkeys.activate([
+		hotkeys.hk("next", "ArrowRight"), 
+		hotkeys.hk("prev", "ArrowLeft"),
+		])
+
+	if hotkeys.pressed("next"):
+		time.sleep(0.05)  # debounce
+		SessionManager.next_page()
+		st.rerun()
+
+	if hotkeys.pressed("prev"):
+		time.sleep(0.05)
+		SessionManager.previous_page()
+		st.rerun()
+
 	# Autoplay: if the countdown timer has expired, advance page BEFORE rendering
 	# This ensures the NEW participant's qc_config is loaded on the next rerun
 	if SessionManager.is_autoplay_enabled():
