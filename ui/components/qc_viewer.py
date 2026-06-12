@@ -8,7 +8,6 @@ from utils.data_loaders import load_svg_data
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
-import streamlit_hotkeys as hotkeys
 
 def _clean_filename(filename: str) -> str:
 	"""Return a compact tab label from an internal image key."""
@@ -54,43 +53,6 @@ def display_qc_viewers(
 		total_participants: Total number of participants
 	"""
 	st.title("🧠 QC-Studio")
-	
-	hotkeys.activate([
-		hotkeys.hk("next", "ArrowRight"), 
-		hotkeys.hk("prev", "ArrowLeft"),
-		hotkeys.hk("confirm", "ArrowRight", shift=True)
-		])
-
-	if hotkeys.pressed("next"):
-		time.sleep(0.05)  # debounce
-		SessionManager.next_page()
-		st.rerun()
-
-	if hotkeys.pressed("prev"):
-		time.sleep(0.05)
-		SessionManager.previous_page()
-		st.rerun()
-
-
-	# Confirm + next (matches your button logic)
-	if hotkeys.pressed("confirm"):
-		rating = st.session_state.get(
-			f'qc_rating_{SessionManager.get_rating_version()}',
-			QC_RATINGS[0]
-		)
-		notes = SessionManager.get_notes()
-
-		_record_qc_for_current_participant(
-			participant_id, session_id, qc_pipeline, qc_task,
-			rating, notes
-		)
-
-		if SessionManager.is_autoplay_enabled():
-			SessionManager.set_autoplay_start_time(time.time())
-		else:
-			SessionManager.next_page()
-
-		st.rerun()
 
 	# Autoplay: if the countdown timer has expired, advance page BEFORE rendering
 	# This ensures the NEW participant's qc_config is loaded on the next rerun
