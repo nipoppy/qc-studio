@@ -58,6 +58,7 @@ def display_qc_viewers(
 	hotkeys.activate([
 		hotkeys.hk("next", "ArrowRight"), 
 		hotkeys.hk("prev", "ArrowLeft"),
+		hotkeys.hk("confirm", "ArrowRight", shift=True)
 		])
 
 	if hotkeys.pressed("next"):
@@ -68,6 +69,27 @@ def display_qc_viewers(
 	if hotkeys.pressed("prev"):
 		time.sleep(0.05)
 		SessionManager.previous_page()
+		st.rerun()
+
+
+	# Confirm + next (matches your button logic)
+	if hotkeys.pressed("confirm"):
+		rating = st.session_state.get(
+			f'qc_rating_{SessionManager.get_rating_version()}',
+			QC_RATINGS[0]
+		)
+		notes = SessionManager.get_notes()
+
+		_record_qc_for_current_participant(
+			participant_id, session_id, qc_pipeline, qc_task,
+			rating, notes
+		)
+
+		if SessionManager.is_autoplay_enabled():
+			SessionManager.set_autoplay_start_time(time.time())
+		else:
+			SessionManager.next_page()
+
 		st.rerun()
 
 	# Autoplay: if the countdown timer has expired, advance page BEFORE rendering
