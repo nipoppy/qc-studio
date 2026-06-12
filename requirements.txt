@@ -11,3 +11,4 @@ pandas>=1.4
 numpy>=1.23
 typing-extensions>=3.7
 cairosvg>=2.9.0
+steamlit-hotkeys
