@@ -10,6 +10,20 @@ from pathlib import Path
 from typing import Optional, Dict, List
 
 
+def _sanitize_svg(svg_content: str) -> str:
+    """Remove JavaScript and event handlers from SVG content to prevent XSS.
+    
+    Strips <script> tags and all on* event handler attributes (e.g., onload, onerror).
+    """
+    # Remove <script> tags and their content
+    svg_content = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', svg_content, flags=re.IGNORECASE)
+    # Remove on* event handlers (e.g., onload, onerror) with quoted values
+    svg_content = re.sub(r'\s+on\w+\s*=\s*["\'][^"\']*["\']', '', svg_content, flags=re.IGNORECASE)
+    # Remove on* event handlers with unquoted values
+    svg_content = re.sub(r'\s+on\w+\s*=\s*[^\s>]+', '', svg_content, flags=re.IGNORECASE)
+    return svg_content
+
+
 def load_mri_data(dataset_dir, path_dict: dict) -> dict:
 	"""Load base and overlay MRI image files as bytes.
 	
@@ -129,6 +143,8 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
 			# Return SVG as string content
 			try:
 				svg_content = full_path.read_text(encoding='utf-8')
+				# SECURITY: Sanitize SVG to remove scripts and event handlers to prevent XSS
+				svg_content = _sanitize_svg(svg_content)
 				filename = f"{unique_id}_svg"
 				image_data_dict[filename] = {
 					"type": "svg",
