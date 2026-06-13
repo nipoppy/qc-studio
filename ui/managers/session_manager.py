@@ -26,7 +26,8 @@ class SessionManager:
             SESSION_KEYS['montage_max_cols']: DEFAULT_MONTAGE_MAX_COLS,
             'autoplay_enabled': False,
             'autoplay_start_time': 0.0,
-            'autoplay_duration': 5
+            'autoplay_duration': 5,
+            'session_start_time':0.0,
         }
         
         for key, value in defaults.items():
@@ -297,3 +298,12 @@ class SessionManager:
     def set_autoplay_duration(seconds: int):
         """Set the autoplay countdown duration in seconds (2–10)."""
         st.session_state['autoplay_duration'] = max(2, min(10, seconds))
+
+    @staticmethod
+    def get_session_start_time() -> float:
+        """Get the timestamp when the session page was shown."""
+        return st.session_state.get('session_start_time', 0.0)
+    
+    #staticmethod
+    def set_session_start_time(t: float):
+        st.session_state['session_start_time'] = t
