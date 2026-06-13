@@ -47,6 +47,7 @@ class QCRecord(BaseModel):
     rater_fatigue: Annotated[Optional[str], Field(description="Rater fatigue level")] = None
     final_qc: Optional[str] = None
     notes: Annotated[Optional[str], Field(description="Additional comment")] = None
+    duration: Annotated[Optional[int], Field(description="Duration of the session resulting in the final annotation")] = None
 
 
 class QCTask(BaseModel):
@@ -95,3 +96,4 @@ class QCStatusRow(BaseModel):
     score: Optional[QCDecision] = None
     notes: Optional[str] = None
     timestamp: Optional[date] = None
+    duration: Optional[int] = None
