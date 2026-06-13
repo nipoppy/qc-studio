@@ -8,7 +8,7 @@ from utils.data_loaders import load_svg_data
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
-
+from .rating_tools import radio_buttons_with_shortcuts
 
 def _clean_filename(filename: str) -> str:
 	"""Return a compact tab label from an internal image key."""
@@ -38,12 +38,12 @@ def display_qc_viewers(
 	total_participants: int = None
 ) -> None:
 	"""Display QC viewers (Niivue, SVG, IQM panels) based on user selection.
-	
+
 	Layout: Fixed QC rating form on left | Viewer panels on right
-	
+
 	The QC rating column is always visible on the left regardless of panel selection.
 	Viewer panels adjust on the right based on selected panels.
-	
+
 	Args:
 		dataset_dir: Root dataset directory
 		qc_config: QC configuration object
@@ -54,7 +54,7 @@ def display_qc_viewers(
 		total_participants: Total number of participants
 	"""
 	st.title("🧠 QC-Studio")
-	
+
 	# Autoplay: if the countdown timer has expired, advance page BEFORE rendering
 	# This ensures the NEW participant's qc_config is loaded on the next rerun
 	if SessionManager.is_autoplay_enabled():
@@ -76,7 +76,7 @@ def display_qc_viewers(
 					SessionManager.set_autoplay_enabled(False)
 					SessionManager.set_autoplay_start_time(0.0)
 				st.rerun()  # Rerun now loads new participant's qc_config
-	
+
 	# Get selected panels and normalize naming for backward compatibility
 	selected_panels = SessionManager.get_selected_panels()
 	selected_panels = {
@@ -84,14 +84,14 @@ def display_qc_viewers(
 		'svg': selected_panels.get('svg_col', selected_panels.get('svg', True)),
 		'iqm': selected_panels.get('iqm_col', selected_panels.get('iqm', False))
 	}
-	
+
 	show_niivue = selected_panels.get('niivue', True)
 	show_svg = selected_panels.get('svg', True)
 	show_iqm = selected_panels.get('iqm', False)
-	
+
 	# Main layout: Rating column on left, viewer panels on right
 	rating_col, panels_col = st.columns([0.25, 0.75], gap="medium")
-	
+
 	# Left column: QC Rating form + Pagination (fixed, always visible)
 	with rating_col:
 		_display_qc_rating_form(
@@ -101,9 +101,9 @@ def display_qc_viewers(
 			qc_task=qc_task,
 			total_participants=total_participants
 		)
-		
+
 		st.divider()
-		
+
 		_display_pagination_in_sidebar(
 			current_page=SessionManager.get_current_page(),
 			total_participants=total_participants,
@@ -112,7 +112,7 @@ def display_qc_viewers(
 			qc_pipeline=qc_pipeline,
 			qc_task=qc_task
 		)
-	
+
 	# Right column: Viewer panels based on selection
 	with panels_col:
 		# All three panels selected
@@ -138,7 +138,7 @@ def display_qc_viewers(
 		# Full-width IQM only
 		elif show_iqm:
 			_display_iqm_panel()
-	
+
 	# Autoplay rerun loop: panels have now rendered; keep refreshing so the
 	# countdown display stays live and the timer expiry check fires on time
 	if SessionManager.is_autoplay_enabled():
@@ -151,10 +151,10 @@ def display_qc_viewers(
 def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_config,
                                            participant_id: str = None, session_id: str = None) -> None:
 	"""Display 3-column layout: Niivue with hidden controls | Secondary panel.
-	
+
 	Niivue controls are hidden in an expander attached to the Niivue viewer column.
 	Used when Niivue is selected with either SVG or IQM panel.
-	
+
 	Args:
 		dataset_dir: Root dataset directory
 		selected_panels: Dictionary of selected panels
@@ -163,20 +163,20 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 		session_id: Current session ID
 	"""
 	viewer_col, panel_col = st.columns([0.3, 0.7], gap="small")
-	
+
 	# Left column: Niivue viewer with hidden controls at bottom
 	with viewer_col:
 		# Get niivue config from session state or render_controls_panel
 		niivue_config = _get_or_render_niivue_config()
-		
+
 		# Render viewer at top
-		NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config, 
+		NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config,
 		                                   participant_id, session_id)
-		
+
 		# Render controls in expander at bottom
 		with st.expander("🎮 Niivue Controls", expanded=False):
 			NiivueViewerManager.render_controls_panel()
-	
+
 	# Right column: SVG or IQM panel
 	with panel_col:
 		if selected_panels.get('svg', False):
@@ -188,7 +188,7 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 def _display_niivue_full_width(dataset_dir, qc_config,
                                participant_id: str = None, session_id: str = None) -> None:
 	"""Display Niivue in full width with hidden controls in an expander at bottom.
-	
+
 	Args:
 		dataset_dir: Root dataset directory
 		qc_config: QC configuration object
@@ -197,11 +197,11 @@ def _display_niivue_full_width(dataset_dir, qc_config,
 	"""
 	# Get niivue config from session state or render_controls_panel
 	niivue_config = _get_or_render_niivue_config()
-	
+
 	# Render viewer at top
 	NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config,
 	                                   participant_id, session_id)
-	
+
 	# Render controls in expander at bottom
 	with st.expander("🎮 Niivue Controls", expanded=False):
 		NiivueViewerManager.render_controls_panel()
@@ -209,11 +209,11 @@ def _display_niivue_full_width(dataset_dir, qc_config,
 
 def _get_or_render_niivue_config():
 	"""Get niivue config from session state or render default config.
-	
+
 	This function allows the Niivue viewer to be displayed before the controls expander.
 	On first run, it returns a default config. On subsequent runs after user changes controls,
 	it returns the updated config from session state (which render_controls_panel also updates).
-	
+
 	Returns:
 		NiivueViewerConfig: Configuration object for the Niivue viewer
 	"""
@@ -230,32 +230,32 @@ def _get_or_render_niivue_config():
 			show_overlay=False
 		)
 		st.session_state.niivue_config = default_config
-	
+
 	return st.session_state.niivue_config
 
 
 def _display_svg_panel(dataset_dir, qc_config) -> None:
 	"""Display SVG/PNG/JPEG montage panel with tabs for multiple images.
-	
+
 	If multiple image files are available, renders them as separate tabs.
 	If only one image file is available, displays it directly.
-	
+
 	Supports:
 	- SVG: Rendered as HTML
 	- PNG/JPEG: Displayed as images using st.image()
-	
+
 	Args:
 		dataset_dir: Root dataset directory
 		qc_config: QC configuration object
 	"""
 	st.header(MESSAGES['svg_header'])
-	
+
 	# Get montage grid settings from session manager
 	max_montage_rows = SessionManager.get_montage_max_rows()
 	max_montage_cols = SessionManager.get_montage_max_cols()
-	
+
 	image_data = load_svg_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
-	
+
 	if image_data:
 		# If multiple images, create tabs
 		if len(image_data) > 1:
@@ -274,14 +274,14 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
 
 def _render_image(image_data: dict, filename: str) -> None:
 	"""Render a single image (SVG, PNG, or JPEG) in Streamlit.
-	
+
 	Args:
 		image_data: Dict with keys 'type' and 'content'
 		filename: Name of the image file for display
 	"""
 	image_type = image_data.get("type")
 	content = image_data.get("content")
-	
+
 	if image_type == "svg":
 		# Render SVG as HTML
 		st.components.v1.html(content, height=SVG_HEIGHT, scrolling=True)
@@ -300,7 +300,7 @@ def _display_qc_rating_form(
 	total_participants: int = None
 ) -> None:
 	"""Display participant info and QC rating form in fixed left column.
-	
+
 	Args:
 		participant_id: Current participant ID
 		session_id: Current session ID
@@ -314,15 +314,15 @@ def _display_qc_rating_form(
 	st.write(f"**Session:** {session_id}")
 	st.write(f"**Pipeline:** {qc_pipeline}")
 	st.write(f"**Task:** {qc_task}")
-	
+
 	# Display rater information
 	st.markdown("#### 👤 Rater Info")
 	st.write(f"**Rater:** {SessionManager.get_rater_id()}")
 	st.write(f"**Experience:** {SessionManager.get_rater_experience().split('(')[0].strip()}")
 	st.write(f"**Fatigue:** {SessionManager.get_rater_fatigue().split('☕')[0].strip()}")
-	
+
 	st.divider()
-	
+
 	# QC Rating section
 	st.markdown("#### 📊 QC Rating")
 	existing_record = SessionManager.get_qc_record_for_participant(participant_id, session_id, qc_task)
@@ -334,7 +334,11 @@ def _display_qc_rating_form(
 	else:
 		initial_rating = QC_RATINGS[0]
 		initial_notes = ''
-	rating = st.radio(MESSAGES['qc_rating_prompt'], options=QC_RATINGS, index=QC_RATINGS.index(initial_rating), key=f"qc_rating_{SessionManager.get_rating_version()}")
+	#rating = st.radio(MESSAGES['qc_rating_prompt'], options=QC_RATINGS, index=QC_RATINGS.index(initial_rating), key=f"qc_rating_{SessionManager.get_rating_version()}")
+
+	rating = radio_buttons_with_shortcuts(MESSAGES['qc_rating_prompt'],options=QC_RATINGS, default=QC_RATINGS.index(initial_rating),
+	key=f"qc_rating_{SessionManager.get_rating_version()}")
+
 	notes = st.text_area(MESSAGES['qc_notes_prompt'], value=initial_notes, key=f"qc_notes_{SessionManager.get_notes_version()}", height=120)
 	SessionManager.set_notes(notes)
 
@@ -348,7 +352,7 @@ def _display_pagination_in_sidebar(
 	qc_task: str
 ) -> None:
 	"""Display pagination controls in the left sidebar with autoplay support.
-	
+
 	Args:
 		current_page: Current page number
 		total_participants: Total number of participants
@@ -359,7 +363,7 @@ def _display_pagination_in_sidebar(
 	"""
 	st.markdown("#### 📄 Navigation")
 	st.write(f"**Participant {current_page} of {total_participants}**")
-	
+
 	# Autoplay controls (play/pause buttons)
 	autoplay_col1, autoplay_col2 = st.columns([1, 1])
 	with autoplay_col1:
@@ -367,13 +371,13 @@ def _display_pagination_in_sidebar(
 			SessionManager.set_autoplay_enabled(True)
 			SessionManager.set_autoplay_start_time(time.time())  # Start countdown immediately
 			st.rerun()
-	
+
 	with autoplay_col2:
 		if st.button(MESSAGES['pause_button'], width='stretch', key="autoplay_pause"):
 			SessionManager.set_autoplay_enabled(False)
 			SessionManager.set_autoplay_start_time(0.0)  # Reset timer
 			st.rerun()
-	
+
 	# Display countdown timer if autoplay is active
 	if SessionManager.is_autoplay_enabled():
 		start_time = SessionManager.get_autoplay_start_time()
@@ -384,19 +388,19 @@ def _display_pagination_in_sidebar(
 			st.markdown(f"## ⏱️ Next page in: **{countdown}s**")
 		else:
 			st.info("⏸️ Autoplay active")
-	
+
 	st.divider()
-	
+
 	# Main pagination controls
 	pag_col1, pag_col2, pag_col3 = st.columns([1, 1, 1])
-	
+
 	with pag_col1:
-		if st.button(MESSAGES['previous_button'], width='stretch', key="pag_prev"):
+		if st.button(MESSAGES['previous_button'], width='stretch', key="pag_prev", shortcut="Left"):
 			SessionManager.previous_page()
 			st.rerun()
-	
+
 	with pag_col2:
-		if st.button(MESSAGES['confirm_next_button'], width='stretch', key="pag_confirm"):
+		if st.button(MESSAGES['confirm_next_button'], width='stretch', key="pag_confirm", shortcut="Shift+Right"):
 			rating = st.session_state.get(f'qc_rating_{SessionManager.get_rating_version()}', QC_RATINGS[0])
 			notes = SessionManager.get_notes()
 			_record_qc_for_current_participant(
@@ -408,14 +412,14 @@ def _display_pagination_in_sidebar(
 			else:
 				SessionManager.next_page()
 			st.rerun()
-	
+
 	with pag_col3:
-		if st.button(MESSAGES['next_button'], width='stretch', key="pag_next"):
+		if st.button(MESSAGES['next_button'], width='stretch', key="pag_next", shortcut="Right"):
 			SessionManager.next_page()
 			st.rerun()
-	
+
 	st.divider()
-	
+
 	# Save QC results to CSV button
 	if st.button(MESSAGES['save_csv_button'], width='content', key="pag_save_csv"):
 		rating = st.session_state.get(f'qc_rating_{SessionManager.get_rating_version()}', QC_RATINGS[0])
@@ -429,7 +433,7 @@ def _display_pagination_in_sidebar(
 			notes=notes,
 			total_participants=total_participants
 		)
-	
+
 	st.divider()
 	if st.button(MESSAGES['back_landing_button'], width='content', key="pag_landing"):
 		SessionManager.set_landing_page_complete(False)
@@ -442,10 +446,10 @@ def _display_iqm_panel() -> None:
 	st.write("Add QC metrics here (e.g., SNR, motion). This is a placeholder area.")
 
 
-def _save_qc_record(participant_id: str, session_id: str, qc_pipeline: str, 
+def _save_qc_record(participant_id: str, session_id: str, qc_pipeline: str,
 					 qc_task: str, rating: str, notes: str, total_participants: int) -> None:
 	"""Save a QC record and mark as complete.
-	
+
 	Args:
 		participant_id: Participant ID
 		session_id: Session ID
