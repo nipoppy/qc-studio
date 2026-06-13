@@ -139,6 +139,7 @@ def display_qc_viewers(
 		elif show_iqm:
 			_display_iqm_panel()
 	
+	SessionManager.set_session_start_time(time.time())
 	# Autoplay rerun loop: panels have now rendered; keep refreshing so the
 	# countdown display stays live and the timer expiry check fires on time
 	if SessionManager.is_autoplay_enabled():
@@ -455,6 +456,7 @@ def _save_qc_record(participant_id: str, session_id: str, qc_pipeline: str,
 		notes: QC notes
 		total_participants: Total participants (used to detect end of QC)
 	"""
+
 	_record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
 	SessionManager.set_current_page(total_participants + 1)
 	st.rerun()
@@ -464,8 +466,10 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str,
 										 qc_pipeline: str, qc_task: str,
 										 rating: str, notes: str) -> None:
 	"""Save a QC record for the current participant without navigating."""
-	now = datetime.now()
-	timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+	now = time.time()
+	timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
+	start_time = SessionManager.get_session_start_time()
+	duration = int(now - start_time)
 	record = QCRecord(
 		participant_id=participant_id,
 		session_id=session_id,
@@ -477,5 +481,6 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str,
 		rater_fatigue=SessionManager.get_rater_fatigue(),
 		final_qc=rating,
 		notes=notes,
+		duration=duration,
 	)
 	SessionManager.add_qc_record(record)
