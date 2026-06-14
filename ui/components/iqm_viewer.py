@@ -179,6 +179,20 @@ def _add_subject_overlay(
             show_legend = False     
  
 
+def _get_valid_iqm_groups(distribution_groups: dict, iqm_data: pd.DataFrame) -> dict:
+    """Return IQM groups with at least one column present in the data."""
+    valid_groups = {}
+    for group_name, columns in distribution_groups.items():
+        valid_columns = [col for col in columns if col in iqm_data.columns]
+
+        if valid_columns:
+            valid_groups[group_name] = valid_columns
+    return valid_groups
+
+
+# def _render_iqm_detail_tab():
+#     """Render the Detail tab: select one IQM group and show its full-size plot."""
+
 def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, session_id,
                               qc_config_path: str = None, dataset_dir: str = None,
                               qc_task: str = None, qc_config: dict = None):
@@ -225,17 +239,14 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
             f"No distribution groups defined for modality '{modality}'.",
         ))
         return
-    group = st.selectbox("Select metric group", options=distribution_groups, key="iqm_group_select")
-    
-    #____________Filter data ___________
-    columns = distribution_groups[group]
-    missing_columns = [col for col in columns if col not in iqm_data.columns]
-    st.warning("Missing columns: {}".format(", ".join(missing_columns))) if missing_columns else None
-    valid_columns = [col for col in columns if col in iqm_data.columns]
-    if not valid_columns:
-        st.error("None of the required columns for this group are present in the data.")
+    valid_groups = _get_valid_iqm_groups(distribution_groups, iqm_data)
+    if not valid_groups:
+        st.warning(ERROR_MESSAGES.get(
+            "iqm_no_valid_groups",
+            "None of the defined IQM groups have valid columns in the data.",
+        ))
         return
-    
+
     #____________Display mode selection___________
     mode = st.radio(
         "Display mode",
@@ -244,47 +255,71 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         horizontal=True
     )
 
-    #___________load data for plotting___________
-    iqm_data = _coerce_numeric_columns(iqm_data, valid_columns)
-    participant_columns = _extract_subject_data(iqm_data, participant_id, valid_columns, session_id=session_id)
-    iqm_data_plot = iqm_data[valid_columns]
-    if mode == "Dataset + reference":
-        reference_data = _load_reference_data(modality, scanner_metadata)
-        if len(reference_data) > MAX_REFERENCE_ROWS:
-            reference_data = reference_data.sample(n=MAX_REFERENCE_ROWS, random_state=42)
-        reference_data = _coerce_numeric_columns(reference_data, valid_columns)
-        reference_data = reference_data[valid_columns]
-        if reference_data.dropna(how='all').empty:
-            st.warning("Reference data is empty after filtering; showing dataset-only distribution.")
-            mode = "Dataset"
+    #____________Select Tab____________
+    overview_tab, detail_tab = st.tabs(["Overview", "Detail"])
+    with overview_tab:
+        st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
+    with detail_tab:
+        st.write("Detailed view of a single IQM group with full-size plot and subject overlay.")
+        group = st.selectbox("Select metric group", options=list(valid_groups.keys()),key="iqm_group_select")
 
-    #____________Render distribution plot___________
-    fig = go.Figure()
+        #____________Filter data ___________
 
-    if mode == "Dataset":
-        _add_box_traces(fig, iqm_data_plot, DATASET_STYLE, offsetgroup="Dataset")
-        _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
+        valid_columns = valid_groups.get(group, [])
+        if not valid_columns:
+            st.error("None of the required columns for this group are present in the data.")
+            return
 
-    elif mode == "Dataset + reference":
-        _add_box_traces(fig, iqm_data_plot, offsetgroup="Dataset", style=DATASET_STYLE, pointpos=-0.3)
-        _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
-        # Keep sampling for performance, but show reference points for parity with dataset view.
-        _add_box_traces(fig, reference_data, offsetgroup="Reference", style=REFERENCE_STYLE, pointpos=0.3, boxpoints='all')
+    # columns = distribution_groups[group]
+    # missing_columns = [col for col in columns if col not in iqm_data.columns]
+    # st.warning("Missing columns: {}".format(", ".join(missing_columns))) if missing_columns else None
+    # valid_columns = [col for col in columns if col in iqm_data.columns]
+    # if not valid_columns:
+    #     st.error("None of the required columns for this group are present in the data.")
+    #     return
     
-    fig.update_layout(
-        title=f"IQM Distributions for {group} ({modality})",
-        xaxis_title="Metrics",
-        yaxis_title="Values",
-        boxmode='group',
-        legend_title="Legend",
-        template="plotly_white"
-    )
 
-    if not fig.data:
-        st.warning("No plottable numeric data found for the selected group.")
-        return
+        #___________load data for plotting___________
+        iqm_data_for_group = _coerce_numeric_columns(iqm_data, valid_columns)
+        participant_columns = _extract_subject_data(iqm_data_for_group, participant_id, valid_columns, session_id=session_id)
+        iqm_data_plot = iqm_data_for_group[valid_columns]
+        if mode == "Dataset + reference":
+            reference_data = _load_reference_data(modality, scanner_metadata)
+            if len(reference_data) > MAX_REFERENCE_ROWS:
+                reference_data = reference_data.sample(n=MAX_REFERENCE_ROWS, random_state=42)
+            reference_data = _coerce_numeric_columns(reference_data, valid_columns)
+            reference_data = reference_data[valid_columns]
+            if reference_data.dropna(how='all').empty:
+                st.warning("Reference data is empty after filtering; showing dataset-only distribution.")
+                mode = "Dataset"
 
-    st.plotly_chart(fig, use_container_width=True)
+        #____________Render distribution plot___________
+        fig = go.Figure()
+
+        if mode == "Dataset":
+            _add_box_traces(fig, iqm_data_plot, DATASET_STYLE, offsetgroup="Dataset")
+            _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
+
+        elif mode == "Dataset + reference":
+            _add_box_traces(fig, iqm_data_plot, offsetgroup="Dataset", style=DATASET_STYLE, pointpos=-0.3)
+            _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
+            # Keep sampling for performance, but show reference points for parity with dataset view.
+            _add_box_traces(fig, reference_data, offsetgroup="Reference", style=REFERENCE_STYLE, pointpos=0.3, boxpoints='all')
+        
+        fig.update_layout(
+            title=f"IQM Distributions for {group} ({modality})",
+            xaxis_title="Metrics",
+            yaxis_title="Values",
+            boxmode='group',
+            legend_title="Legend",
+            template="plotly_white"
+        )
+
+        if not fig.data:
+            st.warning("No plottable numeric data found for the selected group.")
+            return
+
+        st.plotly_chart(fig, use_container_width=True)
 
 
 def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str, session_id: str,
