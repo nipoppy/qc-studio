@@ -150,6 +150,8 @@ MESSAGES = {
     'niivue_controls_header': 'Niivue Controls',
     'svg_header': 'SVG Montage',
     'metrics_header': 'QC Metrics',
+    'iqm_distribution_header': 'IQM Distributions',
+    'modality_select_label': 'Select modality',
     'view_mode_label': 'View Mode',
     'overlay_colormap_label': 'Overlay Colormap',
     'display_settings_header': 'Display Settings',
@@ -173,6 +175,13 @@ ERROR_MESSAGES = {
     'base_mri_not_found': 'Base MRI image not found or could not be loaded.',
     'svg_not_found': 'SVG montage not found or could not be loaded.',
     'participant_list_load_error': 'Error loading participant list: {error}',
+     'participant_list_load_error': 'Error loading participant list: {error}',
+    'iqm_config_missing': 'IQM distribution configuration is missing from the QC config file.',
+    'iqm_config_load_error': 'Failed to load IQM distribution configuration.',
+    'iqm_modality_path_error': 'No dataset path configured for modality: {modality}',
+    'iqm_data_load_error': 'Failed to load IQM data for {modality}: {error}',
+    'iqm_no_modalities': 'No matching modalities between config and IQM_DISTRIBUTION_GROUPS.',
+    'iqm_no_groups': 'No metric groups are defined for the selected modality.'
 }
 
 # Success messages

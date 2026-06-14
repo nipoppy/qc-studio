@@ -4,5 +4,8 @@
         "overlay_mri_image_path": "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_SESSION_ID]]/anat/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_run-1_desc-brain_mask.nii.gz",
         "svg_montage_path": "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_run-1_desc-reconall_T1w.svg",
         "iqm_path": "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_task-rest_run-1_desc-confoundcorr_bold.svg"
+    },
+    "iqm_distributions": {
+        "t1w": "derivatives/mriqc/group_T1w.tsv"
     }
 }

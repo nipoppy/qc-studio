@@ -16,5 +16,9 @@
     "coreg_wf_qc": {
         "base_mri_image_path": "bids/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_SESSION_ID]]/func/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_task-rest_run-1_bold.nii.gz",
         "svg_montage_path": "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_task-rest_run-1_desc-coreg_bold.svg"
+    },
+    "iqm_distributions": {
+        "t1w": "derivatives/mriqc/group_T1w.tsv",
+        "bold": "derivatives/mriqc/group_bold.tsv"
     }
 }

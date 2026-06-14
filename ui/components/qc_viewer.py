@@ -11,6 +11,7 @@ from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
+from components.iqm_viewer import _display_iqm_panel
 
 # Session key: current QC row for autoplay fragment (set from ``main`` before sidebar).
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
@@ -205,21 +206,35 @@ def display_qc_viewers(
 			st.subheader(tname)
 		if show_niivue and show_svg and show_iqm:
 			_display_niivue_with_secondary_panel(
-				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
+				dataset_dir,
+				selected_panels,
+				qc_config,
+				participant_id,
+				session_id,
+				tname,
+				qc_config_path=qc_config_path,
+			)
 			st.divider()
-			_display_iqm_panel()
+			_display_iqm_panel(
+				qc_config,
+				qc_config_path,
+				participant_id,
+				session_id,
+				dataset_dir,
+				qc_task=tname,
+			)
 		elif show_niivue and show_svg:
 			_display_niivue_with_secondary_panel(
-				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
+				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname,  qc_config_path=qc_config_path,)
 		elif show_niivue and show_iqm:
 			_display_niivue_with_secondary_panel(
-				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
+				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname, qc_config_path=qc_config_path)
 		elif show_niivue:
 			_display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id, tname)
 		elif show_svg:
 			_display_svg_panel(dataset_dir, qc_config)
 		elif show_iqm:
-			_display_iqm_panel()
+			_display_iqm_panel(qc_config, qc_config_path, participant_id, session_id,dataset_dir, qc_task=tname,)
 
 		_display_qc_rating_for_task(
 			participant_id=participant_id,
@@ -229,9 +244,16 @@ def display_qc_viewers(
 		)
 
 
-def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_config,
-                                           participant_id: str = None, session_id: str = None,
-                                           task_suffix: str = "") -> None:
+def _display_niivue_with_secondary_panel(
+    dataset_dir,
+    selected_panels: dict,
+    qc_config,
+    participant_id: str = None,
+    session_id: str = None,
+    task_suffix: str = "",
+    qc_config_path: str = None,
+) -> None:
+
 	"""Display 3-column layout: Niivue with hidden controls | Secondary panel.
 	
 	Niivue controls are hidden in an expander attached to the Niivue viewer column.
@@ -243,6 +265,7 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 		qc_config: QC configuration object
 		participant_id: Current participant ID
 		session_id: Current session ID
+		qc_task: The QC task for which to display IQM distributions
 	"""
 	viewer_col, panel_col = st.columns([0.3, 0.7], gap="small")
 	
@@ -264,8 +287,14 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 		if selected_panels.get('svg', False):
 			_display_svg_panel(dataset_dir, qc_config)
 		else:
-			_display_iqm_panel()
-
+			display_iqm_distribution_panel(
+				qc_config,
+				qc_config_path,
+				participant_id,
+				session_id,
+				dataset_dir,
+				qc_task=task_suffix,
+			)
 
 def _display_niivue_full_width(dataset_dir, qc_config,
                                participant_id: str = None, session_id: str = None,
@@ -566,13 +595,6 @@ def _display_qc_pagination(
 		qc_cohort=qc_cohort,
 	)
 
-
-def _display_iqm_panel() -> None:
-	"""Display IQM metrics panel."""
-	st.subheader(MESSAGES['metrics_header'])
-	st.write("Add QC metrics here (e.g., SNR, motion). This is a placeholder area.")
-
-
 def _save_qc_record(
 	participant_id: str,
 	session_id: str,
@@ -594,6 +616,7 @@ def _save_qc_record(
 			temp_cohort.append({"participant_id": p, "session_id": session_id})
 		if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
 			SessionManager.set_current_page(total_participants + 1)
+
 	st.rerun()
 
 

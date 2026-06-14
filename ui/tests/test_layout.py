@@ -400,6 +400,49 @@ class TestQcViewerLayout:
         """Placeholder — full viewer layout is exercised manually / in integration tests."""
         assert True
 
+    @patch('components.qc_viewer.display_iqm_distribution_panel')
+    @patch('components.qc_viewer.NiivueViewerManager.render_controls_panel')
+    @patch('components.qc_viewer.NiivueViewerManager.render_viewer')
+    @patch('components.qc_viewer._get_or_render_niivue_config')
+    @patch('components.qc_viewer.st')
+    def test_secondary_iqm_panel_receives_qc_task(
+        self,
+        mock_st,
+        mock_get_niivue_config,
+        mock_render_viewer,
+        mock_render_controls,
+        mock_display_iqm,
+    ):
+        """Test that the IQM panel receives qc_task for modality inference."""
+        from components.qc_viewer import _display_niivue_with_secondary_panel
+
+        viewer_col = MagicMock()
+        panel_col = MagicMock()
+        mock_st.columns.return_value = (viewer_col, panel_col)
+        mock_st.expander.return_value = MagicMock()
+        mock_get_niivue_config.return_value = MagicMock()
+
+        qc_config = {"base_mri_image_path": "sub-01_T1w.nii.gz"}
+
+        _display_niivue_with_secondary_panel(
+            dataset_dir="/dataset",
+            selected_panels={"svg": False, "iqm": True},
+            qc_config=qc_config,
+            qc_config_path="qc.json",
+            participant_id="sub-01",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+        )
+
+        mock_display_iqm.assert_called_once_with(
+            qc_config,
+            "qc.json",
+            "sub-01",
+            "ses-01",
+            "/dataset",
+            qc_task="anat_wf_qc",
+        )
+
 
 class TestSessionStateManagement:
     """Test session state management in app."""

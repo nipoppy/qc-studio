@@ -5,6 +5,9 @@ from models import QCConfig
 from constants import SUBSTITUTIONS_DICT
 
 
+NON_TASK_QC_CONFIG_KEYS = {"iqm_distributions"}
+
+
 def list_qc_tasks_from_json(qc_json) -> list[str]:
 	"""Return top-level QC task keys from a ``qc.json`` file (JSON object keys, file order)."""
 	qc_json_path = Path(qc_json) if qc_json else None
@@ -16,7 +19,7 @@ def list_qc_tasks_from_json(qc_json) -> list[str]:
 		return []
 	if not isinstance(data, dict):
 		return []
-	return list(data.keys())
+	return [key for key in data.keys() if key not in NON_TASK_QC_CONFIG_KEYS]
 
 
 def build_substitution_values(participant_id: str, session_id: str) -> dict:
