@@ -70,9 +70,8 @@ def _load_reference_data(modality: str, scanner_meta: Optional[Union[dict, str]]
     else:
         manufacturer = "Unknown"
 
-    resolved_ref_path = resolve_reference_data_path(
-        ref_path, base_dir=Path(__file__).resolve().parent
-    )
+    repo_root = Path(__file__).resolve().parents[2]
+    resolved_ref_path = resolve_reference_data_path(ref_path, base_dir=repo_root)
     return load_reference_iqm_data(resolved_ref_path, manufacturer)
 
 def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str=None)-> pd.DataFrame:
