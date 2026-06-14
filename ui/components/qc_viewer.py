@@ -11,7 +11,7 @@ from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
-from components.iqm_viewer import _display_iqm_panel
+from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 # Session key: current QC row for autoplay fragment (set from ``main`` before sidebar).
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
@@ -215,7 +215,7 @@ def display_qc_viewers(
 				qc_config_path=qc_config_path,
 			)
 			st.divider()
-			_display_iqm_panel(
+			display_iqm_distribution_panel(
 				qc_config,
 				qc_config_path,
 				participant_id,
@@ -234,7 +234,14 @@ def display_qc_viewers(
 		elif show_svg:
 			_display_svg_panel(dataset_dir, qc_config)
 		elif show_iqm:
-			_display_iqm_panel(qc_config, qc_config_path, participant_id, session_id,dataset_dir, qc_task=tname,)
+			display_iqm_distribution_panel(
+				qc_config,
+				qc_config_path,
+				participant_id,
+				session_id,
+				dataset_dir,
+				qc_task=tname,
+			)
 
 		_display_qc_rating_for_task(
 			participant_id=participant_id,

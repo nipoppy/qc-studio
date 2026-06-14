@@ -36,6 +36,8 @@ def load_mri_data(
 			raise TypeError("load_mri_data: pass either path_dict only or (dataset_dir, path_dict)")
 		path_dict = dataset_dir
 		dataset_dir = ""
+	elif not path_dict.get("base_mri_image_path") and not path_dict.get("overlay_mri_image_path"):
+		raise TypeError("load_mri_data: at least one MRI path must be provided")
 
 	base_root = Path(dataset_dir) if dataset_dir else Path()
 	base_mri_path = base_root / path_dict.get("base_mri_image_path") if path_dict.get("base_mri_image_path") else None
@@ -161,8 +163,7 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
 		if file_ext == '.svg':
 			# Return SVG as string content (use open() so tests can mock builtins.open)
 			try:
-				with open(full_path, encoding="utf-8") as f:
-					svg_content = f.read()
+				svg_content = full_path.read_text(encoding="utf-8")
 				filename = f"{unique_id}_svg"
 				image_data_dict[filename] = {
 					"type": "svg",

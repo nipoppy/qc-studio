@@ -202,7 +202,10 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         )
         return
 
-    st.caption(f"IQM modality: {modality}")
+    if hasattr(st, "caption"):
+        st.caption(f"IQM modality: {modality}")
+    else:
+        st.info(f"IQM modality: {modality}")
     modality_path = iqm_config.get(modality)
 
     if modality_path is None:
