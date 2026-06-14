@@ -19,9 +19,10 @@ class TestParseArgs:
 
     def test_parse_args_with_required_arguments(self):
         """Test parsing with all required arguments."""
-        from ui import parse_args
+        from main import parse_args
         
         args = parse_args([
+            '--dataset_dir', '/path/to/dataset',
             '--participant_list', '/path/to/participants.tsv',
             '--session_list', 'ses-01',
             '--qc_pipeline', 'fmriprep',
@@ -30,6 +31,7 @@ class TestParseArgs:
             '--qc_json', '/path/to/qc_config.json'
         ])
         
+        assert args.dataset_dir == '/path/to/dataset'
         assert args.participant_list == '/path/to/participants.tsv'
         assert args.session_list == 'ses-01'
         assert args.qc_pipeline == 'fmriprep'
@@ -39,9 +41,10 @@ class TestParseArgs:
 
     def test_parse_args_default_session_list(self):
         """Test parsing with default session_list."""
-        from ui import parse_args
+        from main import parse_args
         
         args = parse_args([
+            '--dataset_dir', '/path/to/dataset',
             '--participant_list', '/path/to/participants.tsv',
             '--qc_pipeline', 'fmriprep',
             '--qc_task', 'anat_wf_qc',
@@ -53,7 +56,7 @@ class TestParseArgs:
 
     def test_parse_args_missing_required_argument(self):
         """Test parsing with missing required argument."""
-        from ui import parse_args
+        from main import parse_args
         
         with pytest.raises(SystemExit):
             parse_args([
@@ -63,9 +66,10 @@ class TestParseArgs:
 
     def test_parse_args_all_fields_present(self):
         """Test that all parsed fields are accessible."""
-        from ui import parse_args
+        from main import parse_args
         
         args = parse_args([
+            '--dataset_dir', '/data',
             '--participant_list', 'participants.tsv',
             '--session_list', 'ses-02',
             '--qc_pipeline', 'freesurfer',
@@ -74,6 +78,7 @@ class TestParseArgs:
             '--qc_json', 'config.json'
         ])
         
+        assert hasattr(args, 'dataset_dir')
         assert hasattr(args, 'participant_list')
         assert hasattr(args, 'session_list')
         assert hasattr(args, 'qc_pipeline')
@@ -130,7 +135,7 @@ class TestUiConfiguration:
         
         assert len(df) == 3
         assert 'participant_id' in df.columns
-        assert 'sub-ED01' in df['participant_id'].values
+        assert 'sub-CMH0001' in df['participant_id'].values
 
     def test_total_participants_calculation(self, sample_participant_list):
         """Test calculation of total participants."""
@@ -144,9 +149,9 @@ class TestUiConfiguration:
         df = pd.read_csv(sample_participant_list, delimiter="\t")
         participant_ids = df['participant_id'].tolist()
         
-        assert participant_ids[0] == 'sub-ED01'
-        assert participant_ids[1] == 'sub-ED02'
-        assert participant_ids[2] == 'sub-ED03'
+        assert participant_ids[0] == 'sub-CMH0001'
+        assert participant_ids[1] == 'sub-CMH0002'
+        assert participant_ids[2] == 'sub-CMH0003'
 
 
 class TestPageNavigation:
@@ -168,7 +173,7 @@ class TestPageNavigation:
         if current_page > total_participants:
             participant_id = None
         else:
-            participant_id = f"sub-ED{current_page:02d}"
+            participant_id = f"sub-CMH{current_page:04d}"
         
         assert participant_id is None
 

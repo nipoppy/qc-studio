@@ -11,7 +11,7 @@
 
 - Support visualization of processed data from these pipelines 
     - fMRIPrep 
-    - Freesurfer / fsqc
+    - Freesurfer
     - QSIPrep
     - QSIRecon 
 
@@ -30,7 +30,7 @@
 
 ## Tasks
 - Configs
-    - Generate `pipeline_qc.json` (see [sample_qc.json](../pipelines/sample_qc.json))
+    - Generate `pipeline_qc.json` (see for example [fmriprep/qc.json](../pipelines/fmriprep/qc.json))
 
 - UI-orchestrator (see [app.py](../ui/app.py))
     - Handle argparse ([main.py](../ui/main.py))

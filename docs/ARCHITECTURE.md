@@ -24,7 +24,10 @@ ui/
 │   ├── qc_viewer.py             # QC Viewer Orchestration (350+ lines)
 │   └── pagination.py            # Pagination & Rating Controls (150+ lines)
 │
-├── pages/                        # Full Page Views
+├── pages/                        # Streamlit multipage sidebar (thin entrypoints → views/)
+│   ├── 1_Landing_Page.py
+│   └── 2_Congratulations_Page.py
+├── views/                        # Full-page view implementations (imported by app + pages/)
 │   ├── __init__.py
 │   ├── landing_page.py          # Onboarding & Configuration (200+ lines)
 │   └── congratulations_page.py  # Results & Export (80+ lines)
@@ -64,10 +67,10 @@ ui/
                              ↓
 ┌──────────────────────────────────────────────────────────────┐
 │               UI Layer (Pages & Components)                  │
-│  ├─ pages/landing_page.py (Onboarding)                      │
+│  ├─ views/landing_page.py (Onboarding)                      │
 │  ├─ components/qc_viewer.py (Viewer Organization)           │
 │  ├─ components/pagination.py (QC Controls)                  │
-│  └─ pages/congratulations_page.py (Results)                │
+│  └─ views/congratulations_page.py (Results)                │
 └──────────────────────────────────────────────────────────────┘
                              ↓
 ┌──────────────────────────────────────────────────────────────┐
@@ -112,7 +115,7 @@ ui/
   - Coordinates the complete QC workflow
 
 **Imports**: 
-- Pages: `pages.landing_page`, `pages.congratulations_page`
+- Screen modules: `views.landing_page`, `views.congratulations_page`
 - Components: `components.qc_viewer`
 - Managers: SessionManager, NiivueViewerManager, PanelLayoutManager
 - Utilities: parse_qc_config, load_svg_data, save_qc_results_to_csv
@@ -132,7 +135,7 @@ ui/
 
 Pages represent complete, full-width views shown at different stages of the QC workflow.
 
-#### `pages/landing_page.py` (200+ lines)
+#### `views/landing_page.py` (200+ lines)
 **Responsibility**: Onboarding and initial QC session configuration
 
 **Public Functions**:
@@ -156,7 +159,7 @@ Pages represent complete, full-width views shown at different stages of the QC w
 
 ---
 
-#### `pages/congratulations_page.py` (80+ lines)
+#### `views/congratulations_page.py` (80+ lines)
 **Responsibility**: Display final results and export QC records
 
 **Public Functions**:
@@ -535,7 +538,7 @@ START
   ├─→ app.py (main Streamlit app)
   │   └─→ SessionManager.init_session_state()
   │
-  ├─→ pages/landing_page.py (if landing not complete)
+  ├─→ views/landing_page.py (if landing not complete)
   │   ├─→ show_landing_page() displays onboarding UI
   │   ├─→ User enters rater info (ID, experience, fatigue)
   │   ├─→ SessionManager.set_rater_*() stores rater data
@@ -591,7 +594,7 @@ START
   │   │
   │   └─→ Until last participant reached
   │
-  └─→ pages/congratulations_page.py (Results)
+  └─→ views/congratulations_page.py (Results)
       ├─→ show_congratulations_page() displays results
       ├─→ Show participant count and QC statistics
       ├─→ Offer CSV export options
@@ -957,7 +960,7 @@ ui/
 ├── app.py                        (Streamlit entry point)
 ├── main.py                       (CLI entry point)
 │
-├── pages/                        (Full-page views)
+├── pages/                        (Multipage sidebar: thin scripts → views/)
 ├── components/                   (Reusable UI components)
 ├── managers/                     (Business logic)
 ├── models/                       (Data models)

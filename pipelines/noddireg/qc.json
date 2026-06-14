@@ -1,0 +1,14 @@
+{
+    "noddireg_density": {
+        "svg_montage_path": [
+            "derivatives/noddireg/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_desc-dsegtissue_model-noddi_density.png"
+        ]
+    },
+    "noddireg_od_icvf_isovf": {
+        "svg_montage_path": [
+            "derivatives/noddireg/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_od_mean_qc.png",
+            "derivatives/noddireg/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_icvf_mean_qc.png",
+            "derivatives/noddireg/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_isovf_mean_qc.png"
+        ]
+    }
+}

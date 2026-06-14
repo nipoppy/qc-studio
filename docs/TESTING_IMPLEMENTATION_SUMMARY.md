@@ -254,7 +254,8 @@ qc-studio/                          # Project root
 │   ├── app.py                      # Streamlit entry point
 │   ├── main.py                     # CLI entry point
 │   ├── constants.py                # Configuration & constants
-│   ├── pages/                      # Full-page views
+│   ├── pages/                      # Multipage sidebar (thin → views/)
+│   ├── views/                      # Landing / congratulations UI modules
 │   │   ├── landing_page.py         # Onboarding page
 │   │   └── congratulations_page.py # Results page
 │   ├── components/                 # Reusable UI components

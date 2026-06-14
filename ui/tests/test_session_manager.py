@@ -150,20 +150,49 @@ class TestQCRecordsMethods:
         assert records == []
     
     def test_add_qc_record(self, mock_session_state):
-        """Test adding a QC record."""
+        """Test adding a QC record (upserts same participant/session/pipeline/task)."""
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
-        
-        # Create a mock record object
-        mock_record = MagicMock()
-        mock_record.participant_id = 'sub-01'
-        
-        SessionManager.add_qc_record(mock_record)
+
+        def _make_record(pid, final_qc):
+            rec = MagicMock()
+            rec.participant_id = pid
+            rec.session_id = 'ses-01'
+            rec.pipeline = 'fmriprep'
+            rec.qc_task = 'anat_wf_qc'
+            rec.final_qc = final_qc
+            return rec
+
+        SessionManager.add_qc_record(_make_record('sub-01', 'PASS'))
         records = SessionManager.get_qc_records()
-        
         assert len(records) == 1
         assert records[0].participant_id == 'sub-01'
-    
+
+        SessionManager.add_qc_record(_make_record('sub-01', 'FAIL'))
+        records = SessionManager.get_qc_records()
+        assert len(records) == 1
+        assert records[0].final_qc == 'FAIL'
+
+    def test_participant_has_decided_qc(self, mock_session_state):
+        """Decided QC means PASS/FAIL/UNCERTAIN on the latest record for that task/session."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        def _make_record(pid, final_qc, task="anat_wf_qc"):
+            rec = MagicMock()
+            rec.participant_id = pid
+            rec.session_id = "ses-01"
+            rec.pipeline = "fmriprep"
+            rec.qc_task = task
+            rec.final_qc = final_qc
+            return rec
+
+        assert SessionManager.participant_has_decided_qc("sub-01", "ses-01", "anat_wf_qc") is False
+        SessionManager.add_qc_record(_make_record("sub-01", "PASS"))
+        assert SessionManager.participant_has_decided_qc("sub-01", "ses-01", "anat_wf_qc") is True
+        assert SessionManager.participant_has_decided_qc("sub-02", "ses-01", "anat_wf_qc") is False
+        assert SessionManager.participant_has_decided_qc("sub-01", "ses-01", "other_task") is False
+
     def test_set_qc_records(self, mock_session_state):
         """Test setting multiple QC records at once."""
         st.session_state = mock_session_state.data
@@ -314,20 +343,20 @@ class TestTaskAwareRecordLookup:
         SessionManager.init_session_state()
 
         rec_task_a = {
-            'participant_id': 'sub-ED01',
+            'participant_id': 'sub-CMH0001',
             'session_id': 'ses-01',
             'qc_task': 'anat_wf_qc',
             'final_qc': 'PASS',
         }
         rec_task_b = {
-            'participant_id': 'sub-ED01',
+            'participant_id': 'sub-CMH0001',
             'session_id': 'ses-01',
             'qc_task': 'func_wf_qc',
             'final_qc': 'FAIL',
         }
         SessionManager.set_qc_records([rec_task_a, rec_task_b])
 
-        record = SessionManager.get_qc_record_for_participant('sub-ED01', 'ses-01', 'anat_wf_qc')
+        record = SessionManager.get_qc_record_for_participant('sub-CMH0001', 'ses-01', 'anat_wf_qc')
         assert record is not None
         assert record.get('qc_task') == 'anat_wf_qc'
         assert record.get('final_qc') == 'PASS'
@@ -337,10 +366,10 @@ class TestTaskAwareRecordLookup:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        older_record = {'participant_id': 'sub-ED02', 'session_id': 'ses-01', 'qc_task': 'anat_wf_qc'}
-        newer_record = {'participant_id': 'sub-ED02', 'session_id': 'ses-01', 'qc_task': 'func_wf_qc'}
+        older_record = {'participant_id': 'sub-CMH0002', 'session_id': 'ses-01', 'qc_task': 'anat_wf_qc'}
+        newer_record = {'participant_id': 'sub-CMH0002', 'session_id': 'ses-01', 'qc_task': 'func_wf_qc'}
         SessionManager.set_qc_records([older_record, newer_record])
 
-        record = SessionManager.get_qc_record_for_participant('sub-ED02', 'ses-01')
+        record = SessionManager.get_qc_record_for_participant('sub-CMH0002', 'ses-01')
         assert record is not None
         assert record.get('qc_task') == 'func_wf_qc'
