@@ -189,8 +189,70 @@ def _get_valid_iqm_groups(distribution_groups: dict, iqm_data: pd.DataFrame) -> 
     return valid_groups
 
 
-# def _render_iqm_detail_tab():
-#     """Render the Detail tab: select one IQM group and show its full-size plot."""
+def _build_iqm_distribution_figure(
+    metric_group_name: str,
+    modality: str,
+    iqm_data: pd.DataFrame,
+    participant_id: str,
+    session_id: str,
+    metric_columns: list,
+    display_mode: str,
+    reference_data: Optional[pd.DataFrame] = None,
+) -> Optional[go.Figure]:
+    """Construct the Plotly figure for the IQM distribution panel."""
+
+    #____________Filter data ___________
+    if not metric_columns:
+        st.error("None of the required columns for this group are present in the data.")
+        return None
+
+    #___________load data for plotting___________
+    iqm_data_for_group = _coerce_numeric_columns(iqm_data, metric_columns)
+    participant_columns = _extract_subject_data(
+        iqm_data_for_group,
+        participant_id,
+        metric_columns,
+        session_id=session_id,
+    )
+    dataset_plot_data = iqm_data_for_group[metric_columns]
+
+    reference_plot_data = None
+    group_display_mode = display_mode
+    if display_mode == "Dataset + reference" and reference_data is not None:
+        reference_plot_data = _coerce_numeric_columns(reference_data, metric_columns)
+        reference_plot_data = reference_plot_data[metric_columns]
+        if reference_plot_data.dropna(how='all').empty:
+            st.warning("Reference data is empty after filtering; showing dataset-only distribution.")
+            group_display_mode = "Dataset"
+
+    #____________Render distribution plot___________
+    fig = go.Figure()
+
+    if group_display_mode == "Dataset":
+        _add_box_traces(fig, dataset_plot_data, DATASET_STYLE, offsetgroup="Dataset")
+        _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
+
+    elif group_display_mode == "Dataset + reference":
+        _add_box_traces(fig, dataset_plot_data, offsetgroup="Dataset", style=DATASET_STYLE, pointpos=-0.3)
+        _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
+        # Keep sampling for performance, but show reference points for parity with dataset view.
+        _add_box_traces(fig, reference_plot_data, offsetgroup="Reference", style=REFERENCE_STYLE, pointpos=0.3, boxpoints='all')
+    
+    fig.update_layout(
+        title=f"IQM Distributions for {metric_group_name} ({modality})",
+        xaxis_title="Metrics",
+        yaxis_title="Values",
+        boxmode='group',
+        legend_title="Legend",
+        template="plotly_white"
+    )
+
+    if not fig.data:
+        st.warning("No plottable numeric data found for the selected group.")
+        return None
+    
+    return fig
+
 
 def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, session_id,
                               qc_config_path: str = None, dataset_dir: str = None,
@@ -224,7 +286,15 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
     if modality_path is None:
         st.error(ERROR_MESSAGES['iqm_modality_path_error'].format(modality=modality))
         return 
-      
+
+    #____________Display mode selection___________
+    mode = st.radio(
+        "Display mode",
+        options=["Dataset", "Dataset + reference"],
+        key="iqm_display_mode",
+        horizontal=True
+    )
+  
    #____________Load TSV file ____________
     try:
         resolved_modality_path = resolve_iqm_data_path(modality_path, qc_config_path, dataset_dir)
@@ -233,6 +303,15 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=modality, error=e))
         return
     
+    reference_data = None
+    try:
+        if mode == "Dataset + reference":
+            reference_data = _load_reference_data(modality, scanner_metadata)
+            if len(reference_data) > MAX_REFERENCE_ROWS:
+                reference_data = reference_data.sample(n=MAX_REFERENCE_ROWS, random_state=42)
+    except Exception as e:
+        st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=modality, error=e))
+        return
     #____________Group selection___________
     distribution_groups = IQM_DISTRIBUTION_GROUPS.get(modality, [])
     if not distribution_groups:
@@ -249,79 +328,58 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         ))
         return
 
-    #____________Display mode selection___________
-    mode = st.radio(
-        "Display mode",
-        options=["Dataset", "Dataset + reference"],
-        key="iqm_display_mode",
-        horizontal=True
-    )
-
     #____________Select Tab____________
     overview_tab, detail_tab = st.tabs(["Overview", "Detail"])
     with overview_tab:
         st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
     with detail_tab:
         st.write("Detailed view of a single IQM group with full-size plot and subject overlay.")
-        group = st.selectbox("Select metric group", options=list(valid_groups.keys()),key="iqm_group_select")
-
-        #____________Filter data ___________
-
-        valid_columns = valid_groups.get(group, [])
-        if not valid_columns:
-            st.error("None of the required columns for this group are present in the data.")
-            return
-
-    # columns = distribution_groups[group]
-    # missing_columns = [col for col in columns if col not in iqm_data.columns]
-    # st.warning("Missing columns: {}".format(", ".join(missing_columns))) if missing_columns else None
-    # valid_columns = [col for col in columns if col in iqm_data.columns]
-    # if not valid_columns:
-    #     st.error("None of the required columns for this group are present in the data.")
-    #     return
-    
-
-        #___________load data for plotting___________
-        iqm_data_for_group = _coerce_numeric_columns(iqm_data, valid_columns)
-        participant_columns = _extract_subject_data(iqm_data_for_group, participant_id, valid_columns, session_id=session_id)
-        iqm_data_plot = iqm_data_for_group[valid_columns]
-        if mode == "Dataset + reference":
-            reference_data = _load_reference_data(modality, scanner_metadata)
-            if len(reference_data) > MAX_REFERENCE_ROWS:
-                reference_data = reference_data.sample(n=MAX_REFERENCE_ROWS, random_state=42)
-            reference_data = _coerce_numeric_columns(reference_data, valid_columns)
-            reference_data = reference_data[valid_columns]
-            if reference_data.dropna(how='all').empty:
-                st.warning("Reference data is empty after filtering; showing dataset-only distribution.")
-                mode = "Dataset"
-
-        #____________Render distribution plot___________
-        fig = go.Figure()
-
-        if mode == "Dataset":
-            _add_box_traces(fig, iqm_data_plot, DATASET_STYLE, offsetgroup="Dataset")
-            _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
-
-        elif mode == "Dataset + reference":
-            _add_box_traces(fig, iqm_data_plot, offsetgroup="Dataset", style=DATASET_STYLE, pointpos=-0.3)
-            _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
-            # Keep sampling for performance, but show reference points for parity with dataset view.
-            _add_box_traces(fig, reference_data, offsetgroup="Reference", style=REFERENCE_STYLE, pointpos=0.3, boxpoints='all')
-        
-        fig.update_layout(
-            title=f"IQM Distributions for {group} ({modality})",
-            xaxis_title="Metrics",
-            yaxis_title="Values",
-            boxmode='group',
-            legend_title="Legend",
-            template="plotly_white"
+        group = st.selectbox(
+            "Select metric group",
+            options=list(valid_groups.keys()),
+            key="iqm_group_select",
         )
 
-        if not fig.data:
-            st.warning("No plottable numeric data found for the selected group.")
-            return
+        fig = _build_iqm_distribution_figure(
+            metric_group_name=group,
+            modality=modality,
+            iqm_data=iqm_data,
+            participant_id=participant_id,
+            session_id=session_id,
+            metric_columns=valid_groups[group],
+            display_mode=mode,
+            reference_data=reference_data,
+        )
 
-        st.plotly_chart(fig, use_container_width=True)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+
+
+def _infer_iqm_modality(qc_task: str, qc_config: dict, iqm_config: dict) -> Optional[str]:
+    """Infer IQM modality from the selected QC task/config."""
+    task_name = str(qc_task or "").lower()
+
+    # First try to infer modality from the QC task name itself, as this is most likely to reflect the rater's intent.
+    for modality, keywords in MODALITY_KEYWORDS.items():
+        if modality in iqm_config and any(keyword in task_name for keyword in keywords):
+            return modality
+    
+    # If that fails, look for modality keywords in the paths of the selected QC task config, as a secondary signal.
+    path_values = []
+    for value in (qc_config or {}).values():
+        if isinstance(value, list):
+            path_values.extend(str(item) for item in value if item)
+        elif value:
+            path_values.append(str(value))
+    path_text = " ".join(path_values).lower()
+    for modality, keywords in MODALITY_KEYWORDS.items():
+        if modality in iqm_config and any(keyword in path_text for keyword in keywords):
+            return modality
+    # If that also fails, but there's only one modality available in the config, return that one as a last resort since it's the only option.
+    available_modalities = [m for m in IQM_DISTRIBUTION_GROUPS if m in iqm_config]
+    if len(available_modalities) == 1:
+        return available_modalities[0]
+    return None
 
 
 def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str, session_id: str,
@@ -357,30 +415,3 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         qc_task=qc_task,
         qc_config=qc_config,
     )
-
-
-def _infer_iqm_modality(qc_task: str, qc_config: dict, iqm_config: dict) -> Optional[str]:
-    """Infer IQM modality from the selected QC task/config."""
-    task_name = str(qc_task or "").lower()
-
-    # First try to infer modality from the QC task name itself, as this is most likely to reflect the rater's intent.
-    for modality, keywords in MODALITY_KEYWORDS.items():
-        if modality in iqm_config and any(keyword in task_name for keyword in keywords):
-            return modality
-    
-    # If that fails, look for modality keywords in the paths of the selected QC task config, as a secondary signal.
-    path_values = []
-    for value in (qc_config or {}).values():
-        if isinstance(value, list):
-            path_values.extend(str(item) for item in value if item)
-        elif value:
-            path_values.append(str(value))
-    path_text = " ".join(path_values).lower()
-    for modality, keywords in MODALITY_KEYWORDS.items():
-        if modality in iqm_config and any(keyword in path_text for keyword in keywords):
-            return modality
-    # If that also fails, but there's only one modality available in the config, return that one as a last resort since it's the only option.
-    available_modalities = [m for m in IQM_DISTRIBUTION_GROUPS if m in iqm_config]
-    if len(available_modalities) == 1:
-        return available_modalities[0]
-    return None
