@@ -15,6 +15,8 @@ from utils.data_loaders import (
 )
 from utils.export import save_qc_results_to_csv
 
+pytestmark = pytest.mark.integration
+
 
 class TestParseQcConfig:
     """Test parse_qc_config function."""

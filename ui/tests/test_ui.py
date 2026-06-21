@@ -14,6 +14,8 @@ from unittest.mock import MagicMock
 sys.modules["streamlit"] = MagicMock()
 sys.modules["layout"] = MagicMock()
 
+pytestmark = pytest.mark.integration
+
 
 class TestParseArgs:
     """Test argument parsing functionality."""

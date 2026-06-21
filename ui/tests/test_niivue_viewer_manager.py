@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 from managers.niivue_viewer_manager import NiivueViewerConfig, NiivueViewerManager
 from constants import VIEW_MODES, OVERLAY_COLORMAPS, DEFAULT_OVERLAY_OPACITY
 
+pytestmark = pytest.mark.unit
+
 
 class TestNiivueViewerConfig:
     """Tests for NiivueViewerConfig class."""

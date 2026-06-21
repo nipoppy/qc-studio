@@ -25,6 +25,8 @@ from constants import (
     INFO_MESSAGES,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestExperienceLevels:
     """Tests for experience level constants."""

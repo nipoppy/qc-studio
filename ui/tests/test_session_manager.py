@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 from managers.session_manager import SessionManager
 from constants import SESSION_KEYS, DEFAULT_PANELS
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def mock_session_state():

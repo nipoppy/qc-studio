@@ -22,6 +22,8 @@ from constants import (
     EXPERIENCE_LEVELS,
 )
 
+pytestmark = pytest.mark.integration
+
 
 def _session_state_dict():
     """Minimal session_state matching SessionManager defaults."""

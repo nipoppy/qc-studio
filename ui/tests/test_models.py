@@ -8,6 +8,8 @@ from pydantic import ValidationError
 
 from models import MetricQC, QCRecord, QCTask, QCConfig
 
+pytestmark = pytest.mark.unit
+
 
 class TestMetricQC:
     """Test MetricQC model."""
