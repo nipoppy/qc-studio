@@ -1,0 +1,7 @@
+{
+  "valid": false,
+  "errors": [
+    "reasons must contain 4 to 7 items"
+  ],
+  "raw_response": "sub-000103_acq-standard_T1w_llava_4b_raw.txt"
+}

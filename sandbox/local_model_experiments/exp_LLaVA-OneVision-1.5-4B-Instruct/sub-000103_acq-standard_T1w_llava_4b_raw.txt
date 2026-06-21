@@ -1,0 +1,22 @@
+{
+  "decision": "pass",
+  "confidence": "high",
+  "summary": "The MRI scan passes quality control based on the provided metrics.",
+  "flagged_metrics": [],
+  "reasons": [
+    "cjv=0.308, percentile=6.4 — lower than expected, indicating potential issues with gray-white matter separability or intensity non-uniformity artifacts.",
+    "cnr=4.29, percentile=67.8 — within acceptable range, suggesting adequate gray-white matter contrast.",
+    "efc=0.57, percentile=73.5 — within acceptable range, indicating no significant ghosting, blurring, or motion-related degradation.",
+    "fber=22400, percentile=98.6 — within acceptable range, indicating strong foreground signal relative to background noise.",
+    "fwhm_avg=4.64, percentile=95.8 — within acceptable range, indicating no significant blur or lack of spatial sharpness.",
+    "inu_range=0.56, percentile=33 — within acceptable range, indicating no significant intensity inhomogeneity.",
+    "qi_1=0.0, percentile=26.2 — near-zero, indicating no artifactual intensity voxels in the background region.",
+    "qi_2=0.0075, percentile=25.5 — within acceptable range, indicating no abnormal background noise structure after detected artifacts are removed.",
+    "snr_gm=14.23, percentile=34.9 — within acceptable range, indicating adequate tissue-specific signal quality.",
+    "snr_total=13.54, percentile=36.4 — within acceptable range, indicating adequate overall signal quality.",
+    "snr_wm=23.03, percentile=31.7 — within acceptable range, indicating adequate white matter signal quality.",
+    "snrd_gm=137.33, percentile=99.7 — within acceptable range, indicating adequate signal quality relative to background air noise.",
+    "snrd_wm=192.22, percentile=99.7 — within acceptable range, indicating adequate white matter signal quality relative to background air noise."
+  ],
+  "recommended_followup": []
+}
