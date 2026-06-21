@@ -1,14 +1,13 @@
 [flake8]
 max-line-length = 150
 
-extend-ignore =
-    E203,
-    W503,
-    E712,
-    E741,
-    F405,
-    F403,
-    C901
+# Black owns formatting. Keep the initial CI lint gate focused on syntax
+# errors, undefined names, and other correctness problems.
+select =
+    E9,
+    F63,
+    F7,
+    F82
 
 exclude =
     .git,
