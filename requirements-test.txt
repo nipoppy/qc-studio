@@ -21,6 +21,7 @@ pytest-cov>=5.0
 black==24.10.0
 flake8==7.3.0
 codespell==2.4.2
+pre-commit>=4.0,<5.0
 
 # Optional: For parallel test execution
 # pytest-xdist>=3.0

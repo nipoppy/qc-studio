@@ -105,6 +105,19 @@ Contributions are welcome! Please:
 3. Follow the code organization described above
 4. Ensure all tests pass before submitting PR
 
+Install the development checks once per clone:
+
+```bash
+python -m pip install -r requirements-test.txt
+pre-commit install
+```
+
+Run every pre-commit check manually:
+
+```bash
+pre-commit run --all-files
+```
+
 ## ❓ Support
 
 For issues, questions, or suggestions:
