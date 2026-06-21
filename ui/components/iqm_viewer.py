@@ -47,6 +47,9 @@ SUBJECT_MARKER_STYLE = dict(size=12, symbol='diamond', color="rgba(255, 127, 14,
                         line=dict(color="rgba(255, 127, 14, 1.0)", width=2))
 MAX_REFERENCE_ROWS = 50000
 
+CONTAINER_HEIGHT = 520
+NUM_OVERVIEW_COLUMNS = 2
+
 
 def _load_iqm_config(qc_config_path: str) -> dict:
     """Load IQM configuration from the QC config file."""
@@ -198,6 +201,7 @@ def _build_iqm_distribution_figure(
     metric_columns: list,
     display_mode: str,
     reference_data: Optional[pd.DataFrame] = None,
+    compact: bool = False,
 ) -> Optional[go.Figure]:
     """Construct the Plotly figure for the IQM distribution panel."""
 
@@ -227,16 +231,37 @@ def _build_iqm_distribution_figure(
 
     #____________Render distribution plot___________
     fig = go.Figure()
+    boxpoints = False if compact else 'all'
 
     if group_display_mode == "Dataset":
-        _add_box_traces(fig, dataset_plot_data, DATASET_STYLE, offsetgroup="Dataset")
+        _add_box_traces(
+            fig,
+            dataset_plot_data,
+            DATASET_STYLE,
+            offsetgroup="Dataset",
+            boxpoints=boxpoints,
+        )
         _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
 
     elif group_display_mode == "Dataset + reference":
-        _add_box_traces(fig, dataset_plot_data, offsetgroup="Dataset", style=DATASET_STYLE, pointpos=-0.3)
+        _add_box_traces(
+            fig,
+            dataset_plot_data,
+            offsetgroup="Dataset",
+            style=DATASET_STYLE,
+            pointpos=-0.3,
+            boxpoints=boxpoints,
+        )
         _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
         # Keep sampling for performance, but show reference points for parity with dataset view.
-        _add_box_traces(fig, reference_plot_data, offsetgroup="Reference", style=REFERENCE_STYLE, pointpos=0.3, boxpoints='all')
+        _add_box_traces(
+            fig,
+            reference_plot_data,
+            offsetgroup="Reference",
+            style=REFERENCE_STYLE,
+            pointpos=0.3,
+            boxpoints=boxpoints,
+        )
     
     fig.update_layout(
         title=f"IQM Distributions for {metric_group_name} ({modality})",
@@ -247,11 +272,56 @@ def _build_iqm_distribution_figure(
         template="plotly_white"
     )
 
+    if compact:
+        fig.update_layout(
+            title=metric_group_name,
+            height=220,
+            showlegend=False,
+            xaxis_title=None,
+            yaxis_title=None,
+            margin=dict(l=20, r=20, t=45, b=25),
+        )
+
     if not fig.data:
         st.warning("No plottable numeric data found for the selected group.")
         return None
     
     return fig
+
+
+def _render_montage_of_iqm_groups(
+    valid_groups,
+    iqm_data,
+    reference_data,
+    participant_id,
+    session_id,
+    modality,
+    display_mode,
+):
+    """Render compact plots for all available IQM groups."""
+    overview_columns = st.columns(NUM_OVERVIEW_COLUMNS)
+
+    for index, (group_name, metric_columns) in enumerate(valid_groups.items()):
+        fig = _build_iqm_distribution_figure(
+            metric_group_name=group_name,
+            modality=modality,
+            iqm_data=iqm_data,
+            participant_id=participant_id,
+            session_id=session_id,
+            metric_columns=metric_columns,
+            display_mode=display_mode,
+            reference_data=reference_data,
+            compact=True,
+        )
+
+        if fig is not None:
+            column = overview_columns[index % NUM_OVERVIEW_COLUMNS]
+            with column:
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key=f"iqm_overview_{modality}_{group_name}",
+                )
 
 
 def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, session_id,
@@ -332,6 +402,16 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
     overview_tab, detail_tab = st.tabs(["Overview", "Detail"])
     with overview_tab:
         st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
+        with st.container(height=CONTAINER_HEIGHT, border=False):
+            _render_montage_of_iqm_groups(
+                valid_groups=valid_groups,
+                iqm_data=iqm_data,
+                reference_data=reference_data,
+                participant_id=participant_id,
+                session_id=session_id,
+                modality=modality,
+                display_mode=mode,
+            )
     with detail_tab:
         st.write("Detailed view of a single IQM group with full-size plot and subject overlay.")
         group = st.selectbox(

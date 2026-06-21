@@ -214,15 +214,6 @@ def display_qc_viewers(
 				tname,
 				qc_config_path=qc_config_path,
 			)
-			st.divider()
-			display_iqm_distribution_panel(
-				qc_config,
-				qc_config_path,
-				participant_id,
-				session_id,
-				dataset_dir,
-				qc_task=tname,
-			)
 		elif show_niivue and show_svg:
 			_display_niivue_with_secondary_panel(
 				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname,  qc_config_path=qc_config_path,)
@@ -293,7 +284,9 @@ def _display_niivue_with_secondary_panel(
 	with panel_col:
 		if selected_panels.get('svg', False):
 			_display_svg_panel(dataset_dir, qc_config)
-		else:
+		if selected_panels.get('iqm', False):
+			if selected_panels.get('svg', False):
+				st.divider()
 			display_iqm_distribution_panel(
 				qc_config,
 				qc_config_path,
