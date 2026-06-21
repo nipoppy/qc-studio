@@ -12,7 +12,9 @@ try:
 except ImportError:
     from typing_extensions import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
+
+from constants import MAX_MONTAGE_GRID_SIZE, MIN_MONTAGE_GRID_SIZE
 
 
 # Future plans:
@@ -62,6 +64,36 @@ class QCTask(BaseModel):
     # Path for IQMs or other QC files (e.g. CSV, JSON)
     iqm_path: Annotated[Optional[Path], Field(description="Path to an IQM or other QC SVG/file")] = None
 
+    # Optional grid constraints for multi-image SVG/raster montage (see utils.data_loaders.load_svg_data)
+    montage_max_rows: Annotated[
+        Optional[int],
+        Field(
+            default=None,
+            ge=MIN_MONTAGE_GRID_SIZE,
+            le=MAX_MONTAGE_GRID_SIZE,
+            description="Default max rows for montage grid; omit for auto layout",
+        ),
+    ] = None
+    montage_max_cols: Annotated[
+        Optional[int],
+        Field(
+            default=None,
+            ge=MIN_MONTAGE_GRID_SIZE,
+            le=MAX_MONTAGE_GRID_SIZE,
+            description="Default max columns for montage grid; omit for auto layout",
+        ),
+    ] = None
+
+    @field_validator("svg_montage_path", mode="before")
+    @classmethod
+    def _coerce_svg_montage_path(cls, v):
+        """Accept a single path/string from JSON or a list of paths."""
+        if v is None:
+            return None
+        if isinstance(v, (list, tuple)):
+            return [str(Path(x)) for x in v]
+        return [str(Path(v))]
+
 
 class QCConfig(RootModel[Dict[str, QCTask]]):
     """Top-level model for `qc.json`.
@@ -74,7 +106,9 @@ class QCConfig(RootModel[Dict[str, QCTask]]):
             "base_mri_image_path": "...",
             "overlay_mri_image_path": "...",
             "svg_montage_path": "...",
-            "iqm_path": "..."
+            "iqm_path": "...",
+            "montage_max_rows": 2,
+            "montage_max_cols": 2
         }
     }
     """
@@ -86,7 +120,7 @@ QCDecision = Literal["pass", "fail", "uncertain"]
 
 
 class QCStatusRow(BaseModel):
-    participant_id: Annotated[str, Field(description="BIDS subject ID, e.g., sub-ED01")]
+    participant_id: Annotated[str, Field(description="BIDS subject ID, e.g., sub-CMH0001")]
     session: Optional[str] = None
     acq: Optional[str] = None
     run: Optional[int] = None

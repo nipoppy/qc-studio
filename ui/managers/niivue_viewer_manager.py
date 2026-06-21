@@ -5,7 +5,11 @@ from constants import (
     MESSAGES, ERROR_MESSAGES
 )
 from utils.data_loaders import load_mri_data
-from niivue_component import niivue_viewer
+
+try:
+    from niivue_component import niivue_viewer
+except ImportError:
+    from _niivue_viewer_fallback import niivue_viewer
 
 
 class NiivueViewerConfig:
@@ -43,42 +47,47 @@ class NiivueViewerConfig:
             "interpolation": self.interpolation
         }
     
-    def get_viewer_key(self, participant_id: str = None, session_id: str = None) -> str:
+    def get_viewer_key(self, participant_id: str = None, session_id: str = None, task_suffix: str = "") -> str:
         """Generate unique key for viewer state based on settings and participant context.
         
         Args:
             participant_id: Current participant ID
             session_id: Current session ID
-            
+            task_suffix: Optional qc_task (or tag) when multiple viewers share one page
+        
         Returns:
             Unique key string including participant/session context
         """
         participant_key = f"_{participant_id}" if participant_id else ""
         session_key = f"_{session_id}" if session_id else ""
-        return f"niivue_{self.view_mode}_{self.overlay_colormap}_{self.show_overlay}{participant_key}{session_key}"
+        task_key = f"_{task_suffix}" if task_suffix else ""
+        return f"niivue_{self.view_mode}_{self.overlay_colormap}_{self.show_overlay}{participant_key}{session_key}{task_key}"
 
 
 class NiivueViewerManager:
     """Manages Niivue viewer rendering and configuration."""
     
     @staticmethod
-    def render_controls_panel() -> NiivueViewerConfig:
+    def render_controls_panel(state_suffix: str = "") -> NiivueViewerConfig:
         """Render Niivue controls panel and return configuration.
         
-        Updates session state with new config when user changes settings.
-        
-        Returns:
-            NiivueViewerConfig object with user selections
+        Args:
+            state_suffix: If set, persist config under ``niivue_config_<suffix>`` (multi-task pages).
         """
         st.header(MESSAGES['niivue_controls_header'])
         
+        state_key = "niivue_config" if not state_suffix else f"niivue_config_{state_suffix}"
+        # Widget keys must differ when multiple control panels render on one page (e.g. --qc_task all).
+        wid = (state_suffix or "default").replace(".", "_").replace(" ", "_")
+        
         # Get current config from session state for initial values
-        current_config = st.session_state.get('niivue_config', None)
+        current_config = st.session_state.get(state_key, None)
         
         # Overlay toggle - at the top for easy access
         show_overlay = st.checkbox(
             MESSAGES['show_overlay_label'], 
-            value=current_config.show_overlay if current_config else False
+            value=current_config.show_overlay if current_config else False,
+            key=f"niivue_ctrl_show_overlay_{wid}",
         )
         
         st.divider()
@@ -88,7 +97,8 @@ class NiivueViewerManager:
             MESSAGES['view_mode_label'],
             VIEW_MODES,
             index=VIEW_MODES.index(current_config.view_mode) if current_config else 0,
-            help="Select the viewing perspective"
+            help="Select the viewing perspective",
+            key=f"niivue_ctrl_view_mode_{wid}",
         )
         
         # Overlay colormap selection
@@ -96,7 +106,8 @@ class NiivueViewerManager:
             MESSAGES['overlay_colormap_label'],
             OVERLAY_COLORMAPS,
             index=OVERLAY_COLORMAPS.index(current_config.overlay_colormap) if current_config else 0,
-            help="Select the colormap for the overlay"
+            help="Select the colormap for the overlay",
+            key=f"niivue_ctrl_overlay_cmap_{wid}",
         )
         
         # Create new config with updated values
@@ -111,7 +122,7 @@ class NiivueViewerManager:
         )
         
         # Save updated config to session state so render_viewer uses it on next rerun
-        st.session_state.niivue_config = new_config
+        st.session_state[state_key] = new_config
         
         return new_config
     
@@ -134,8 +145,7 @@ class NiivueViewerManager:
         
         # Only add overlay if checkbox is checked AND overlay data exists
         if config.show_overlay and "overlay_mri_image_bytes" in mri_data:
-            overlay_path = mri_data.get("overlay_mri_image_path")
-            overlay_name = str(overlay_path.name) if overlay_path else "overlay.nii.gz"
+            overlay_name = "overlay"
             
             overlays.append({
                 "data": mri_data["overlay_mri_image_bytes"],
@@ -147,8 +157,9 @@ class NiivueViewerManager:
         return overlays
     
     @staticmethod
-    def build_viewer_kwargs(mri_data: dict, config: NiivueViewerConfig, 
-                           participant_id: str = None, session_id: str = None) -> dict:
+    def build_viewer_kwargs(mri_data: dict, config: NiivueViewerConfig,
+                           participant_id: str = None, session_id: str = None,
+                           task_suffix: str = "") -> dict:
         """Build kwargs dictionary for niivue_viewer component.
         
         The overlays parameter is always included in the returned kwargs.
@@ -160,6 +171,7 @@ class NiivueViewerManager:
             config: NiivueViewerConfig with viewer settings
             participant_id: Current participant ID for unique key generation
             session_id: Current session ID for unique key generation
+            task_suffix: Optional qc_task name to disambiguate multiple viewers on one page
             
         Returns:
             Dictionary of kwargs for niivue_viewer() with overlays support
@@ -178,7 +190,7 @@ class NiivueViewerManager:
             "nifti_data": base_mri_image_bytes,
             "filename": base_mri_name,
             "height": NIIVUE_HEIGHT,
-            "key": config.get_viewer_key(participant_id, session_id),
+            "key": config.get_viewer_key(participant_id, session_id, task_suffix=task_suffix),
             "view_mode": config.view_mode,
             "styled": True,
             "settings": settings,
@@ -191,7 +203,8 @@ class NiivueViewerManager:
     
     @staticmethod
     def render_viewer(dataset_dir, qc_config, config: NiivueViewerConfig,
-                     participant_id: str = None, session_id: str = None):
+                     participant_id: str = None, session_id: str = None,
+                     task_suffix: str = ""):
         """Render Niivue viewer in the main viewing area.
         
         Args:
@@ -200,6 +213,7 @@ class NiivueViewerManager:
             config: NiivueViewerConfig with viewer settings
             participant_id: Current participant ID
             session_id: Current session ID
+            task_suffix: Disambiguates multiple viewers (e.g. qc_task) on one page
         """
         st.header(MESSAGES['niivue_header'])
         
@@ -213,7 +227,8 @@ class NiivueViewerManager:
             
             # Build and render viewer with participant context for unique key
             viewer_kwargs = NiivueViewerManager.build_viewer_kwargs(mri_data, config, 
-                                                                    participant_id, session_id)
+                                                                    participant_id, session_id,
+                                                                    task_suffix=task_suffix)
             niivue_viewer(**viewer_kwargs)
             
         except Exception as e:

@@ -111,6 +111,7 @@ qc-studio/
 │   ├── app.py
 │   ├── main.py
 │   ├── pages/
+│   ├── views/
 │   ├── components/
 │   ├── managers/
 │   ├── models/
@@ -129,13 +130,13 @@ qc-studio/
 # From test_models.py
 def test_create_qc_record_with_required_fields(self):
     record = QCRecord(
-        participant_id='sub-ED01',
+        participant_id='sub-CMH0001',
         session_id='ses-01',
         qc_task='anat_wf_qc',
         pipeline='fmriprep',
         rater_id='test_rater'
     )
-    assert record.participant_id == 'sub-ED01'
+    assert record.participant_id == 'sub-CMH0001'
 ```
 
 ### Testing Utilities

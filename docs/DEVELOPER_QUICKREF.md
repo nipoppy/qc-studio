@@ -160,7 +160,7 @@ pytest ui/tests/test_session_manager.py::TestMyNewMethods -v
 
 ### Task: Update UI Component
 
-**File**: [ui/pages/landing_page.py](ui/pages/landing_page.py), [ui/components/qc_viewer.py](ui/components/qc_viewer.py), etc.
+**File**: [ui/views/landing_page.py](ui/views/landing_page.py), [ui/components/qc_viewer.py](ui/components/qc_viewer.py), etc.
 
 ```python
 # 1. Make changes
@@ -281,10 +281,13 @@ def resource():
 
 ```
 ui/
-├── app.py                          # Streamlit entry point
-├── main.py                         # CLI entry point
-├── constants.py                    # Configuration & constants
+├── app.py
+├── main.py
+├── constants.py
 ├── pages/
+│   ├── 1_Landing_Page.py          # Sidebar → landing (calls views/)
+│   └── 2_Congratulations_Page.py  # Sidebar → congratulations (calls views/)
+├── views/
 │   ├── landing_page.py             # Onboarding page (194 lines)
 │   └── congratulations_page.py     # Results page (72 lines)
 ├── components/
@@ -322,7 +325,7 @@ ui/
 └─────────────────────────────────────┘
               ↓
 ┌─────────────────────────────────────┐
-│     Page Layer (pages/)             │
+│     Page Layer (views/)             │
 │  landing_page.py                    │  <-- Full-page views
 │  congratulations_page.py            │
 └─────────────────────────────────────┘
@@ -352,7 +355,7 @@ ui/
 
 ```
 app.py (entry)
-  ├─→ pages/
+  ├─→ views/
   │    ├─→ landing_page.py
   │    └─→ congratulations_page.py
   │
@@ -382,8 +385,8 @@ NO CIRCULAR DEPENDENCIES ✓
 - [run_tests.sh](run_tests.sh) - Test runner script
 
 ### Pages (Full-Page Views)
-- [ui/pages/landing_page.py](ui/pages/landing_page.py) - Onboarding and configuration
-- [ui/pages/congratulations_page.py](ui/pages/congratulations_page.py) - Results display
+- [ui/views/landing_page.py](ui/views/landing_page.py) - Onboarding and configuration
+- [ui/views/congratulations_page.py](ui/views/congratulations_page.py) - Results display
 
 ### Components (Reusable UI)
 - [ui/components/qc_viewer.py](ui/components/qc_viewer.py) - QC viewer orchestration

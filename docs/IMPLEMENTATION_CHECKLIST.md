@@ -166,6 +166,7 @@ qc-studio/
 │   ├── main.py
 │   ├── constants.py
 │   ├── pages/
+│   ├── views/
 │   ├── components/
 │   ├── managers/
 │   ├── models/

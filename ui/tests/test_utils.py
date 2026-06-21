@@ -26,6 +26,28 @@ class TestParseQcConfig:
         assert "base_mri_image_path" in result
         assert "svg_montage_path" in result
         assert result["base_mri_image_path"] is not None
+        assert "montage_max_rows" in result
+        assert "montage_max_cols" in result
+        assert result["montage_max_rows"] is None
+        assert result["montage_max_cols"] is None
+
+    def test_parse_qc_config_montage_layout_from_json(self, temp_dir):
+        """Optional montage_max_rows / montage_max_cols are parsed per QC task."""
+        qc_path = temp_dir / "qc.json"
+        qc_path.write_text(
+            json.dumps(
+                {
+                    "anat_wf_qc": {
+                        "svg_montage_path": [str(temp_dir / "a.svg"), str(temp_dir / "b.svg")],
+                        "montage_max_rows": 2,
+                        "montage_max_cols": 2,
+                    }
+                }
+            )
+        )
+        result = parse_qc_config(str(qc_path), "anat_wf_qc")
+        assert result["montage_max_rows"] == 2
+        assert result["montage_max_cols"] == 2
 
     def test_parse_qc_config_nonexistent_task(self, sample_qc_config):
         """Test parsing QC config with non-existent task."""
@@ -35,6 +57,8 @@ class TestParseQcConfig:
         assert result["overlay_mri_image_path"] is None
         assert result["svg_montage_path"] is None
         assert result["iqm_path"] is None
+        assert result["montage_max_rows"] is None
+        assert result["montage_max_cols"] is None
 
     def test_parse_qc_config_invalid_file(self, temp_dir):
         """Test parsing non-existent QC config file."""
@@ -42,6 +66,8 @@ class TestParseQcConfig:
         
         assert result["base_mri_image_path"] is None
         assert result["overlay_mri_image_path"] is None
+        assert result["montage_max_rows"] is None
+        assert result["montage_max_cols"] is None
 
     def test_parse_qc_config_malformed_json(self, temp_dir):
         """Test parsing malformed JSON file."""
@@ -51,12 +77,16 @@ class TestParseQcConfig:
         result = parse_qc_config(str(bad_json_file), "anat_wf_qc")
         
         assert result["base_mri_image_path"] is None
+        assert result["montage_max_rows"] is None
+        assert result["montage_max_cols"] is None
 
     def test_parse_qc_config_none_input(self):
         """Test parsing with None input."""
         result = parse_qc_config(None, "anat_wf_qc")
         
         assert result["base_mri_image_path"] is None
+        assert result["montage_max_rows"] is None
+        assert result["montage_max_cols"] is None
 
 
 class TestLoadMriData:
@@ -155,10 +185,14 @@ class TestLoadSvgData:
         
         assert result is not None
         assert isinstance(result, dict)
-        assert len(result) == 2
+        assert len(result) >= 2
+        if "montage" in result:
+            assert result["montage"]["type"] == "png"
         
-        # Check that both SVG files are loaded with correct type
+        # Check that SVG files are loaded with correct type.
         for filename, data in result.items():
+            if filename == "montage":
+                continue
             assert data["type"] == "svg"
             assert "<svg" in data["content"]
 
@@ -180,12 +214,33 @@ class TestLoadSvgData:
         
         assert result is not None
         assert isinstance(result, dict)
-        assert len(result) == 2
+        assert len(result) >= 2
+        if "montage" in result:
+            assert result["montage"]["type"] == "png"
         
-        # Verify we have one SVG and one PNG
-        types = [data["type"] for data in result.values()]
+        # Verify we have one SVG and one PNG in addition to montage.
+        types = [data["type"] for key, data in result.items() if key != "montage"]
         assert "svg" in types
         assert "png" in types
+
+    def test_load_multiple_png_files_creates_montage(self, temp_dir):
+        """Test that multiple raster images produce an auto-layout montage."""
+        from PIL import Image
+
+        png_file1 = temp_dir / "image1.png"
+        png_file2 = temp_dir / "image2.png"
+        Image.new('RGB', (100, 100), color='red').save(png_file1)
+        Image.new('RGB', (100, 100), color='blue').save(png_file2)
+
+        path_dict = {"svg_montage_path": [png_file1, png_file2]}
+
+        result = load_svg_data(temp_dir, path_dict)
+
+        assert result is not None
+        assert isinstance(result, dict)
+        assert len(result) == 3
+        assert "montage" in result
+        assert result["montage"]["type"] == "png"
 
     def test_load_jpeg_file(self, temp_dir):
         """Test loading JPEG file."""
@@ -332,7 +387,8 @@ class TestSaveQcResultsToCsv:
         assert output_file.exists()
         df = pd.read_csv(output_file, sep="\t")
         assert len(df) == 1
-        assert df.iloc[0]['participant_id'] == 'sub-ED01'
+        assert list(df.columns)[0] == "pipeline"
+        assert df.iloc[0]['participant_id'] == 'sub-CMH0001'
 
     def test_save_empty_records_list(self, temp_dir):
         """Test saving empty records list."""
@@ -365,3 +421,28 @@ class TestSaveQcResultsToCsv:
         
         # At least verify it doesn't crash
         assert result is not None or nested_output_file.parent.exists()
+
+    def test_save_qc_records_sorted_by_participant_session_task(self, temp_dir, qc_record_sample):
+        """TSV rows follow participant_id, then session_id, then qc_task (cohort walk order)."""
+        b = qc_record_sample.model_copy(update={"qc_task": "b_task"})
+        a2 = qc_record_sample.model_copy(
+            update={"session_id": "ses-02", "qc_task": "a_task"}
+        )
+        other = qc_record_sample.model_copy(
+            update={"participant_id": "sub-CMH0002", "qc_task": "z_task"}
+        )
+        # Intentionally shuffled input order
+        records = [other, a2, qc_record_sample, b]
+
+        output_file = temp_dir / "sorted.tsv"
+        save_qc_results_to_csv(output_file, records, drop_duplicates=False)
+        df = pd.read_csv(output_file, sep="\t")
+
+        assert list(df["participant_id"]) == [
+            "sub-CMH0001",
+            "sub-CMH0001",
+            "sub-CMH0001",
+            "sub-CMH0002",
+        ]
+        assert list(df["session_id"]) == ["ses-01", "ses-01", "ses-02", "ses-01"]
+        assert list(df["qc_task"]) == ["anat_wf_qc", "b_task", "a_task", "z_task"]

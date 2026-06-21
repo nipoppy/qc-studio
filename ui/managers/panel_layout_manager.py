@@ -1,6 +1,12 @@
 """Panel layout and management utilities."""
 import streamlit as st
-from constants import PANEL_CONFIG, MESSAGES
+from constants import (
+    PANEL_CONFIG,
+    MESSAGES,
+    EQUAL_RATIO,
+    RATING_IQM_RATIO,
+    NIIVUE_SVG_RATIO,
+)
 from .session_manager import SessionManager
 
 
@@ -41,7 +47,26 @@ class PanelLayoutManager:
             Number of selected panels
         """
         return sum(1 for v in selected_panels.values() if v)
-    
+
+    @staticmethod
+    def get_panel_layout_ratios(selected_panels: dict) -> list:
+        """Return two-element column width ratios for the active viewer layout."""
+        count = PanelLayoutManager.get_active_panel_count(selected_panels)
+        if count == 0:
+            return list(EQUAL_RATIO)
+        if count == 1:
+            if PanelLayoutManager.should_show_panel("iqm", selected_panels):
+                return list(RATING_IQM_RATIO)
+            return list(EQUAL_RATIO)
+        if count == 2:
+            return list(EQUAL_RATIO)
+        return list(NIIVUE_SVG_RATIO)
+
+    @staticmethod
+    def should_use_side_by_side_layout(selected_panels: dict) -> bool:
+        """True when exactly two panels are selected (side-by-side viewer)."""
+        return PanelLayoutManager.get_active_panel_count(selected_panels) == 2
+
     @staticmethod
     def should_show_panel(panel_name: str, selected_panels: dict = None) -> bool:
         """Determine if a specific panel should be shown.

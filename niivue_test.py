@@ -53,8 +53,9 @@ def niivue_viewer_from_path(baseimage_fpath: str, overlay_fpath: str, height: in
         )
 
 
-baseimage_fpath = "../sample_data/derivatives/fmriprep/23.1.3/output/sub-ED01/ses-01/anat/sub-ED01_ses-01_run-1_desc-preproc_T1w.nii.gz"
-overlay_fpath = "../sample_data/derivatives/fmriprep/23.1.3/output/sub-ED01/ses-01/anat/sub-ED01_ses-01_run-1_desc-brain_mask.nii.gz"
+# Sample BIDS anatomical (from `sample_data/bids/`, synced from Desktop shared data)
+baseimage_fpath = "../sample_data/bids/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_T1w.nii.gz"
+overlay_fpath = baseimage_fpath
 
 try:
     niivue_viewer_from_path(baseimage_fpath, overlay_fpath, height=600, key="niivue_viewer_path")

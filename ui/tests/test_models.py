@@ -66,14 +66,14 @@ class TestQCRecord:
     def test_create_qc_record_with_required_fields(self):
         """Test creating QCRecord with required fields."""
         record = QCRecord(
-            participant_id='sub-ED01',
+            participant_id='sub-CMH0001',
             session_id='ses-01',
             qc_task='anat_wf_qc',
             pipeline='fmriprep',
             rater_id='test_rater'
         )
         
-        assert record.participant_id == 'sub-ED01'
+        assert record.participant_id == 'sub-CMH0001'
         assert record.session_id == 'ses-01'
         assert record.qc_task == 'anat_wf_qc'
         assert record.pipeline == 'fmriprep'
@@ -81,7 +81,7 @@ class TestQCRecord:
 
     def test_create_qc_record_with_all_fields(self, qc_record_sample):
         """Test creating QCRecord with all fields."""
-        assert qc_record_sample.participant_id == 'sub-ED01'
+        assert qc_record_sample.participant_id == 'sub-CMH0001'
         assert qc_record_sample.session_id == 'ses-01'
         assert qc_record_sample.rater_experience == 'Expert (>5 year experience)'
         assert qc_record_sample.rater_fatigue == 'Not at all'
@@ -91,7 +91,7 @@ class TestQCRecord:
     def test_qc_record_with_optional_fields(self):
         """Test QCRecord with optional task_id and run_id."""
         record = QCRecord(
-            participant_id='sub-ED01',
+            participant_id='sub-CMH0001',
             session_id='ses-01',
             qc_task='func_proc',
             pipeline='fmriprep',
@@ -107,7 +107,7 @@ class TestQCRecord:
         """Test creating QCRecord without required field raises error."""
         with pytest.raises(ValidationError):
             QCRecord(
-                participant_id='sub-ED01',
+                participant_id='sub-CMH0001',
                 session_id='ses-01',
                 qc_task='anat_wf_qc'
                 # missing pipeline and rater_id
@@ -117,7 +117,7 @@ class TestQCRecord:
         """Test QCRecord model serialization."""
         serialized = qc_record_sample.model_dump()
         
-        assert serialized["participant_id"] == 'sub-ED01'
+        assert serialized["participant_id"] == 'sub-CMH0001'
         assert serialized["rater_id"] == 'test_rater'
         assert "notes" in serialized
 
@@ -125,7 +125,7 @@ class TestQCRecord:
         """Test QCRecord JSON serialization."""
         json_str = qc_record_sample.model_dump_json()
         
-        assert "sub-ED01" in json_str
+        assert "sub-CMH0001" in json_str
         assert "test_rater" in json_str
 
 
@@ -148,7 +148,7 @@ class TestQCTask:
         
         assert task.base_mri_image_path == base_path
         assert task.overlay_mri_image_path == overlay_path
-        assert task.svg_montage_path == svg_path
+        assert task.svg_montage_path == [svg_path]
         assert task.iqm_path == iqm_path
 
     def test_create_qc_task_with_minimal_fields(self):
@@ -159,6 +159,8 @@ class TestQCTask:
         assert task.overlay_mri_image_path is None
         assert task.svg_montage_path is None
         assert task.iqm_path is None
+        assert task.montage_max_rows is None
+        assert task.montage_max_cols is None
 
     def test_qc_task_path_conversion(self, temp_dir):
         """Test that string paths are converted to Path objects."""
@@ -177,6 +179,22 @@ class TestQCTask:
         serialized = task.model_dump()
         
         assert "base_mri_image_path" in serialized
+
+    def test_qc_task_montage_layout_fields(self, temp_dir):
+        task = QCTask(
+            svg_montage_path=str(temp_dir / "a.svg"),
+            montage_max_rows=2,
+            montage_max_cols=3,
+        )
+        assert task.montage_max_rows == 2
+        assert task.montage_max_cols == 3
+
+    def test_qc_task_montage_layout_invalid_rejected(self, temp_dir):
+        with pytest.raises(ValidationError):
+            QCTask(
+                svg_montage_path=str(temp_dir / "a.svg"),
+                montage_max_rows=99,
+            )
 
 
 class TestQCConfig:

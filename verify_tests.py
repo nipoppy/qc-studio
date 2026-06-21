@@ -60,7 +60,7 @@ def main():
     print("✓ Discovering tests with pytest...")
     try:
         result = subprocess.run(
-            ["python", "-m", "pytest", "ui/tests/", "--collect-only", "-q"],
+            [sys.executable, "-m", "pytest", "ui/tests/", "--collect-only", "-q"],
             cwd=project_root,
             capture_output=True,
             text=True,

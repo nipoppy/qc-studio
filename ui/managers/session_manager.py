@@ -1,6 +1,19 @@
 """Session state management for QC-Studio UI."""
 import streamlit as st
-from constants import DEFAULT_PANELS, SESSION_KEYS, DEFAULT_MONTAGE_MAX_ROWS, DEFAULT_MONTAGE_MAX_COLS
+from constants import (
+    DEFAULT_PANELS,
+    SESSION_KEYS,
+    DEFAULT_MONTAGE_MAX_ROWS,
+    DEFAULT_MONTAGE_MAX_COLS,
+    QC_RATINGS,
+)
+
+
+def _bare_bids_id(val: str, prefix: str) -> str:
+    val = str(val)
+    if val.startswith(prefix):
+        val = val[len(prefix) :]
+    return val.lstrip("0") or "0"
 
 
 class SessionManager:
@@ -20,13 +33,14 @@ class SessionManager:
             SESSION_KEYS['notes_version']: 0,
             SESSION_KEYS['rating_version']: 0,
             SESSION_KEYS['participant_order']: [],
+            SESSION_KEYS['qc_cohort_order']: [],
             SESSION_KEYS['landing_page_complete']: False,
             SESSION_KEYS['selected_panels']: DEFAULT_PANELS.copy(),
             SESSION_KEYS['montage_max_rows']: DEFAULT_MONTAGE_MAX_ROWS,
             SESSION_KEYS['montage_max_cols']: DEFAULT_MONTAGE_MAX_COLS,
             'autoplay_enabled': False,
             'autoplay_start_time': 0.0,
-            'autoplay_duration': 5
+            'autoplay_duration': 5,
         }
         
         for key, value in defaults.items():
@@ -111,11 +125,57 @@ class SessionManager:
         return st.session_state[SESSION_KEYS['qc_records']]
     
     @staticmethod
+    def _qc_record_dedup_tuple(record) -> tuple:
+        """Normalize QC_DEDUP_KEYS for duplicate detection (matches CSV merge semantics)."""
+        pid = record.participant_id if hasattr(record, "participant_id") else record.get("participant_id", "")
+        sid = record.session_id if hasattr(record, "session_id") else record.get("session_id", "")
+        pipe = record.pipeline if hasattr(record, "pipeline") else record.get("pipeline", "")
+        task = record.qc_task if hasattr(record, "qc_task") else record.get("qc_task", "")
+        return (
+            _bare_bids_id(pid, "sub-"),
+            _bare_bids_id(sid, "ses-"),
+            str(pipe),
+            str(task),
+        )
+
+    @staticmethod
     def add_qc_record(record):
-        """Add a QC record to the session."""
-        records = SessionManager.get_qc_records()
-        records.append(record)
-        st.session_state[SESSION_KEYS['qc_records']] = records
+        """Append a QC record, replacing any existing row with the same deduplication key.
+
+        Keys match ``QC_DEDUP_KEYS`` (participant, session, pipeline, task) with BIDS-style
+        normalization so re-saving the same subject does not create duplicate rows.
+        """
+        new_key = SessionManager._qc_record_dedup_tuple(record)
+        kept = [r for r in SessionManager.get_qc_records() if SessionManager._qc_record_dedup_tuple(r) != new_key]
+        kept.append(record)
+        st.session_state[SESSION_KEYS["qc_records"]] = kept
+
+    @staticmethod
+    def get_latest_qc_records_per_dedup(qc_task: str | None = None) -> list:
+        """Return the latest record per dedup key; optionally restrict to one ``qc_task``."""
+        seen = {}
+        for record in reversed(SessionManager.get_qc_records()):
+            if qc_task is not None:
+                t = record.qc_task if hasattr(record, "qc_task") else record.get("qc_task", "")
+                if str(t) != str(qc_task):
+                    continue
+            key = SessionManager._qc_record_dedup_tuple(record)
+            if key not in seen:
+                seen[key] = record
+        return list(seen.values())
+
+    @staticmethod
+    def compact_duplicate_qc_records_if_needed() -> None:
+        """Collapse duplicate rows in session state (same dedup key), once per browser session."""
+        mkey = "__qc_dedupe_compact_done"
+        if st.session_state.get(mkey):
+            return
+        raw = list(SessionManager.get_qc_records())
+        if raw:
+            compacted = SessionManager.get_latest_qc_records_per_dedup(None)
+            if len(compacted) < len(raw):
+                SessionManager.set_qc_records(compacted)
+        st.session_state[mkey] = True
     
     @staticmethod
     def set_qc_records(records: list):
@@ -160,13 +220,13 @@ class SessionManager:
         """Set current page number."""
         st.session_state[SESSION_KEYS['current_page']] = page
         SessionManager.reset_for_new_participant()
-    
+
     @staticmethod
     def next_page():
         """Move to next page."""
         st.session_state[SESSION_KEYS['current_page']] += 1
         SessionManager.reset_for_new_participant()
-    
+
     @staticmethod
     def previous_page():
         """Move to previous page."""
@@ -214,6 +274,16 @@ class SessionManager:
         st.session_state[SESSION_KEYS['participant_order']] = ids
 
     @staticmethod
+    def get_qc_cohort_order() -> list:
+        """Stored (participant, session) page order after CSV upload resume."""
+        return st.session_state.get(SESSION_KEYS['qc_cohort_order'], [])
+
+    @staticmethod
+    def set_qc_cohort_order(cohort: list):
+        """Persist cohort page order so multi-session resume keeps session rows."""
+        st.session_state[SESSION_KEYS['qc_cohort_order']] = list(cohort)
+
+    @staticmethod
     def get_qc_record_for_participant(participant_id: str, session_id: str, qc_task: str = None):
         """Return the most recent QCRecord for a given participant/session/task, or None.
         
@@ -221,23 +291,98 @@ class SessionManager:
         during a session (e.g. sub-QPNNC000421 / ses-01) match records loaded
         from a CSV (e.g. QPNNC000421 / 1).
         """
-        def _bare(val: str, prefix: str) -> str:
-            val = str(val)
-            if val.startswith(prefix):
-                val = val[len(prefix):]
-            return val.lstrip("0") or "0"
-
-        bare_pid = _bare(participant_id, "sub-")
-        bare_sid = _bare(session_id, "ses-")
+        bare_pid = _bare_bids_id(participant_id, "sub-")
+        bare_sid = _bare_bids_id(session_id, "ses-")
         for record in reversed(SessionManager.get_qc_records()):
             rec_pid = record.participant_id if hasattr(record, 'participant_id') else record.get('participant_id', '')
             rec_sid = record.session_id if hasattr(record, 'session_id') else record.get('session_id', '')
             rec_task = record.qc_task if hasattr(record, 'qc_task') else record.get('qc_task', '')
             if qc_task is not None and str(rec_task) != str(qc_task):
                 continue
-            if _bare(str(rec_pid), "sub-") == bare_pid and _bare(str(rec_sid), "ses-") == bare_sid:
+            if _bare_bids_id(str(rec_pid), "sub-") == bare_pid and _bare_bids_id(str(rec_sid), "ses-") == bare_sid:
                 return record
         return None
+
+    @staticmethod
+    def _final_qc_is_decided(record) -> bool:
+        if record is None:
+            return False
+        fq = record.final_qc if hasattr(record, "final_qc") else record.get("final_qc", "")
+        return str(fq) in QC_RATINGS
+
+    @staticmethod
+    def participant_has_decided_qc(participant_id: str, session_id: str, qc_task: str) -> bool:
+        """True when the latest stored record for this participant/session/task has PASS/FAIL/UNCERTAIN."""
+        rec = SessionManager.get_qc_record_for_participant(participant_id, session_id, qc_task)
+        return SessionManager._final_qc_is_decided(rec)
+
+    @staticmethod
+    def all_cohort_qc_complete(qc_task: str, session_id: str, participant_ids: list) -> bool:
+        """True when every cohort participant has a QC record with a valid ``final_qc`` for this task/session."""
+        if not participant_ids:
+            return False
+        for pid in participant_ids:
+            if not SessionManager.participant_has_decided_qc(pid, session_id, qc_task):
+                return False
+        return True
+
+    @staticmethod
+    def all_qc_cohort_pages_complete(qc_task: str, qc_cohort: list) -> bool:
+        """True when every (participant, session) page in ``qc_cohort`` has a decided ``final_qc``."""
+        return SessionManager.all_qc_cohort_pages_complete_for_tasks([qc_task], qc_cohort)
+
+    @staticmethod
+    def all_qc_cohort_pages_complete_for_tasks(qc_tasks: list, qc_cohort: list) -> bool:
+        """True when every cohort page has a decided rating for **each** task in ``qc_tasks``."""
+        if not qc_cohort or not qc_tasks:
+            return False
+        for entry in qc_cohort:
+            pid = entry.get("participant_id") if isinstance(entry, dict) else entry[0]
+            sid = entry.get("session_id") if isinstance(entry, dict) else entry[1]
+            for t in qc_tasks:
+                if not SessionManager.participant_has_decided_qc(pid, sid, t):
+                    return False
+        return True
+
+    @staticmethod
+    def first_page_missing_qc(qc_task: str, session_id: str, participant_ids: list) -> int:
+        """1-based page index of the first participant without a decided ``final_qc``."""
+        for i, pid in enumerate(participant_ids):
+            if not SessionManager.participant_has_decided_qc(pid, session_id, qc_task):
+                return i + 1
+        return 1
+
+    @staticmethod
+    def first_qc_cohort_page_missing(qc_task: str, qc_cohort: list) -> int:
+        """1-based page index of the first (participant, session) cohort row missing a decided ``final_qc``."""
+        return SessionManager.first_qc_cohort_page_missing_for_tasks([qc_task], qc_cohort)
+
+    @staticmethod
+    def first_qc_cohort_page_missing_for_tasks(qc_tasks: list, qc_cohort: list) -> int:
+        """First page index where any task in ``qc_tasks`` lacks a decided ``final_qc``."""
+        for i, entry in enumerate(qc_cohort or []):
+            pid = entry.get("participant_id") if isinstance(entry, dict) else entry[0]
+            sid = entry.get("session_id") if isinstance(entry, dict) else entry[1]
+            for t in qc_tasks:
+                if not SessionManager.participant_has_decided_qc(pid, sid, t):
+                    return i + 1
+        return 1
+
+    @staticmethod
+    def get_latest_qc_records_for_task_set(qc_tasks: list | None) -> list:
+        """Like ``get_latest_qc_records_per_dedup`` but only records whose ``qc_task`` is in ``qc_tasks``."""
+        if not qc_tasks:
+            return SessionManager.get_latest_qc_records_per_dedup(None)
+        allowed = {str(t) for t in qc_tasks}
+        seen = {}
+        for record in reversed(SessionManager.get_qc_records()):
+            t = record.qc_task if hasattr(record, "qc_task") else record.get("qc_task", "")
+            if str(t) not in allowed:
+                continue
+            key = SessionManager._qc_record_dedup_tuple(record)
+            if key not in seen:
+                seen[key] = record
+        return list(seen.values())
 
     @staticmethod
     def reset_for_new_participant():

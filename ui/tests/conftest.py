@@ -33,7 +33,7 @@ def temp_dir():
 def sample_participant_list(temp_dir):
     """Create a sample participant list TSV file."""
     data = {
-        'participant_id': ['sub-ED01', 'sub-ED02', 'sub-ED03'],
+        'participant_id': ['sub-CMH0001', 'sub-CMH0002', 'sub-CMH0003'],
         'group': ['control', 'patient', 'control']
     }
     df = pd.DataFrame(data)
@@ -69,10 +69,10 @@ def sample_qc_config(temp_dir):
 def sample_qc_results_csv(temp_dir):
     """Create a sample QC results CSV file."""
     data = {
-        'participant_id': ['sub-ED01', 'sub-ED02'],
-        'session_id': ['ses-01', 'ses-01'],
-        'qc_task': ['anat_wf_qc', 'anat_wf_qc'],
         'pipeline': ['fmriprep', 'fmriprep'],
+        'qc_task': ['anat_wf_qc', 'anat_wf_qc'],
+        'participant_id': ['sub-CMH0001', 'sub-CMH0002'],
+        'session_id': ['ses-01', 'ses-01'],
         'timestamp': ['2024-01-01 10:00:00', '2024-01-01 11:00:00'],
         'rater_id': ['rater1', 'rater1'],
         'rater_experience': ['Expert (>5 year experience)', 'Expert (>5 year experience)'],
@@ -198,7 +198,7 @@ def sample_session_state():
 def qc_record_sample():
     """Create a sample QCRecord object."""
     return QCRecord(
-        participant_id='sub-ED01',
+        participant_id='sub-CMH0001',
         session_id='ses-01',
         qc_task='anat_wf_qc',
         pipeline='fmriprep',
@@ -238,7 +238,7 @@ def sample_qc_config_with_files(temp_dir, sample_mri_files, sample_svg_file, sam
 def sample_participants_with_sessions(temp_dir):
     """Create a sample participants file with multiple sessions."""
     data = {
-        'participant_id': ['sub-ED01', 'sub-ED01', 'sub-ED02', 'sub-ED02', 'sub-ED03'],
+        'participant_id': ['sub-CMH0001', 'sub-CMH0001', 'sub-CMH0002', 'sub-CMH0002', 'sub-CMH0003'],
         'session_id': ['ses-01', 'ses-02', 'ses-01', 'ses-02', 'ses-01'],
         'group': ['control', 'control', 'patient', 'patient', 'control']
     }
@@ -252,12 +252,12 @@ def sample_participants_with_sessions(temp_dir):
 def empty_qc_records_csv(temp_dir):
     """Create an empty QC results CSV file with proper headers."""
     data = {
+        'pipeline': [],
         'qc_task': [],
         'participant_id': [],
         'session_id': [],
         'task_id': [],
         'run_id': [],
-        'pipeline': [],
         'timestamp': [],
         'rater_id': [],
         'rater_experience': [],
