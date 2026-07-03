@@ -1,4 +1,5 @@
 """Session state management for QC-Studio UI."""
+
 import streamlit as st
 from constants import (
     DEFAULT_PANELS,
@@ -7,13 +8,7 @@ from constants import (
     DEFAULT_MONTAGE_MAX_COLS,
     QC_RATINGS,
 )
-
-
-def _bare_bids_id(val: str, prefix: str) -> str:
-    val = str(val)
-    if val.startswith(prefix):
-        val = val[len(prefix) :]
-    return val.lstrip("0") or "0"
+from utils.cohort import bare_bids_id
 
 
 class SessionManager:
@@ -132,8 +127,8 @@ class SessionManager:
         pipe = record.pipeline if hasattr(record, "pipeline") else record.get("pipeline", "")
         task = record.qc_task if hasattr(record, "qc_task") else record.get("qc_task", "")
         return (
-            _bare_bids_id(pid, "sub-"),
-            _bare_bids_id(sid, "ses-"),
+            bare_bids_id(pid, "sub-"),
+            bare_bids_id(sid, "ses-"),
             str(pipe),
             str(task),
         )
@@ -291,15 +286,15 @@ class SessionManager:
         during a session (e.g. sub-QPNNC000421 / ses-01) match records loaded
         from a CSV (e.g. QPNNC000421 / 1).
         """
-        bare_pid = _bare_bids_id(participant_id, "sub-")
-        bare_sid = _bare_bids_id(session_id, "ses-")
+        bare_pid = bare_bids_id(participant_id, "sub-")
+        bare_sid = bare_bids_id(session_id, "ses-")
         for record in reversed(SessionManager.get_qc_records()):
             rec_pid = record.participant_id if hasattr(record, 'participant_id') else record.get('participant_id', '')
             rec_sid = record.session_id if hasattr(record, 'session_id') else record.get('session_id', '')
             rec_task = record.qc_task if hasattr(record, 'qc_task') else record.get('qc_task', '')
             if qc_task is not None and str(rec_task) != str(qc_task):
                 continue
-            if _bare_bids_id(str(rec_pid), "sub-") == bare_pid and _bare_bids_id(str(rec_sid), "ses-") == bare_sid:
+            if bare_bids_id(str(rec_pid), "sub-") == bare_pid and bare_bids_id(str(rec_sid), "ses-") == bare_sid:
                 return record
         return None
 
