@@ -10,13 +10,16 @@ from components.qc_viewer import AUTOPLAY_RUN_CTX_KEY
 from managers.session_manager import SessionManager
 from constants import SESSION_KEYS
 from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
-from utils.cohort import (
-    build_qc_cohort,
+from utils.bids import (
     normalize_participant_id_bids as _normalize_participant_id,
     normalize_session_id_bids as _normalize_session_id,
     parse_session_list as _parse_session_list,
+)
+from utils.cohort import (
+    build_qc_cohort,
     participant_ids_in_cohort_order,
 )
+from utils.config import build_substitution_values
 
 
 def parse_args(args=None):
@@ -164,6 +167,12 @@ def main():
         participant_id = entry["participant_id"]
         session_id = entry["session_id"]
 
+    substitution_values = (
+        build_substitution_values(participant_id, session_id)
+        if participant_id is not None
+        else None
+    )
+
     if (
         participant_id is not None
         and qc_cohort
@@ -178,6 +187,8 @@ def main():
             "total_participants": total_participants,
             "qc_cohort": qc_cohort,
             "participant_ids": participant_ids,
+            "qc_config_path": qc_config_path,
+            "substitution_values": substitution_values,
         }
     else:
         st.session_state.pop(AUTOPLAY_RUN_CTX_KEY, None)
@@ -204,6 +215,8 @@ def main():
             "qc_tasks": qc_tasks,
             "participant_ids": participant_ids,
             "qc_cohort": qc_cohort,
+            "qc_config_path": qc_config_path,
+            "substitution_values": substitution_values,
         }
         if on_qc_viewer_page
         else None,

@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
 from constants import SVG_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
+from utils.bids import extract_unique_task_run_from_paths
 from utils.data_loaders import load_svg_data
 from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
@@ -43,6 +44,8 @@ def try_autoplay_advance_if_due(
 	total_participants: int | None,
 	qc_cohort: list | None = None,
 	participant_ids: list | None = None,
+	qc_config_path: str | None = None,
+	substitution_values: dict | None = None,
 ) -> None:
 	"""If autoplay interval elapsed, save ratings and go to next page (or stop at end).
 
@@ -64,11 +67,25 @@ def try_autoplay_advance_if_due(
 	if not tasks:
 		tasks = [qc_task] if qc_task else ["anat_wf_qc"]
 	if SessionManager.get_current_page() < total_participants:
-		_record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
+		_record_all_qc_tasks(
+			participant_id,
+			session_id,
+			qc_pipeline,
+			tasks,
+			qc_config_path=qc_config_path,
+			substitution_values=substitution_values,
+		)
 		SessionManager.next_page()
 		SessionManager.set_autoplay_start_time(time.time())
 	else:
-		_record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
+		_record_all_qc_tasks(
+			participant_id,
+			session_id,
+			qc_pipeline,
+			tasks,
+			qc_config_path=qc_config_path,
+			substitution_values=substitution_values,
+		)
 		if qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort):
 			SessionManager.set_current_page(total_participants + 1)
 		elif (
@@ -143,6 +160,8 @@ def _autoplay_fragment_advance_only() -> None:
 		total_participants=ctx.get("total_participants"),
 		qc_cohort=ctx.get("qc_cohort"),
 		participant_ids=ctx.get("participant_ids"),
+		qc_config_path=ctx.get("qc_config_path"),
+		substitution_values=ctx.get("substitution_values"),
 	)
 
 
@@ -424,13 +443,39 @@ def _display_qc_rating_for_task(
 	)
 
 
-def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str, qc_tasks: list) -> None:
+def _record_all_qc_tasks(
+	participant_id: str,
+	session_id: str,
+	qc_pipeline: str,
+	qc_tasks: list,
+	qc_config_path=None,
+	substitution_values=None,
+) -> None:
+	"""Record QC ratings and notes for all tasks on the current page."""
 	rver = SessionManager.get_rating_version()
 	nver = SessionManager.get_notes_version()
+
 	for t in qc_tasks:
 		rating = st.session_state.get(f"qc_rating_{t}_{rver}")
 		notes = st.session_state.get(f"qc_notes_{t}_{nver}", "")
-		_record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
+
+		task_id = None
+		run_id = None
+		if qc_config_path:
+			qc_config = parse_qc_config(qc_config_path, t, substitution_values)
+			task_id, run_id = extract_unique_task_run_from_paths(
+				qc_config.get("svg_montage_path")
+			)
+		_record_qc_for_current_participant(
+			participant_id=participant_id,
+			session_id=session_id,
+			qc_pipeline=qc_pipeline,
+			qc_task=t,
+			rating=rating,
+			notes=notes,
+			task_id=task_id,
+			run_id=run_id,
+		)
 
 
 def _display_qc_pagination_header(current_page: int, total_participants: int) -> None:
@@ -448,6 +493,8 @@ def _display_qc_pagination_controls(
 	qc_tasks: list,
 	participant_ids: list | None = None,
 	qc_cohort: list | None = None,
+	qc_config_path: str | None = None,
+	substitution_values: dict | None = None,
 ) -> None:
 	"""Sidebar: autoplay, page buttons, save CSV (call inside ``with st.sidebar:``)."""
 	autoplay_col1, autoplay_col2 = st.columns([1, 1])
@@ -493,7 +540,14 @@ def _display_qc_pagination_controls(
 			key="pag_confirm",
 			help=MESSAGES['nav_tooltip_confirm_next'],
 		):
-			_record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+			_record_all_qc_tasks(
+				participant_id,
+				session_id,
+				qc_pipeline,
+				qc_tasks,
+				qc_config_path=qc_config_path,
+				substitution_values=substitution_values,
+			)
 			if SessionManager.is_autoplay_enabled():
 				SessionManager.set_autoplay_start_time(time.time())
 			elif current_page < total_participants:
@@ -539,6 +593,8 @@ def _display_qc_pagination_controls(
 			total_participants=total_participants,
 			participant_ids=participant_ids,
 			qc_cohort=qc_cohort,
+			qc_config_path=qc_config_path,
+			substitution_values=substitution_values,
 		)
 
 
@@ -551,6 +607,8 @@ def _display_qc_pagination(
 	qc_tasks: list,
 	participant_ids: list | None = None,
 	qc_cohort: list | None = None,
+	qc_config_path: str | None = None,
+	substitution_values: dict | None = None,
 ) -> None:
 	"""Full navigation block (header + controls) for callers that do not inject Subjects between."""
 	_display_qc_pagination_header(current_page, total_participants)
@@ -564,6 +622,8 @@ def _display_qc_pagination(
 		qc_tasks=qc_tasks,
 		participant_ids=participant_ids,
 		qc_cohort=qc_cohort,
+		qc_config_path=qc_config_path,
+		substitution_values=substitution_values,
 	)
 
 
@@ -581,8 +641,17 @@ def _save_qc_record(
 	total_participants: int,
 	participant_ids: list | None = None,
 	qc_cohort: list | None = None,
+	qc_config_path: str | None = None,
+	substitution_values: dict | None = None,
 ) -> None:
-	_record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+	_record_all_qc_tasks(
+		participant_id,
+		session_id,
+		qc_pipeline,
+		qc_tasks,
+		qc_config_path=qc_config_path,
+		substitution_values=substitution_values,
+	)
 	if qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
 		SessionManager.set_current_page(total_participants + 1)
 	elif not qc_cohort and participant_ids and session_id:
@@ -599,7 +668,9 @@ def _save_qc_record(
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str,
 										 qc_pipeline: str, qc_task: str,
-										 rating: str, notes: str) -> None:
+										 rating: str, notes: str,
+										 task_id: str | None = None,
+										 run_id: str | None = None) -> None:
 	"""Save a QC record for the current participant without navigating."""
 	now = datetime.now()
 	timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -614,5 +685,7 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str,
 		rater_fatigue=SessionManager.get_rater_fatigue(),
 		final_qc=rating,
 		notes=notes,
+		task_id=task_id,
+		run_id=run_id,
 	)
 	SessionManager.add_qc_record(record)

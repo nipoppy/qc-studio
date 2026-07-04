@@ -6,43 +6,12 @@ import pandas as pd
 from constants import QC_RATINGS
 
 
-def bare_bids_id(val: str, prefix: str) -> str:
-	val = str(val)
-	if val.startswith(prefix):
-		val = val[len(prefix) :]
-	return val.lstrip("0") or "0"
-
-
-def normalize_participant_id_bids(pid: str) -> str:
-	p = str(pid).strip()
-	return p if p.startswith("sub-") else f"sub-{p}"
-
-
-def normalize_session_id_bids(sid: str) -> str:
-	s = str(sid).strip()
-	if not s:
-		raise ValueError("session id cannot be empty")
-	if s.startswith("ses-"):
-		return s
-	if s.isdigit():
-		return f"ses-{int(s):02d}"
-	return f"ses-{s}"
-def parse_session_list(raw: str | None) -> list[str] | None:
-	"""Return ordered unique BIDS session ids from CLI ``--session_list``.
-
-	Returns None for single-session datasets (no session label).
-	"""
-	if raw is None or str(raw).strip() == "":
-		return None
-	parts = [p.strip() for p in str(raw).strip().split(",") if p.strip()]
-	if not parts:
-		return None
-	seen: list[str] = []
-	for p in parts:
-		norm = normalize_session_id_bids(p)
-		if norm not in seen:
-			seen.append(norm)
-	return seen or None
+from utils.bids import (
+    bare_bids_id,
+    normalize_participant_id_bids,
+    normalize_session_id_bids,
+    parse_session_list,
+)
 
 
 def build_qc_cohort(participants_df: pd.DataFrame, session_ids: list[str] | None) -> list[dict]:

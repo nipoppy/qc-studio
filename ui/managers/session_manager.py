@@ -8,7 +8,7 @@ from constants import (
     DEFAULT_MONTAGE_MAX_COLS,
     QC_RATINGS,
 )
-from utils.cohort import bare_bids_id
+from utils.bids import bare_bids_id
 
 
 class SessionManager:
