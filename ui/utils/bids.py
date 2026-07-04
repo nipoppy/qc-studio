@@ -54,7 +54,7 @@ def extract_bids_entities_from_path(path: str | Path | None) -> dict[str, str]:
 
 	path = Path(path)
 	stem = path.name
-	for suffix in path.suffixes:
+	for suffix in reversed(path.suffixes):
 		stem = stem.removesuffix(suffix)
 
 	entities: dict[str, str] = {}
