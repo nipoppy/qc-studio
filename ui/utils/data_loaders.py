@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Optional, Dict, Union
 
+import streamlit as st
+
 
 def load_mri_data(
 	dataset_dir: Union[str, Path, dict],
@@ -72,43 +74,24 @@ def load_iqm_data(path_dict: dict) -> Optional[dict]:
 
 
 def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
-	"""Load SVG/image montage files and return for display with optional grid montage.
-	
-	Creates a display dict with individual image files (SVG as strings, PNG/JPEG as PIL Images),
-	plus an optional grid montage if multiple images are provided and montage parameters are set.
+	"""Normalize montage paths from a QC config and return cached image data.
+
+	This public wrapper keeps the config-dictionary API used by callers while
+	delegating expensive file reads, image conversion, and montage creation to
+	``_load_svg_data_cached``.
 	
 	Args:
-		dataset_dir: Base directory path for resolving relative paths
+		dataset_dir: Base directory path for resolving relative paths.
 		path_dict: Dictionary containing 'svg_montage_path' key with:
 			- None (no montage)
 			- Single Path/str object
 			- List of Path/str objects
-		max_montage_rows: Maximum rows for grid montage (optional, requires multiple images)
-		max_montage_cols: Maximum columns for grid montage (optional, requires multiple images)
+		max_montage_rows: Maximum rows for grid montage.
+		max_montage_cols: Maximum columns for grid montage.
 	
 	Returns:
-		Dict with format:
-			For single/list of files: {
-				"filename1": {"type": "svg"|"png"|"jpeg", "content": string|PIL.Image},
-				"filename2": {"type": "svg"|"png"|"jpeg", "content": string|PIL.Image},
-				...
-			}
-		
-		If montage parameters are provided and multiple images exist:
-			{
-				"montage": {"type": "png", "content": PIL.Image (grid montage)},
-				"filename1": {...},
-				"filename2": {...},
-				...
-			}
-		
-		Returns None if no valid image files found, path is None, or directory is invalid.
-	
-	Notes:
-		- SVG files: returned as HTML string (can be rendered with st.components.v1.html)
-		- PNG/JPEG files: returned as PIL Image objects (can be rendered with st.image)
-		- Unsupported formats are silently skipped
-		- Individual SVG files are included in montage only after conversion to images
+		Cached display data from ``_load_svg_data_cached``, or None if no
+		montage paths are configured.
 	"""
 	svg_paths_value = path_dict.get("svg_montage_path")
 	if not svg_paths_value:
@@ -123,10 +106,44 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
 	if not svg_paths_value:
 		return None
 	
+	return _load_svg_data_cached(
+		str(dataset_dir) if dataset_dir else "",
+		tuple(str(path) for path in svg_paths_value),
+		max_montage_rows,
+		max_montage_cols,
+	)
+
+
+@st.cache_data(show_spinner=False, max_entries=128)
+def _load_svg_data_cached(dataset_dir: str, svg_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+	"""Load montage image files and build display data.
+
+	This cached helper does the expensive work: resolving paths, reading SVG
+	text, loading raster images, converting images for montage creation, and
+	building an optional grid montage.
+
+	Args:
+		dataset_dir: Base directory path for resolving relative paths.
+		svg_paths: Tuple of SVG/PNG/JPEG paths to load.
+		max_montage_rows: Maximum rows for grid montage.
+		max_montage_cols: Maximum columns for grid montage.
+
+	Returns:
+		Dict with image keys mapped to ``{"type": ..., "content": ...}``.
+		SVG content is returned as a string; PNG/JPEG content is returned as a
+		PIL Image. If multiple images can be converted for montage display, a
+		``"montage"`` entry is inserted first. Returns None if no valid image
+		files are found.
+
+	Notes:
+		- Unsupported formats are silently skipped.
+		- SVG-to-image conversion is optional; if conversion fails, the SVG text
+		  is still returned for direct rendering.
+	"""
 	image_data_dict = {}
 	images_for_montage = []  # Collect PIL Images for montage creation
 	
-	for i, svg_path in enumerate(svg_paths_value):
+	for svg_path in svg_paths:
 		full_path = Path(dataset_dir).joinpath(str(svg_path)) if dataset_dir else Path(svg_path)
 		
 		if not full_path.is_file():
