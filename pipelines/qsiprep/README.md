@@ -19,7 +19,7 @@ Use **`--session_list`** with comma-separated BIDS session labels (e.g. `ses-01,
 
 ### Multiple tasks in `qc.json` (`seg_brainmask_qc`, `t1_2_mni_qc`, `sdc_wf_qc`, `coreg_wf_qc`)
 
-See **`qsiprep_QC_guidelines.md`** for pass/fail criteria. `qc.json` defines **four** tasks matching the doc panels.
+See [QSIPrep QC guidelines](https://github.com/TIGRLab/SCanD_project/blob/Fir/docs/qsiprep_QC_guidelines.md) (SCanD_project) for pass/fail criteria. `qc.json` defines **four** tasks matching the doc panels.
 
 `qc.json` can define **several** tasks. You choose how to run QC-Studio:
 

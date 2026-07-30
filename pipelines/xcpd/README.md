@@ -19,7 +19,7 @@ Use **`--session_list`** with comma-separated BIDS session labels (e.g. `ses-01`
 
 ### Multiple tasks in `qc.json` (`atlas_coverage_qc`, `coreg_wf_qc`, `denoised_bold_qc`)
 
-See **`xcpd_QC_guidelines.md`** for pass/fail criteria. `qc.json` defines **three** tasks matching the doc panels.
+See [XCP-D QC guidelines](https://github.com/TIGRLab/SCanD_project/blob/Fir/docs/xcpd_QC_guidelines.md) (SCanD_project) for pass/fail criteria. `qc.json` defines **three** tasks matching the doc panels.
 
 `qc.json` can define **several** tasks. You choose how to run QC-Studio:
 

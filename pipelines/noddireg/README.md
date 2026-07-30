@@ -1,8 +1,8 @@
 # NODDIreg QC configuration
 
-QC-Studio loads **only** `qc.json` from this folder. Run `streamlit run ui/main.py …` from the repository root, or use **`ui/noddireg_test.sh`** (from `ui/`) for the same defaults.
+QC-Studio loads **only** `qc.json` from this folder. Run `streamlit run ui/main.py …` from the repository root, or use **`ui/noddireg_test.sh`** from `ui/`.
 
-Example (after `cd` to the qc-studio root):
+Example (BIDS dataset root):
 
 ```bash
 streamlit run ui/main.py --server.port=8501 -- \
@@ -15,19 +15,8 @@ streamlit run ui/main.py --server.port=8501 -- \
   --output_dir ./output
 ```
 
-Use **`--session_list`** with comma-separated BIDS session labels (e.g. `ses-01,ses-02`). The app builds one review **page** per **(participant × session)** from your participant list. If `qc_participants.tsv` includes a **`session_id`** column, that file defines the exact rows instead (one row per participant–session pair).
+Bundled demo: **`sub-CMH0001`** only under **`sample_data/derivatives/noddireg/`**. See [`sample_data/README.md`](../../sample_data/README.md).
 
-### Multiple tasks in `qc.json` (`noddireg_density`, `noddireg_od_icvf_isovf`)
+For flat / project-specific layouts (e.g. SCanD CMH), see [GhazalehManj/qc-studio](https://github.com/GhazalehManj/qc-studio).
 
-`qc.json` can define **several** tasks. You choose how to run QC-Studio:
-
-- **One task per run** (default): pass the task key with **`--qc_task`** (e.g. `noddireg_density`). The UI does not switch tasks mid-session.
-- **All tasks on one scrollable page**: use **`--qc_task all`**. Each cohort page gets a PASS / FAIL / UNCERTAIN (and notes) **per task**, and the sidebar marks a page complete only when **every** task in `qc.json` has a decided rating.
-
-Examples:
-
-- From `ui/` with **`noddireg_test.sh`**: `./noddireg_test.sh ../pipelines/noddireg/qc.json noddireg_od_icvf_isovf`, or `./noddireg_test.sh ../pipelines/noddireg/qc.json all`, or set **`QC_TASK=all ./noddireg_test.sh`**.
-
-Paths inside `qc.json` are relative to **`--dataset_dir`**. Use **`[[NIPOPPY_BIDS_PARTICIPANT_ID]]`** and **`[[NIPOPPY_BIDS_SESSION_ID]]`** where filenames include those entities.
-
-Expected layout: **`sample_data/noddireg/<subject>/`** with PNGs under `figures/` and subject-level NIfTIs (`*_dwiref.nii.gz`, `*_dseg.nii.gz`) for the parcellation overlay task.
+See [NODDIreg QC guidelines](https://github.com/TIGRLab/SCanD_project/blob/Fir/docs/noddireg_QC_guidelines.md) (SCanD_project) for pass/fail criteria.

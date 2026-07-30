@@ -19,6 +19,7 @@ A web-based quality control (QC) application for neuroimaging data. QC-Studio al
 | [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Testing best practices | Developers |
 | [TEST_INTEGRATION_GUIDE.md](docs/TEST_INTEGRATION_GUIDE.md) | Test suite details | QA/CI-CD |
 | [IMPLEMENTATION_CHECKLIST.md](docs/IMPLEMENTATION_CHECKLIST.md) | Feature implementation status | Project managers |
+| [SCanD QC guidelines](https://github.com/TIGRLab/SCanD_project/tree/Fir/docs) | Pipeline QC pass/fail criteria (fMRIPrep, FreeSurfer, QSIPrep, XCP-D, NODDIreg) | Raters / supervisors |
 
 ## 🚀 Quick Start
 

@@ -9,7 +9,7 @@
 #   ./noddireg_test.sh ../pipelines/noddireg/qc.json noddireg_od_icvf_isovf
 #   ./noddireg_test.sh ../pipelines/noddireg/qc.json all
 #
-# Point --dataset_dir at sample_data/noddireg (flat per-subject tree; see pipelines/noddireg/README.md).
+# Point --dataset_dir at the BIDS dataset root (see sample_data/README.md).
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ qc_launch_script="main.py"
 qc_pipeline="noddireg"
 qc_json="${1:-${QC_JSON:-../pipelines/noddireg/qc.json}}"
 qc_task="${2:-${QC_TASK:-noddireg_density}}"
-dataset_dir="../sample_data/noddireg"
+dataset_dir="../sample_data"
 participant_list="../sample_data/qc_participants.tsv"
 output_dir="./output"
 port_number="${PORT:-8501}"
