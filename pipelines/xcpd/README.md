@@ -9,7 +9,7 @@ streamlit run ui/main.py --server.port=8501 -- \
   --qc_json ../pipelines/xcpd/qc.json \
   --qc_task atlas_coverage_qc \
   --qc_pipeline xcpd \
-  --dataset_dir sample_data/xcpd \
+  --dataset_dir sample_data \
   --participant_list sample_data/qc_participants.tsv \
   --session_list ses-01 \
   --output_dir ./output

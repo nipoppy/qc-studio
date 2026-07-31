@@ -10,11 +10,7 @@ from managers.session_manager import SessionManager
 from models import QCRecord
 from managers.panel_layout_manager import PanelLayoutManager
 from managers.niivue_viewer_manager import NiivueViewerManager
-from utils.config import (
-	format_qc_tasks_per_page_summary,
-	list_qc_tasks_from_json,
-	parse_qc_config,
-)
+from utils.config import list_qc_tasks_from_json, parse_qc_config
 from utils.cohort import (
 	bare_bids_id,
 	build_qc_cohort,
@@ -145,12 +141,9 @@ def show_landing_page(
 		_maybe_apply_montage_defaults_from_qc_json(qc_config_path, qc_task, raw_ids[0])
 
 	qc_tasks_for_page = _upload_qc_task_filter_keys(qc_task, qc_config_path) or []
-	task_page_summary = format_qc_tasks_per_page_summary(
-		qc_tasks_for_page if qc_tasks_for_page else [str(qc_task).strip()],
-		qc_config_path,
-	)
+	task_count = len(qc_tasks_for_page if qc_tasks_for_page else [str(qc_task).strip()])
 	st.subheader(
-		f"QC Pipeline: {qc_pipeline} | QC Task: {qc_task} | {task_page_summary} | "
+		f"QC Pipeline: {qc_pipeline} | QC Task: {qc_task} | QC task count: {task_count} | "
 		f"Number of subjects: {total_participants_in_ds} | Cohort pages: {total_cohort_pages}"
 	)
 	

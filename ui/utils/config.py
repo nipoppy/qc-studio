@@ -19,34 +19,6 @@ def list_qc_tasks_from_json(qc_json) -> list[str]:
 	return list(data.keys())
 
 
-def format_qc_tasks_per_page_summary(
-	qc_tasks: list[str],
-	qc_config_path: str | None = None,
-) -> str:
-	"""Short count of QC tasks rated on each subject/session page."""
-	_ = qc_config_path
-	n = len(qc_tasks)
-	return f"QC task count: {n}"
-
-
-def qc_task_display_label(qc_json, qc_task: str) -> str:
-	"""UI label for a QC task key (``display_name`` from qc.json when set)."""
-	key = str(qc_task).strip()
-	qc_json_path = Path(qc_json) if qc_json else None
-	if not qc_json_path or not qc_json_path.is_file():
-		return key
-	try:
-		data = json.loads(qc_json_path.read_text(encoding="utf-8"))
-	except (OSError, json.JSONDecodeError):
-		return key
-	task_obj = data.get(key) if isinstance(data, dict) else None
-	if isinstance(task_obj, dict):
-		dn = task_obj.get("display_name")
-		if dn is not None and str(dn).strip():
-			return str(dn).strip()
-	return key
-
-
 def build_substitution_values(participant_id: str, session_id: str) -> dict:
 	"""Template values for ``qc.json`` path placeholders."""
 	sid = str(session_id or "ses-01").strip()
@@ -116,10 +88,11 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
 
 	# qctask is a QCTask model; its fields are Path or None already
 	display = qctask.display_name
-	if display is not None and str(display).strip():
-		display_label = str(display).strip()
-	else:
-		display_label = qc_task_display_label(qc_json_path, qc_task)
+	display_label = (
+		str(display).strip()
+		if display is not None and str(display).strip()
+		else qc_task
+	)
 
 	return {
 		"base_mri_image_path": qctask.base_mri_image_path,

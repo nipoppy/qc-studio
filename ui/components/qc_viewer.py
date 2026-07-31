@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from constants import SVG_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
 from utils.data_loaders import load_svg_data
-from utils.config import format_qc_tasks_per_page_summary, parse_qc_config
+from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
@@ -192,7 +192,7 @@ def display_qc_viewers(
 	sid = session_id or "ses-01"
 	st.subheader(
 		f"{participant_id} · {sid} · {qc_pipeline} · "
-		f"{format_qc_tasks_per_page_summary(tasks, qc_config_path)}"
+		f"QC task count: {len(tasks)}"
 	)
 
 	for i, tname in enumerate(tasks):

@@ -9,7 +9,7 @@ streamlit run ui/main.py --server.port=8501 -- \
   --qc_json ../pipelines/qsiprep/qc.json \
   --qc_task seg_brainmask_qc \
   --qc_pipeline qsiprep \
-  --dataset_dir sample_data/qsiprep \
+  --dataset_dir sample_data \
   --participant_list sample_data/qc_participants.tsv \
   --session_list ses-01,ses-02 \
   --output_dir ./output
