@@ -1,8 +1,7 @@
 # QC-Studio MVP Scope
 
 ## Design Overview
-![overview](assets/nipoppy-qc-studio_overview.jpg)
-
+![overview](../assets/nipoppy-qc-studio_overview.jpg)
 
 ## Key requirements: datatypes / formats
 - Support visualization of curated data
