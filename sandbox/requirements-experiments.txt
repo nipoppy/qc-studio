@@ -1,0 +1,15 @@
+# Optional dependencies for sandbox experiments.
+# Install only when running the cloud/local model experiments.
+
+-r ../requirements.txt
+
+# Cloud model experiments
+anthropic>=0.39
+
+# Local VLM experiments
+matplotlib>=3.7
+nilearn>=0.10
+pillow>=10
+torch>=2.1
+transformers>=4.45
+qwen-vl-utils>=0.0.8

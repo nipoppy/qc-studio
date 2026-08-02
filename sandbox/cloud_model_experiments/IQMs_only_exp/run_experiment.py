@@ -5,9 +5,12 @@ expected package layout:
 packages_dir/
     package_1/
         PACKAGE.md
+        expected.json  (optional, not sent to Claude)
+
+shared_data_dir/
+    package_1/
         iqms.json
         metadata.json
-        expected.json  (optional, not sent to Claude)
 
 The runner sends PACKAGE.md to Claude, validates the response, and writes a results JSON file.
 
@@ -22,10 +25,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError
-from anthropic import Anthropic
 
-import build_package as bp
 DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_PACKAGES_DIR = Path(__file__).resolve().parent / "package"
+DEFAULT_SHARED_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "qc_inputs"
 
 class QCDecision(BaseModel):
     decision: Literal["pass", "fail", "uncertain"]
@@ -44,9 +47,13 @@ def discover_package_dirs(package_dir:Path) -> list[Path]:
     return sorted(package_dirs)
 
 
-def build_prompt(package_dir: Path) -> str:
+def build_prompt(package_dir: Path, shared_data_dir: Path) -> str:
     package_md = (package_dir / "PACKAGE.md").read_text(encoding="utf-8")
-    total = len(json.loads((package_dir / "iqms.json").read_text(encoding="utf-8"))["iqms"])
+    iqms_path = shared_data_dir / package_dir.name / "iqms.json"
+    if not iqms_path.exists():
+        raise FileNotFoundError(f"Shared IQM data not found for {package_dir.name}: {iqms_path}")
+
+    total = len(json.loads(iqms_path.read_text(encoding="utf-8"))["iqms"])
     return f"{package_md}\n\n*{total} IQMs were computed in total; only flagged ones appear in the table above.*\n"
    
 
@@ -115,7 +122,14 @@ def parser_args() ->argparse.Namespace:
     parser.add_argument(
         "--packages_dir",
         type=Path,
+        default=DEFAULT_PACKAGES_DIR,
         help="Directory containing subdirectories of evidence packages.",
+    )
+    parser.add_argument(
+        "--shared-data-dir",
+        type=Path,
+        default=DEFAULT_SHARED_DATA_DIR,
+        help="Directory containing shared per-scan metadata.json and iqms.json files.",
     )
     parser.add_argument(
         "--max-tokens",
@@ -126,7 +140,7 @@ def parser_args() ->argparse.Namespace:
     parser.add_argument(
         "--model",
         default=os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL),
-        help="Claude model name. Defaults to CLAUDE_MODEL or claude-sonnet-4-5.",
+        help=f"Claude model name. Defaults to CLAUDE_MODEL or {DEFAULT_MODEL}.",
     )
     return parser.parse_args()
 
@@ -134,16 +148,27 @@ if __name__ == "__main__":
 
     args =  parser_args()
     package_dirs = discover_package_dirs(args.packages_dir)
+    shared_data_dir = args.shared_data_dir
     max_tokens = args.max_tokens
     model = args.model
     print(f"Found {len(package_dirs)} packages. Running experiment with model={model} and max_tokens={max_tokens}.")
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise SystemExit("ANTHROPIC_API_KEY is not set; export it before running this experiment.")
+
+    try:
+        from anthropic import Anthropic
+    except ModuleNotFoundError as error:
+        raise SystemExit(
+            "Missing dependency 'anthropic'. Install it before running this experiment."
+        ) from error
+
     client = Anthropic(api_key=api_key)
 
     for package_dir in package_dirs:
         print(f"Processing package: {package_dir.name}")
-        prompt = build_prompt(package_dir)
+        prompt = build_prompt(package_dir, shared_data_dir)
         response = call_claude(
             client=client,
             prompt=prompt,
@@ -151,4 +176,3 @@ if __name__ == "__main__":
             max_tokens=max_tokens,
         )
         write_results(package_dir, response)
-

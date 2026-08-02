@@ -8,14 +8,14 @@ import matplotlib
 import numpy as np
 import torch
 from nilearn import image as nilearn_image
-from qwen_vl_utils import process_vision_info
-from transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor
+from PIL import Image
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-MODEL_ID = "lmms-lab/LLaVA-OneVision-1.5-4B-Instruct"
+MODEL_ID = "lmms-lab-encoder/LLaVA-OneVision-2-8B-Instruct"
 EXPERIMENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PACKAGE = (
@@ -246,7 +246,7 @@ def pick_dtype(device):
         return torch.bfloat16
     if requested == "float32":
         return torch.float32
-    return torch.float16 if device == "cuda" else torch.float32
+    return torch.bfloat16
 
 
 device = pick_device()
@@ -258,14 +258,14 @@ image_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 package_text = build_compact_package(package_path.read_text(encoding="utf-8"))
 compact_package_path = EXPERIMENT_DIR / f"{package_path.parent.name}_compact_iqm.txt"
 compact_package_path.write_text(package_text, encoding="utf-8")
-raw_response_path = EXPERIMENT_DIR / f"{package_path.parent.name}_llava_4b_raw.txt"
+raw_response_path = EXPERIMENT_DIR / f"{package_path.parent.name}_llava_ov2_8b_raw.txt"
 result_path = Path(
     os.getenv(
         "LLAVA_OUTPUT_JSON",
-        str(EXPERIMENT_DIR / f"{package_path.parent.name}_llava_4b_result.json"),
+        str(EXPERIMENT_DIR / f"{package_path.parent.name}_llava_ov2_8b_result.json"),
     )
 )
-validation_path = EXPERIMENT_DIR / f"{package_path.parent.name}_llava_4b_validation.json"
+validation_path = EXPERIMENT_DIR / f"{package_path.parent.name}_llava_ov2_8b_validation.json"
 
 if image_path is not None and is_nifti_path(image_path):
     rendered_path = EXPERIMENT_DIR / f"{nifti_stem(image_path)}_middle_slices.png"
@@ -281,22 +281,12 @@ print(f"Package input: {package_path.resolve()}")
 print(f"Compact IQM package: {compact_package_path.resolve()}")
 print(image_status)
 
-processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
-config = AutoConfig.from_pretrained(MODEL_ID, trust_remote_code=True)
-
-pad_token_id = processor.tokenizer.pad_token_id
-if pad_token_id is None:
-    pad_token_id = processor.tokenizer.eos_token_id
-
-config.pad_token_id = pad_token_id
-config.text_config.pad_token_id = pad_token_id
-
 print(f"Loading {MODEL_ID} on {device} with {dtype}...")
-model = AutoModelForCausalLM.from_pretrained(
+processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+model = AutoModelForImageTextToText.from_pretrained(
     MODEL_ID,
-    config=config,
-    torch_dtype=dtype,
     trust_remote_code=True,
+    dtype=dtype,
     low_cpu_mem_usage=True,
 ).to(device).eval()
 print("Model loaded successfully.")
@@ -306,7 +296,7 @@ if os.getenv("LLAVA_LOAD_ONLY") == "1":
 
 content = []
 if image_path is not None:
-    content.append({"type": "image", "image": str(image_path.resolve())})
+    content.append({"type": "image"})
 
 content.append(
     {
@@ -327,15 +317,17 @@ text = processor.apply_chat_template(
     add_generation_prompt=True,
     tokenize=False,
 )
-image_inputs, video_inputs = process_vision_info(messages)
+images = [Image.open(image_path).convert("RGB")] if image_path is not None else None
 inputs = processor(
     text=[text],
-    images=image_inputs,
-    videos=video_inputs,
+    images=images,
     padding=True,
     return_tensors="pt",
 )
-inputs = inputs.to(device)
+inputs = {
+    key: value.to(device) if hasattr(value, "to") else value
+    for key, value in inputs.items()
+}
 
 with torch.no_grad():
     max_new_tokens = int(os.getenv("LLAVA_MAX_NEW_TOKENS", "500"))

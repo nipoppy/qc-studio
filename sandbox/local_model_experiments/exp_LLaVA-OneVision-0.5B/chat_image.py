@@ -14,9 +14,11 @@ import matplotlib.pyplot as plt
 
 
 MODEL_ID = "llava-hf/llava-onevision-qwen2-0.5b-ov-hf"
+EXPERIMENT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PACKAGE = (
-    Path(__file__).parents[2]
-    / "data/package/sub-000103_acq-standard_T1w/PACKAGE.md"
+    REPO_ROOT
+    / "sandbox/cloud_model_experiments/IQMs_only_exp/package/sub-000103_acq-standard_T1w/PACKAGE.md"
 )
 DEFAULT_PROMPT = """You are completing an MRI QC decision task.
 
@@ -186,11 +188,11 @@ package_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PACKAGE
 image_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 
 package_text = build_compact_package(package_path.read_text(encoding="utf-8"))
-compact_package_path = Path.cwd() / f"{package_path.parent.name}_compact_iqm.txt"
+compact_package_path = EXPERIMENT_DIR / f"{package_path.parent.name}_compact_iqm.txt"
 compact_package_path.write_text(package_text, encoding="utf-8")
 
 if image_path is not None and is_nifti_path(image_path):
-    rendered_path = Path.cwd() / f"{nifti_stem(image_path)}_middle_slices.png"
+    rendered_path = EXPERIMENT_DIR / f"{nifti_stem(image_path)}_middle_slices.png"
     image_path = render_middle_slices(image_path, rendered_path)
     print(f"Rendered middle slices: {image_path}")
 

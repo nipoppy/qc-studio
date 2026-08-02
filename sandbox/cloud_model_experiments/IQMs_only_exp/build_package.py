@@ -15,7 +15,16 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from requests import session
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_DATA_ROOT = REPO_ROOT / "sandbox" / "data" / "qc_inputs"
+DEFAULT_SCAN_DIR = DEFAULT_DATA_ROOT / "sub-000103_acq-standard_T1w"
+DEFAULT_OUTPUT_DIR = (
+    Path(__file__).resolve().parent
+    / "package"
+    / "sub-000103_acq-standard_T1w"
+)
 
 
 BIDS_METADATA_FIELDS = [
@@ -85,7 +94,7 @@ def numeric_values(data: dict[str, Any]) -> dict[str, float]:
 
 def read_table(path: Path) -> pd.DataFrame:
     sep = "\t" if path.suffix.lower() == ".tsv" else ","
-    return pd.read_csv(path, sep=sep)
+    return pd.read_csv(path, sep=sep, low_memory=False)
 
 
 def select_metadata(sidecar: dict[str, Any]) -> dict[str, Any]:
@@ -347,15 +356,36 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a minimal MRI QC evidence package.")
     # parser.add_argument("--scan-id", required=True)
     parser.add_argument("--scan-id", default="n/a")
-    parser.add_argument("--participant-id", required=True)
+    parser.add_argument("--participant-id", default="sub-000103")
     parser.add_argument("--session-id")
-    parser.add_argument("--modality", required=True)
-    parser.add_argument("--acquisition")
-    parser.add_argument("--bids-json", required=True, type=Path)
-    parser.add_argument("--iqm-file", required=True, type=Path)
-    parser.add_argument("--reference-tsv", required=True, type=Path)
-    parser.add_argument("--semantics-json", type=Path)
-    parser.add_argument("--out-dir", required=True, type=Path)
+    parser.add_argument("--modality", default="T1w")
+    parser.add_argument("--acquisition", default="standard")
+    parser.add_argument(
+        "--bids-json",
+        default=DEFAULT_SCAN_DIR / "sub-000103_acq-standard_T1w.json",
+        type=Path,
+    )
+    parser.add_argument(
+        "--iqm-file",
+        default=DEFAULT_SCAN_DIR / "sub-000103_acq-standard_T1w_mriqc.json",
+        type=Path,
+    )
+    parser.add_argument(
+        "--reference-tsv",
+        default=REPO_ROOT / "reference_data" / "group_T1w.tsv",
+        type=Path,
+    )
+    parser.add_argument(
+        "--semantics-json",
+        default=REPO_ROOT / "sandbox" / "iqms_context" / "tw1.json",
+        type=Path,
+    )
+    parser.add_argument(
+        "--shared-data-dir",
+        type=Path,
+        help="Directory for shared processed metadata.json and iqms.json. Defaults to the BIDS JSON parent.",
+    )
+    parser.add_argument("--out-dir", default=DEFAULT_OUTPUT_DIR, type=Path)
     return parser.parse_args()
 
 
@@ -371,15 +401,17 @@ def main() -> int:
     semantics_catalog = load_semantics(args.semantics_json)
     enriched_iqms = enrich_iqms(raw_iqms, reference_columns, semantics_catalog)
 
+    shared_data_dir = args.shared_data_dir or args.bids_json.parent
+    shared_data_dir.mkdir(parents=True, exist_ok=True)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_json(
-        args.out_dir / "metadata.json",
+        shared_data_dir / "metadata.json",
         {
             "selected": selected_metadata,
             "full_sidecar": sidecar,
         },
     )
-    write_json(args.out_dir / "iqms.json", {"iqms": enriched_iqms})
+    write_json(shared_data_dir / "iqms.json", {"iqms": enriched_iqms})
     (args.out_dir / "PACKAGE.md").write_text(
         render_package_md(
             scan_id=args.scan_id,
@@ -395,7 +427,8 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    print(f"Wrote evidence package to {args.out_dir}")
+    print(f"Wrote shared metadata/IQMs to {shared_data_dir}")
+    print(f"Wrote evidence bundle to {args.out_dir / 'PACKAGE.md'}")
     print(f"Loaded {len(raw_iqms)} numeric IQMs.")
     return 0
 

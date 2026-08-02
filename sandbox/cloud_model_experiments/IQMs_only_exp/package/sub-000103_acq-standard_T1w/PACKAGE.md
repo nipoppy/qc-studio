@@ -91,3 +91,6 @@ Rules:
 - Keep reasons short and grounded (e.g. "cjv=0.82, percentile=94 — elevated cortex/WM boundary blur").
 - Default to 'pass.' Most MRI scans pass QC. Only return 'fail' if there is clear evidence of a specific named artifact (extreme motion ringing, signal dropout, ghosting). Only return 'uncertain' if a primary high-evidence metric (cjv, cnr, snr, efc, fwhm_avg) shows a real conflict. Low-evidence metrics with caveats (tpm_overlap, snrd, summary_*) should be listed in 'recommended_followup', not used to drive the decision.
 - Normal-range metrics (percentile 20–80) are neutral evidence and should not be cited as offsetting concerning evidence. Only metrics at favorable extremes count as positive evidence. When provenance warnings flag a specific artifact AND primary metrics degrade in a pattern consistent with that artifact, the evidence is mutually reinforcing — return fail, not uncertain.
+<!-- - Use "uncertain" only when at least one reason cites favorable evidence that conflicts with the unfavorable evidence. Do not use "uncertain" as a default for ambiguity — name the conflict.
+- Lean toward "pass" with high confidence only if cjv, cnr, snr_total, efc, fwhm_avg, and tpm_overlap_* are all within normal range. -->
+<!--Not sure if there are iqms that are more important for decision making. This probably should change based on the modlity-->
