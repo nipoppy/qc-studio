@@ -40,12 +40,16 @@ def _maybe_apply_montage_defaults_from_qc_json(
 	applied_key = SESSION_KEYS["montage_defaults_applied_qc_task"]
 	if st.session_state.get(applied_key) == qc_task:
 		return
+	task_for_defaults = qc_task
+	if str(qc_task).strip().lower() == "all":
+		tasks = list_qc_tasks_from_json(qc_config_path)
+		task_for_defaults = tasks[0] if tasks else qc_task
 	pid = str(first_participant_raw).strip()
 	if not pid.startswith("sub-"):
 		pid = f"sub-{pid}"
 	cfg = parse_qc_config(
 		qc_config_path,
-		qc_task,
+		task_for_defaults,
 		{"participant_id": pid, "session_id": "ses-01"},
 	)
 	if cfg.get("montage_max_rows") is not None:
@@ -136,9 +140,11 @@ def show_landing_page(
 	if raw_ids:
 		_maybe_apply_montage_defaults_from_qc_json(qc_config_path, qc_task, raw_ids[0])
 
+	qc_tasks_for_page = _upload_qc_task_filter_keys(qc_task, qc_config_path) or []
+	task_count = len(qc_tasks_for_page if qc_tasks_for_page else [str(qc_task).strip()])
 	st.subheader(
-		f"QC Pipeline: {qc_pipeline} | QC Task: {qc_task} | "
-		f"n_ds_participants: {total_participants_in_ds} | n_cohort_pages: {total_cohort_pages}"
+		f"QC Pipeline: {qc_pipeline} | QC Task: {qc_task} | QC task count: {task_count} | "
+		f"Number of subjects: {total_participants_in_ds} | Cohort pages: {total_cohort_pages}"
 	)
 	
 	st.markdown("---")
