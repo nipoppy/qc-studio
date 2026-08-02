@@ -1,4 +1,8 @@
-"""Render the IQM-only Claude evidence bundle for one scan."""
+"""Example renderer for an experiment with IQM and image evidence.
+
+Copy this folder for a new experiment, edit PACKAGE_TEMPLATE.md, and add any
+experiment-specific artifact generation before building the template context.
+"""
 
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ DEFAULT_OUTPUT_DIR = EXPERIMENT_DIR / "package" / "sub-000103_acq-standard_T1w"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Render an IQM-only MRI QC evidence bundle.")
+    parser = argparse.ArgumentParser(description="Render an MRI QC package with optional image evidence.")
     parser.add_argument("--scan-id", default="n/a")
     parser.add_argument("--participant-id", default="sub-000103")
     parser.add_argument("--session-id")
@@ -54,6 +58,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
     )
     parser.add_argument(
+        "--image",
+        type=Path,
+        help="Optional image artifact to reference from the rendered Markdown.",
+    )
+    parser.add_argument(
         "--shared-data-dir",
         type=Path,
         help="Directory for shared processed metadata.json and iqms.json. Defaults to the BIDS JSON parent.",
@@ -61,6 +70,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template", default=DEFAULT_TEMPLATE, type=Path)
     parser.add_argument("--out-dir", default=DEFAULT_OUTPUT_DIR, type=Path)
     return parser.parse_args()
+
+
+def render_image_section(image_path: Path | None) -> str:
+    if image_path is None:
+        return "No image artifact was provided for this package."
+
+    return (
+        f"Image artifact: `{image_path}`\n\n"
+        "Use this image only as supporting evidence. Do not invent visual findings."
+    )
 
 
 def main() -> int:
@@ -83,6 +102,9 @@ def main() -> int:
         modality=args.modality,
         acquisition=args.acquisition,
         qc_data=qc_data,
+        extra_context={
+            "image_section": render_image_section(args.image),
+        },
     )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +115,7 @@ def main() -> int:
     )
 
     print(f"Wrote shared metadata/IQMs to {shared_data_dir}")
-    print(f"Wrote evidence bundle to {output_path}")
+    print(f"Wrote image evidence bundle to {output_path}")
     print(f"Loaded {len(qc_data['raw_iqms'])} numeric IQMs.")
     return 0
 
