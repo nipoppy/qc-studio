@@ -110,6 +110,8 @@ def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
 		file_bytes_dict[f"{prefix}_mri_oversize"] = True
 		file_bytes_dict[f"{prefix}_mri_size_bytes"] = path.stat().st_size
 
+import streamlit as st
+
 
 def load_mri_data(
 	dataset_dir: Union[str, Path, dict],
@@ -170,54 +172,53 @@ def load_iqm_data(path_dict: dict) -> Optional[dict]:
 		return None
 
 
-def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
-	"""Load SVG/image montage files and return for display with optional grid montage.
+def _normalize_svg_paths(svg_paths_value):
+	"""Normalize montage paths to a list of Path objects."""
+
+	if isinstance(svg_paths_value, (str, Path)):
+		return [Path(svg_paths_value)]
 	
-	Creates a display dict with individual image files (SVG as strings, PNG/JPEG as PIL Images),
-	plus an optional grid montage if multiple images are provided and montage parameters are set.
+	if isinstance(svg_paths_value, list):
+		normalized_paths = []
+		for p in svg_paths_value:
+			if p is None:
+				continue
+			try:
+				normalized_paths.append(Path(p))
+			except TypeError:
+				# Ignore malformed path entries and keep loading valid montage files.
+				continue
+		return normalized_paths
+	
+	return None
+
+
+def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+	"""Normalize montage paths from a QC config and return cached image data.
+
+	This public wrapper keeps the config-dictionary API used by callers while
+	delegating expensive file reads, image conversion, and montage creation to
+	``_load_svg_data_cached``.
 	
 	Args:
-		dataset_dir: Base directory path for resolving relative paths
+		dataset_dir: Base directory path for resolving relative paths.
 		path_dict: Dictionary containing 'svg_montage_path' key with:
 			- None (no montage)
 			- Single Path/str object
 			- List of Path/str objects
-		max_montage_rows: Maximum rows for grid montage (optional, requires multiple images)
-		max_montage_cols: Maximum columns for grid montage (optional, requires multiple images)
+		max_montage_rows: Maximum rows for grid montage.
+		max_montage_cols: Maximum columns for grid montage.
 	
 	Returns:
-		Dict with format:
-			For single/list of files: {
-				"filename1": {"type": "svg"|"png"|"jpeg", "content": string|PIL.Image},
-				"filename2": {"type": "svg"|"png"|"jpeg", "content": string|PIL.Image},
-				...
-			}
-		
-		If montage parameters are provided and multiple images exist:
-			{
-				"montage": {"type": "png", "content": PIL.Image (grid montage)},
-				"filename1": {...},
-				"filename2": {...},
-				...
-			}
-		
-		Returns None if no valid image files found, path is None, or directory is invalid.
-	
-	Notes:
-		- SVG files: returned as HTML string (can be rendered with st.components.v1.html)
-		- PNG/JPEG files: returned as PIL Image objects (can be rendered with st.image)
-		- Unsupported formats are silently skipped
-		- Individual SVG files are included in montage only after conversion to images
+		Cached display data from ``_load_svg_data_cached``, or None if no
+		montage paths are configured.
 	"""
 	svg_paths_value = path_dict.get("svg_montage_path")
 	if not svg_paths_value:
 		return None
 	
 	# Normalize to list of paths
-	if isinstance(svg_paths_value, (str, Path)):
-		svg_paths_value = [svg_paths_value]
-	elif not isinstance(svg_paths_value, list):
-		return None
+	svg_paths_value = _normalize_svg_paths(svg_paths_value)
 	
 	if not svg_paths_value:
 		return None
@@ -227,89 +228,174 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
 	if not resolved_paths:
 		return None
 
+	return _load_svg_data_cached(
+		tuple(str(path) for path in resolved_paths),
+		max_montage_rows,
+		max_montage_cols,
+	)
+
+
+def _create_unique_id_from_path(file_path: Path) -> str:
+	"""Create a unique identifier from the last 2-3 components of a file path.
+
+	Args:
+		file_path: Path object for the file.
+
+	Returns:
+		Unique identifier string based on the last 2-3 path components.
+	"""
+	path_parts = file_path.parts
+
+	if len(path_parts) >= 3:
+		# Use last 3 path components (grandparent dir + parent dir + stem)
+		grandparent = path_parts[-3]
+		parent = path_parts[-2]
+		stem = file_path.stem
+		return f"{grandparent}_{parent}_{stem}"
+	elif len(path_parts) >= 2:
+		# Fallback: use parent dir + stem
+		parent = path_parts[-2]
+		stem = file_path.stem
+		return f"{parent}_{stem}"
+	else:
+		return file_path.stem
+
+
+def _load_svg_entry(full_path: Path, unique_id: str):
+	try:
+		with open(full_path, encoding="utf-8") as f:
+			svg_content = f.read()
+
+		filename = f"{unique_id}_svg"
+		data_content = {
+			"type": "svg",
+			"content": svg_content,
+		}
+
+		# Convert SVG to image for montage (optional - if conversion fails, SVG is still available as string)
+		try:
+			pil_img = _load_image_from_file(full_path)
+		except Exception:
+			# SVG conversion not critical; skip but keep the SVG string version for rendering
+			pil_img = None
+
+		return filename, data_content, pil_img
+
+	except Exception as e:
+		print(f"Failed to load SVG file {full_path}: {e}")
+		return None
+	
+			
+def _load_raster_entry(full_path: Path, unique_id: str, raster_type: str):
+	try:
+		pil_img = _load_image_from_file(full_path)
+		
+		filename = f"{unique_id}_{raster_type}"
+		data_content = {
+			"type": raster_type,
+			"content": pil_img
+		}
+		return filename, data_content, pil_img
+	
+	except ValueError as e:
+		print(f"Failed to load image file {full_path}: {e}")
+		return None
+
+
+def _add_montage_if_available(
+	image_data_dict: dict,
+	images_for_montage: list,
+	max_montage_rows=None,
+	max_montage_cols=None,
+) -> dict:
+	if len(images_for_montage) <= 1:
+		# Return individual images (no montage for single image)
+		return image_data_dict
+
+	try:
+		from .image_processing import create_grid_montage
+		montage_img = create_grid_montage(
+			images_for_montage,
+			max_rows=max_montage_rows,
+			max_cols=max_montage_cols,
+		)
+		# Insert montage at the beginning of result dict
+		result_dict = {"montage": {"type": "png", "content": montage_img}}
+		result_dict.update(image_data_dict)
+		return result_dict
+	except Exception as e:
+		print(f"Failed to create montage: {e}")
+		# Return individual images if montage creation fails
+		return image_data_dict
+
+
+@st.cache_data(show_spinner=False, max_entries=128)
+def _load_svg_data_cached(svg_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+	"""Load montage image files and build display data.
+
+	This cached helper does the expensive work: resolving paths, reading SVG
+	text, loading raster images, converting images for montage creation, and
+	building an optional grid montage.
+
+	Args:
+		svg_paths: Tuple of SVG/PNG/JPEG paths to load.
+		max_montage_rows: Maximum rows for grid montage.
+		max_montage_cols: Maximum columns for grid montage.
+
+	Returns:
+		Dict with image keys mapped to ``{"type": ..., "content": ...}``.
+		SVG content is returned as a string; PNG/JPEG content is returned as a
+		PIL Image. If multiple images can be converted for montage display, a
+		``"montage"`` entry is inserted first. Returns None if no valid image
+		files are found.
+
+	Notes:
+		- Unsupported formats are silently skipped.
+		- SVG-to-image conversion is optional; if conversion fails, the SVG text
+		  is still returned for direct rendering.
+	"""
 	image_data_dict = {}
 	images_for_montage = []  # Collect PIL Images for montage creation
-
-	for i, full_path in enumerate(resolved_paths):
+	
+	for svg_path in svg_paths:
+		full_path = Path(svg_path)
+		if not full_path.is_file():
+			continue
 		file_ext = full_path.suffix.lower()
 		
 		# Create unique identifier using last 3 path components to avoid collisions
 		# E.g., "screenshots/sub-CMH0001/sub-CMH0001.png" -> "screenshots_sub-CMH0001_sub"
-		path_parts = full_path.parts
-		if len(path_parts) >= 3:
-			# Use last 3 path components (grandparent dir + parent dir + stem)
-			grandparent = path_parts[-3]
-			parent = path_parts[-2]
-			stem = full_path.stem
-			unique_id = f"{grandparent}_{parent}_{stem}"
-		elif len(path_parts) >= 2:
-			# Fallback: use parent dir + stem
-			parent = path_parts[-2]
-			stem = full_path.stem
-			unique_id = f"{parent}_{stem}"
-		else:
-			unique_id = full_path.stem
-		
+		unique_id = _create_unique_id_from_path(full_path)
+
 		if file_ext == '.svg':
 			# Return SVG as string content (use open() so tests can mock builtins.open)
-			try:
-				with open(full_path, encoding="utf-8") as f:
-					svg_content = f.read()
-				filename = f"{unique_id}_svg"
-				image_data_dict[filename] = {
-					"type": "svg",
-					"content": svg_content
-				}
-				# Convert SVG to image for montage (optional - if conversion fails, SVG is still available as string)
-				try:
-					pil_img = _load_image_from_file(full_path)
-					images_for_montage.append(pil_img)
-				except Exception:
-					# SVG conversion not critical; skip but keep the SVG string version for rendering
-					pass
-			except Exception as e:
-				print(f"Failed to load SVG file {full_path}: {e}")
+			loaded_entry = _load_svg_entry(full_path, unique_id)
+			if loaded_entry is None:
 				continue
-		
+			filename, data_content, pil_img = loaded_entry
+			image_data_dict[filename] = data_content
+			if pil_img is not None:
+				images_for_montage.append(pil_img)
+
 		elif file_ext in ['.png', '.jpg', '.jpeg']:
 			# Return PNG/JPEG as PIL Image
-			try:
-				pil_img = _load_image_from_file(full_path)
-				raster_type = "jpeg" if file_ext in (".jpg", ".jpeg") else file_ext.lstrip(".")
-				filename = f"{unique_id}_{raster_type}"
-				image_data_dict[filename] = {
-					"type": raster_type,
-					"content": pil_img
-				}
-				images_for_montage.append(pil_img)
-			except ValueError as e:
-				print(f"Failed to load image file {full_path}: {e}")
+			raster_type = "jpeg" if file_ext in (".jpg", ".jpeg") else file_ext.lstrip(".")
+			loaded_entry = _load_raster_entry(full_path, unique_id, raster_type)
+			if loaded_entry is None:
 				continue
+			filename, data_content, pil_img = loaded_entry
+			image_data_dict[filename] = data_content
+			images_for_montage.append(pil_img)
 	
 	if not image_data_dict:
 		return None
 	
-	# Auto-generate a grid montage whenever multiple images are available.
-	# `create_grid_montage` computes rows/cols when max_rows/max_cols are None.
-	if len(images_for_montage) > 1:
-		try:
-			from .image_processing import create_grid_montage
-			montage_img = create_grid_montage(
-				images_for_montage,
-				max_rows=max_montage_rows,
-				max_cols=max_montage_cols
-			)
-			# Insert montage at the beginning of result dict
-			result_dict = {"montage": {"type": "png", "content": montage_img}}
-			result_dict.update(image_data_dict)
-			return result_dict
-		except Exception as e:
-			print(f"Failed to create montage: {e}")
-			# Return individual images if montage creation fails
-			return image_data_dict
-	
-	# Return individual images (no montage for single image)
-	return image_data_dict
+	return _add_montage_if_available(
+		image_data_dict,
+		images_for_montage,
+		max_montage_rows=max_montage_rows,
+		max_montage_cols=max_montage_cols,
+	)
 
 
 def _load_image_from_file(file_path, dpi=96):
