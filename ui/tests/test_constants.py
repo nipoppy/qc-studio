@@ -3,7 +3,7 @@ import pytest
 from constants import (
     EXPERIENCE_LEVELS, FATIGUE_LEVELS, PANEL_CONFIG, QC_RATINGS,
     NIIVUE_HEIGHT, SVG_HEIGHT, IQM_HEIGHT, VIEW_MODES, OVERLAY_COLORMAPS,
-    DEFAULT_OVERLAY_OPACITY, NIIVUE_SVG_RATIO, EQUAL_RATIO, RATING_IQM_RATIO,
+    DEFAULT_OVERLAY_OPACITY, NIIVUE_SECONDARY_RATIO, EQUAL_RATIO, RATING_IQM_RATIO,
     RATER_INFO_RATIO, DEFAULT_BATCH_SIZE, SESSION_KEYS, UPLOAD_FILE_TYPES,
     MESSAGES, ERROR_MESSAGES, SUCCESS_MESSAGES, INFO_MESSAGES
 )
@@ -124,20 +124,20 @@ class TestLayoutRatios:
     
     def test_ratios_are_lists(self):
         """Test that layout ratios are lists."""
-        assert isinstance(NIIVUE_SVG_RATIO, list)
+        assert isinstance(NIIVUE_SECONDARY_RATIO, list)
         assert isinstance(EQUAL_RATIO, list)
         assert isinstance(RATING_IQM_RATIO, list)
         assert isinstance(RATER_INFO_RATIO, list)
     
     def test_ratios_sum_to_one(self):
         """Test that layout ratios sum to 1.0."""
-        assert abs(sum(NIIVUE_SVG_RATIO) - 1.0) < 0.01
+        assert abs(sum(NIIVUE_SECONDARY_RATIO) - 1.0) < 0.01
         assert abs(sum(EQUAL_RATIO) - 1.0) < 0.01
         assert abs(sum(RATING_IQM_RATIO) - 1.0) < 0.01
     
     def test_ratios_are_positive(self):
         """Test that all ratio values are positive."""
-        for ratio in NIIVUE_SVG_RATIO + EQUAL_RATIO + RATING_IQM_RATIO + RATER_INFO_RATIO:
+        for ratio in NIIVUE_SECONDARY_RATIO + EQUAL_RATIO + RATING_IQM_RATIO + RATER_INFO_RATIO:
             assert ratio > 0
 
 

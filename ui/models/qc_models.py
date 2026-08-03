@@ -54,6 +54,14 @@ class QCRecord(BaseModel):
 class QCTask(BaseModel):
     """Represents one QC entry in <pipeline>_qc.json (i.e. single QC task)."""
 
+    display_name: Annotated[
+        Optional[str],
+        Field(
+            default=None,
+            description="Optional human-readable label for the UI (export keys stay the task id)",
+        ),
+    ] = None
+
     # Single file paths for mri and overlay images
     base_mri_image_path: Annotated[Optional[Path], Field(description="Path to base MRI image")] = None
     overlay_mri_image_path: Annotated[Optional[Path], Field(description="Path to overlay MRI image (mask etc.)")] = None

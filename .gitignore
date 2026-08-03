@@ -6,5 +6,11 @@ ui/__pycache__/
 *.pyc
 .DS_Store
 
-# CMH0001 BIDS NIfTIs are ~500MB each (no Git LFS); keep locally for fMRIPrep Niivue QC.
-sample_data/bids/sub-CMH0001/
+# Demo first-volume BOLD under bids/sub-CMH0001/ses-*/func/ (tracked).
+# Ignore other local raw BIDS files for sub-CMH0001 if present.
+sample_data/bids/sub-CMH0001/**/*
+!sample_data/bids/sub-CMH0001/ses-01/func/
+!sample_data/bids/sub-CMH0001/ses-02/func/
+sample_data/bids/sub-CMH0001/ses-*/func/*
+!sample_data/bids/sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-rest_run-1_bold.nii.gz
+!sample_data/bids/sub-CMH0001/ses-02/func/sub-CMH0001_ses-02_task-rest_run-1_bold.nii.gz

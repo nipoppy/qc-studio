@@ -9,8 +9,7 @@
 #   ./noddireg_test.sh ../pipelines/noddireg/qc.json noddireg_od_icvf_isovf
 #   ./noddireg_test.sh ../pipelines/noddireg/qc.json all
 #
-# Note: bundled sample_data may not include derivatives/noddireg/; point --dataset_dir at a tree that does,
-# or add PNGs under sample_data/derivatives/noddireg/<subject>/ matching qc.json.
+# Point --dataset_dir at the BIDS dataset root (see sample_data/README.md).
 
 set -euo pipefail
 

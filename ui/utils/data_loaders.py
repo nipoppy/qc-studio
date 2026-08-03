@@ -7,7 +7,108 @@ from files and directories.
 import json
 import re
 from pathlib import Path
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, Tuple
+
+from constants import NIIVUE_MAX_FILE_BYTES
+
+
+def _resolve_all_under_dataset(base_root: Path, rel_path: Union[str, Path, None]) -> list[Path]:
+	"""Resolve a dataset-relative path to zero or more files (globs return all sorted matches)."""
+	if rel_path is None:
+		return []
+	rel = Path(rel_path)
+	direct = base_root / rel
+	if "*" in str(rel):
+		matches = sorted(p for p in base_root.glob(str(rel)) if p.is_file())
+		if matches:
+			return matches
+	if direct.is_file():
+		return [direct]
+	no_ses_name = re.sub(r"_ses-[^_]+", "", direct.name)
+	fallback = direct.parent / no_ses_name
+	if fallback.is_file():
+		return [fallback]
+	return []
+
+
+def _expand_dataset_paths(base_root: Path, paths_value: Union[str, Path, list, None]) -> list[Path]:
+	"""Expand path specs to concrete files; globs include every match."""
+	if paths_value is None:
+		return []
+	specs = paths_value if isinstance(paths_value, list) else [paths_value]
+	expanded: list[Path] = []
+	seen: set[Path] = set()
+	for spec in specs:
+		for path in _resolve_all_under_dataset(base_root, spec):
+			if path not in seen:
+				seen.add(path)
+				expanded.append(path)
+	return expanded
+
+
+def _resolve_under_dataset(base_root: Path, rel_path: Union[str, Path, None]) -> Optional[Path]:
+	"""Resolve a single dataset-relative file (first glob match when multiple exist)."""
+	matches = _resolve_all_under_dataset(base_root, rel_path)
+	return matches[0] if matches else None
+
+
+def _nifti_volume_to_bytes(img, vol_index: int = 0) -> bytes:
+	"""Serialize one 3D volume from a NIfTI image (handles 4D via mmap slice)."""
+	import numpy as np
+	import nibabel as nib
+
+	shape = img.shape
+	if len(shape) == 4:
+		vol = np.asanyarray(img.dataobj[..., vol_index])
+	elif len(shape) == 3:
+		vol = np.asanyarray(img.dataobj)
+	else:
+		raise ValueError(f"Unsupported NIfTI rank for Niivue preview: {len(shape)}")
+	hdr = img.header.copy()
+	hdr.set_data_shape(vol.shape)
+	out = nib.Nifti1Image(vol, img.affine, hdr)
+	return out.to_bytes()
+
+
+def _read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Optional[str]]:
+	"""Load NIfTI bytes for Niivue; reduce 4D / oversize files to the first volume."""
+	size = path.stat().st_size
+	try:
+		import nibabel as nib
+	except ImportError:
+		if size > NIIVUE_MAX_FILE_BYTES:
+			return None, False, "oversize"
+		return path.read_bytes(), False, None
+
+	try:
+		img = nib.load(str(path))
+		reduce = size > NIIVUE_MAX_FILE_BYTES or len(img.shape) == 4
+		if reduce:
+			vol_bytes = _nifti_volume_to_bytes(img, vol_index=0)
+			if len(vol_bytes) > NIIVUE_MAX_FILE_BYTES:
+				return None, True, "oversize"
+			return vol_bytes, True, None
+		if size > NIIVUE_MAX_FILE_BYTES:
+			return None, False, "oversize"
+		return path.read_bytes(), False, None
+	except Exception:
+		if size <= NIIVUE_MAX_FILE_BYTES:
+			return path.read_bytes(), False, None
+		return None, False, "oversize"
+
+
+def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
+	"""Read NIfTI bytes for Niivue (first BOLD volume when 4D or file is large)."""
+	nbytes, reduced, err = _read_nifti_bytes_for_niivue(path)
+	file_bytes_dict[f"{prefix}_mri_image_path"] = path
+	if nbytes is not None:
+		file_bytes_dict[f"{prefix}_mri_image_bytes"] = nbytes
+		if reduced:
+			file_bytes_dict[f"{prefix}_mri_preview_reduced"] = True
+		return
+	if err == "oversize":
+		file_bytes_dict[f"{prefix}_mri_oversize"] = True
+		file_bytes_dict[f"{prefix}_mri_size_bytes"] = path.stat().st_size
 
 import streamlit as st
 
@@ -39,19 +140,17 @@ def load_mri_data(
 		dataset_dir = ""
 
 	base_root = Path(dataset_dir) if dataset_dir else Path()
-	base_mri_path = base_root / path_dict.get("base_mri_image_path") if path_dict.get("base_mri_image_path") else None
-	overlay_mri_path = base_root / path_dict.get("overlay_mri_image_path") if path_dict.get("overlay_mri_image_path") else None
+	base_mri_path = _resolve_under_dataset(base_root, path_dict.get("base_mri_image_path"))
+	overlay_mri_path = _resolve_under_dataset(base_root, path_dict.get("overlay_mri_image_path"))
 
 	# print(f"Loading MRI data from dataset_dir: {dataset_dir} with paths: base_mri={base_mri_path}, overlay_mri={overlay_mri_path}")
 	file_bytes_dict = {}
 
 	if base_mri_path is not None and base_mri_path.is_file():
-		file_bytes_dict["base_mri_image_bytes"] = base_mri_path.read_bytes()
-		file_bytes_dict["base_mri_image_path"] = base_mri_path
+		_attach_nifti_bytes(file_bytes_dict, base_mri_path, "base")
 
 	if overlay_mri_path is not None and overlay_mri_path.is_file():
-		file_bytes_dict["overlay_mri_image_bytes"] = overlay_mri_path.read_bytes()
-		file_bytes_dict["overlay_mri_image_path"] = overlay_mri_path
+		_attach_nifti_bytes(file_bytes_dict, overlay_mri_path, "overlay")
 
 	return file_bytes_dict
 
@@ -123,37 +222,17 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
 	
 	if not svg_paths_value:
 		return None
-	
+
+	base_root = Path(dataset_dir) if dataset_dir else Path()
+	resolved_paths = _expand_dataset_paths(base_root, svg_paths_value)
+	if not resolved_paths:
+		return None
+
 	return _load_svg_data_cached(
-		str(dataset_dir) if dataset_dir else "",
-		tuple(str(path) for path in svg_paths_value),
+		tuple(str(path) for path in resolved_paths),
 		max_montage_rows,
 		max_montage_cols,
 	)
-
-
-def _resolve_svg_path(dataset_dir: str, svg_path: Union[str, Path]) -> Optional[Path]:
-	"""Resolve a single SVG path relative to dataset_dir, with fallback for missing session entity.
-
-	Args:
-		dataset_dir: Base directory path for resolving relative paths.
-		svg_path: Path to an SVG file (relative or absolute).
-	Returns:
-		Resolved Path object if the file exists, or None if not found.
-	"""
-
-	full_path = Path(dataset_dir).joinpath(str(svg_path)) if dataset_dir else Path(svg_path)
-	
-	if full_path.is_file():
-		return full_path
-	
-	# Some pipelines omit session entity in generated figure names.
-	no_ses_name = re.sub(r'_ses-[^_]+', '', full_path.name)
-	fallback_path = full_path.parent / no_ses_name
-	if fallback_path.is_file():
-		return fallback_path
-	
-	return None
 
 
 def _create_unique_id_from_path(file_path: Path) -> str:
@@ -251,7 +330,7 @@ def _add_montage_if_available(
 
 
 @st.cache_data(show_spinner=False, max_entries=128)
-def _load_svg_data_cached(dataset_dir: str, svg_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+def _load_svg_data_cached(svg_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
 	"""Load montage image files and build display data.
 
 	This cached helper does the expensive work: resolving paths, reading SVG
@@ -259,7 +338,6 @@ def _load_svg_data_cached(dataset_dir: str, svg_paths: tuple, max_montage_rows=N
 	building an optional grid montage.
 
 	Args:
-		dataset_dir: Base directory path for resolving relative paths.
 		svg_paths: Tuple of SVG/PNG/JPEG paths to load.
 		max_montage_rows: Maximum rows for grid montage.
 		max_montage_cols: Maximum columns for grid montage.
@@ -280,10 +358,9 @@ def _load_svg_data_cached(dataset_dir: str, svg_paths: tuple, max_montage_rows=N
 	images_for_montage = []  # Collect PIL Images for montage creation
 	
 	for svg_path in svg_paths:
-		full_path = _resolve_svg_path(dataset_dir, svg_path)
-		if not full_path:
+		full_path = Path(svg_path)
+		if not full_path.is_file():
 			continue
-
 		file_ext = full_path.suffix.lower()
 		
 		# Create unique identifier using last 3 path components to avoid collisions

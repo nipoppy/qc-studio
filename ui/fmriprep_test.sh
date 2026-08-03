@@ -3,7 +3,7 @@
 #
 # Optional arguments:
 #   $1 — path to qc.json (default: ../pipelines/fmriprep/qc.json)
-#   $2 — qc_task name (default: anat_wf_qc). Same as env QC_TASK. Use "all" for every task in qc.json on one page.
+#   $2 — qc_task name (default: sdc_wf_qc). Same as env QC_TASK. Use "all" for every task in qc.json on one page.
 # Examples:
 #   ./fmriprep_test.sh
 #   ./fmriprep_test.sh ../pipelines/fmriprep/qc.json sdc_wf_qc
@@ -15,7 +15,7 @@ set -euo pipefail
 qc_launch_script="main.py"
 qc_pipeline="fmriprep"
 qc_json="${1:-${QC_JSON:-../pipelines/fmriprep/qc.json}}"
-qc_task="${2:-${QC_TASK:-anat_wf_qc}}"
+qc_task="${2:-${QC_TASK:-sdc_wf_qc}}"
 dataset_dir="../sample_data"
 participant_list="../sample_data/qc_participants.tsv"
 output_dir="./output"

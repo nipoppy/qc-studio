@@ -17,7 +17,9 @@ streamlit run ui/main.py --server.port=8501 -- \
 
 Use **`--session_list`** with comma-separated BIDS session labels (e.g. `ses-01,ses-02`). The app builds one review **page** per **(participant × session)** from your participant list. If `qc_participants.tsv` includes a **`session_id`** column, that file defines the exact rows instead (one row per participant–session pair).
 
-### Multiple tasks in `qc.json` (`seg_brainmask_qc`, `t1_2_mni_qc`, `sdc_wf_qc`, …)
+### Multiple tasks in `qc.json` (`seg_brainmask_qc`, `t1_2_mni_qc`, `sdc_wf_qc`, `coreg_wf_qc`)
+
+See [QSIPrep QC guidelines](https://github.com/TIGRLab/SCanD_project/blob/Fir/docs/qsiprep_QC_guidelines.md) (SCanD_project) for pass/fail criteria. `qc.json` defines **four** tasks matching the doc panels.
 
 `qc.json` can define **several** tasks. You choose how to run QC-Studio:
 
@@ -30,4 +32,4 @@ Examples:
 
 Paths inside `qc.json` are relative to **`--dataset_dir`**. Use **`[[NIPOPPY_BIDS_PARTICIPANT_ID]]`** and **`[[NIPOPPY_BIDS_SESSION_ID]]`** where filenames include those entities. For QSIPrep’s internal workflow slug (`dwi_denoise_ses_01_…`), use **`[[NIPOPPY_QSIPREP_SESSION_SLUG]]`** (underscore form, e.g. `ses_02` for BIDS `ses-02`).
 
-Sample derivatives mirror a typical QSIPrep export: **`sample_data/derivatives/qsiprep/<subject>/figures/`** (no tool-version directory in this bundle). The shipped `qc.json` targets **`acq-multishelldir92`** and **`run-1`**.
+Sample data lives under **`sample_data/qsiprep/<subject>/figures/`**. The shipped `qc.json` targets **`acq-multishelldir92`** and **`run-1`**.

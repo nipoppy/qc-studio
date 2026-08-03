@@ -51,6 +51,8 @@ QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]
 NIIVUE_HEIGHT = 600
 SVG_HEIGHT = 600
 IQM_HEIGHT = 400
+# Streamlit component messages are capped (~200 MB); keep NIfTI payloads below this.
+NIIVUE_MAX_FILE_BYTES = 150 * 1024 * 1024
 DEFAULT_VIEW_MODE = "multiplanar"
 VIEW_MODES = ["multiplanar", "axial", "coronal", "sagittal", "3d"]
 OVERLAY_COLORMAPS = ["cool", "warm"]
@@ -132,7 +134,9 @@ MESSAGES = {
         'Next: navigates to the next subject or session without saving any rating changes.'
     ),
     'nav_tooltip_confirm_next': (
-        'Confirm and Next: saves the current QC rating and advances to the next subject or session.'
+        'Confirm and Next: saves QC ratings for this page and advances to the next subject or '
+        'session. When more than one QC task is shown, set PASS, FAIL, or UNCERTAIN for every '
+        'task before continuing.'
     ),
     'start_over_button': '🔄 Start Over (go to home page)',
     'qc_title': 'Nipoppy QC-Studio: Quality Control',
@@ -171,6 +175,11 @@ ERROR_MESSAGES = {
     'csv_comparison_error': 'Could not display comparison: {error}',
     'mri_load_error': 'Failed to load base MRI in Niivue viewer: {error}',
     'base_mri_not_found': 'Base MRI image not found or could not be loaded.',
+    'base_mri_too_large': (
+        'Volume too large for the 3D viewer ({size_mb:.0f} MB; limit {limit_mb:.0f} MB). '
+        'Use the SVG montage panel for this task.'
+    ),
+    'base_mri_preview_reduced': 'Showing first BOLD volume (full 4D file is too large for the browser).',
     'svg_not_found': 'SVG montage not found or could not be loaded.',
     'participant_list_load_error': 'Error loading participant list: {error}',
 }

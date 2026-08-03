@@ -189,32 +189,32 @@ def display_qc_viewers(
 
 	_render_autoplay_countdown_main_banner()
 
-	_display_qc_session_and_rater_header(
-		participant_id=participant_id,
-		session_id=session_id,
-		qc_pipeline=qc_pipeline,
-		qc_tasks=tasks,
-		multi_task=multi_task,
+	sid = session_id or "ses-01"
+	st.subheader(
+		f"{participant_id} · {sid} · {qc_pipeline} · "
+		f"QC task count: {len(tasks)}"
 	)
 
 	for i, tname in enumerate(tasks):
 		qc_config = parse_qc_config(qc_config_path, tname, substitution_values)
+		display_label = qc_config.get("display_name") or tname
 		if multi_task:
 			if i > 0:
 				st.divider()
-			st.subheader(tname)
-		if show_niivue and show_svg and show_iqm:
+			st.subheader(display_label)
+		task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
+		if task_has_niivue and show_svg and show_iqm:
 			_display_niivue_with_secondary_panel(
 				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
 			st.divider()
 			_display_iqm_panel()
-		elif show_niivue and show_svg:
+		elif task_has_niivue and show_svg:
 			_display_niivue_with_secondary_panel(
 				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
-		elif show_niivue and show_iqm:
+		elif task_has_niivue and show_iqm:
 			_display_niivue_with_secondary_panel(
 				dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
-		elif show_niivue:
+		elif task_has_niivue:
 			_display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id, tname)
 		elif show_svg:
 			_display_svg_panel(dataset_dir, qc_config)
@@ -225,6 +225,7 @@ def display_qc_viewers(
 			participant_id=participant_id,
 			session_id=session_id,
 			qc_task=tname,
+			display_label=display_label,
 			notes_height=88 if multi_task else 120,
 		)
 
@@ -249,10 +250,13 @@ def _display_niivue_with_secondary_panel(dataset_dir, selected_panels: dict, qc_
 	# Left column: Niivue viewer with hidden controls at bottom
 	with viewer_col:
 		# Get niivue config from session state or render_controls_panel
-		niivue_config = _get_or_render_niivue_config(task_suffix)
+		niivue_config = _get_or_render_niivue_config(
+			task_suffix,
+			has_overlay=bool(qc_config.get("overlay_mri_image_path")),
+		)
 		
 		# Render viewer at top
-		NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config, 
+		NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config,
 		                                   participant_id, session_id, task_suffix=task_suffix)
 		
 		# Render controls in expander at bottom
@@ -279,7 +283,10 @@ def _display_niivue_full_width(dataset_dir, qc_config,
 		session_id: Current session ID
 	"""
 	# Get niivue config from session state or render_controls_panel
-	niivue_config = _get_or_render_niivue_config(task_suffix)
+	niivue_config = _get_or_render_niivue_config(
+		task_suffix,
+		has_overlay=bool(qc_config.get("overlay_mri_image_path")),
+	)
 	
 	# Render viewer at top
 	NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config,
@@ -290,7 +297,7 @@ def _display_niivue_full_width(dataset_dir, qc_config,
 		NiivueViewerManager.render_controls_panel(state_suffix=task_suffix)
 
 
-def _get_or_render_niivue_config(state_suffix: str = ""):
+def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = False):
 	"""Return NiivueViewerConfig; use per-task session state when ``state_suffix`` is set."""
 	state_key = "niivue_config" if not state_suffix else f"niivue_config_{state_suffix}"
 	if state_key not in st.session_state:
@@ -301,7 +308,7 @@ def _get_or_render_niivue_config(state_suffix: str = ""):
 			radiological=False,
 			show_colorbar=True,
 			interpolation=True,
-			show_overlay=False
+			show_overlay=has_overlay,
 		)
 		st.session_state[state_key] = default_config
 	
@@ -366,38 +373,17 @@ def _render_image(image_data: dict, filename: str) -> None:
 		st.warning(f"Unsupported image type: {image_type}")
 
 
-def _display_qc_session_and_rater_header(
-	participant_id: str | None,
-	session_id: str | None,
-	qc_pipeline: str | None,
-	qc_tasks: list,
-	multi_task: bool,
-) -> None:
-	"""Session / pipeline / rater summary once above all task blocks."""
-	st.markdown("#### 📋 Session Info")
-	st.write(f"**Participant:** {participant_id}")
-	st.write(f"**Session:** {session_id}")
-	st.write(f"**Pipeline:** {qc_pipeline}")
-	if multi_task:
-		st.write(f"**Tasks (this page):** {', '.join(qc_tasks)}")
-	else:
-		st.write(f"**Task:** {qc_tasks[0] if qc_tasks else ''}")
-	st.markdown("#### 👤 Rater Info")
-	st.write(f"**Rater:** {SessionManager.get_rater_id()}")
-	st.write(f"**Experience:** {SessionManager.get_rater_experience().split('(')[0].strip()}")
-	st.write(f"**Fatigue:** {SessionManager.get_rater_fatigue().split('☕')[0].strip()}")
-	st.divider()
-
-
 def _display_qc_rating_for_task(
 	participant_id: str | None,
 	session_id: str | None,
 	qc_task: str,
 	*,
+	display_label: str | None = None,
 	notes_height: int = 120,
 ) -> None:
 	"""PASS/FAIL/UNCERTAIN and notes for one task (shown under that task's viewers)."""
-	st.markdown(f"#### 📊 Rate `{qc_task}`")
+	label = (display_label or qc_task).strip()
+	st.markdown(f"#### 📊 Rate **{label}**")
 	rver = SessionManager.get_rating_version()
 	nver = SessionManager.get_notes_version()
 	existing_record = SessionManager.get_qc_record_for_participant(participant_id, session_id, qc_task)

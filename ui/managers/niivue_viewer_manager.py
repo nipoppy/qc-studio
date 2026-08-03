@@ -1,7 +1,7 @@
 """Niivue viewer configuration and rendering utilities."""
 import streamlit as st
 from constants import (
-    NIIVUE_HEIGHT, VIEW_MODES, OVERLAY_COLORMAPS, DEFAULT_OVERLAY_OPACITY,
+    NIIVUE_HEIGHT, NIIVUE_MAX_FILE_BYTES, VIEW_MODES, OVERLAY_COLORMAPS, DEFAULT_OVERLAY_OPACITY,
     MESSAGES, ERROR_MESSAGES
 )
 from utils.data_loaders import load_mri_data
@@ -202,6 +202,7 @@ class NiivueViewerManager:
         return viewer_kwargs
     
     @staticmethod
+    @st.fragment()
     def render_viewer(dataset_dir, qc_config, config: NiivueViewerConfig,
                      participant_id: str = None, session_id: str = None,
                      task_suffix: str = ""):
@@ -221,9 +222,18 @@ class NiivueViewerManager:
             # Load MRI data
             mri_data = load_mri_data(dataset_dir, qc_config)
             
+            if mri_data.get("base_mri_oversize"):
+                size_mb = mri_data.get("base_mri_size_bytes", 0) / (1024 * 1024)
+                limit_mb = NIIVUE_MAX_FILE_BYTES / (1024 * 1024)
+                st.info(ERROR_MESSAGES['base_mri_too_large'].format(size_mb=size_mb, limit_mb=limit_mb))
+                return
+
             if "base_mri_image_bytes" not in mri_data:
                 st.info(ERROR_MESSAGES['base_mri_not_found'])
                 return
+
+            if mri_data.get("base_mri_preview_reduced"):
+                st.caption(ERROR_MESSAGES['base_mri_preview_reduced'])
             
             # Build and render viewer with participant context for unique key
             viewer_kwargs = NiivueViewerManager.build_viewer_kwargs(mri_data, config, 

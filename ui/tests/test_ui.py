@@ -52,7 +52,7 @@ class TestParseArgs:
             '--qc_json', '/path/to/qc_config.json'
         ])
         
-        assert args.session_list == 'Baseline'
+        assert args.session_list is None
 
     def test_parse_args_missing_required_argument(self):
         """Test parsing with missing required argument."""

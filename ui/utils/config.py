@@ -70,6 +70,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
 			"iqm_path": None,
 			"montage_max_rows": None,
 			"montage_max_cols": None,
+			"display_name": None,
 		}
 
 	# qcconf.root is a dict: qc_task -> QCTask (RootModel)
@@ -82,9 +83,17 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
 			"iqm_path": None,
 			"montage_max_rows": None,
 			"montage_max_cols": None,
+			"display_name": None,
 		}
 
 	# qctask is a QCTask model; its fields are Path or None already
+	display = qctask.display_name
+	display_label = (
+		str(display).strip()
+		if display is not None and str(display).strip()
+		else qc_task
+	)
+
 	return {
 		"base_mri_image_path": qctask.base_mri_image_path,
 		"overlay_mri_image_path": qctask.overlay_mri_image_path,
@@ -92,4 +101,5 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
 		"iqm_path": qctask.iqm_path,
 		"montage_max_rows": qctask.montage_max_rows,
 		"montage_max_cols": qctask.montage_max_cols,
+		"display_name": display_label,
 	}
