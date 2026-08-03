@@ -43,7 +43,7 @@ DATASET_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(31, 119, 1
 REFERENCE_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(214, 39, 40, 0.55)"),
                 line=dict(color="rgba(214, 39, 40, 1.0)", width=1),
                 fillcolor="rgba(214, 39, 40, 0.25)")
-SUBJECT_MARKER_STYLE = dict(size=12, symbol='diamond', color="rgba(255, 127, 14, 0.9)",
+SUBJECT_MARKER_STYLE = dict(size=8, symbol='diamond', color="rgba(255, 127, 14, 0.9)",
                         line=dict(color="rgba(255, 127, 14, 1.0)", width=2))
 MAX_REFERENCE_ROWS = 50000
 
