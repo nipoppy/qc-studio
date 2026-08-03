@@ -80,7 +80,16 @@ def _normalize_svg_paths(svg_paths_value):
 		return [Path(svg_paths_value)]
 	
 	if isinstance(svg_paths_value, list):
-		return [Path(p) for p in svg_paths_value if p is not None]
+		normalized_paths = []
+		for p in svg_paths_value:
+			if p is None:
+				continue
+			try:
+				normalized_paths.append(Path(p))
+			except TypeError:
+				# Ignore malformed path entries and keep loading valid montage files.
+				continue
+		return normalized_paths
 	
 	return None
 
