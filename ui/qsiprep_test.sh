@@ -8,7 +8,7 @@
 #   ./qsiprep_test.sh
 #   ./qsiprep_test.sh ../pipelines/qsiprep/qc.json sdc_wf_qc
 #   ./qsiprep_test.sh ../pipelines/qsiprep/qc.json all
-#   QC_TASK=dwi_carpetplot_qc ./qsiprep_test.sh
+#   QC_TASK=coreg_wf_qc ./qsiprep_test.sh
 
 set -euo pipefail
 

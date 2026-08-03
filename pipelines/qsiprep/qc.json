@@ -1,29 +1,18 @@
 {
     "seg_brainmask_qc": {
+        "display_name": "Brain mask segmentation",
         "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_seg_brainmask.svg"
     },
     "t1_2_mni_qc": {
+        "display_name": "T1w to MNI registration",
         "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_t1_2_mni.svg"
     },
     "sdc_wf_qc": {
+        "display_name": "DWI susceptibility distortion correction",
         "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_desc-sdc_b0.svg"
     },
     "coreg_wf_qc": {
+        "display_name": "DWI-T1w coregistration",
         "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_coreg.svg"
-    },
-    "dwi_carpetplot_qc": {
-        "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_carpetplot.svg"
-    },
-    "dwi_biascorr_qc": {
-        "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_final_denoise_wf_biascorr.svg"
-    },
-    "dwi_denoising_qc": {
-        "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_dwi_denoise_[[NIPOPPY_QSIPREP_SESSION_SLUG]]_acq_multishelldir92_run_1_dwi_wf_denoising.svg"
-    },
-    "dwi_unringing_qc": {
-        "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_dwi_denoise_[[NIPOPPY_QSIPREP_SESSION_SLUG]]_acq_multishelldir92_run_1_dwi_wf_unringing.svg"
-    },
-    "dwi_b0ref_qc": {
-        "svg_montage_path": "derivatives/qsiprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_acq-multishelldir92_run-1_desc-resampled_b0ref.svg"
     }
 }

@@ -52,6 +52,22 @@ class TestParseQcConfig:
         assert result["montage_max_rows"] == 2
         assert result["montage_max_cols"] == 2
 
+    def test_parse_qc_config_display_name(self, temp_dir):
+        qc_path = temp_dir / "qc.json"
+        (temp_dir / "a.svg").write_text("<svg></svg>")
+        qc_path.write_text(
+            json.dumps(
+                {
+                    "demo_task": {
+                        "display_name": "Friendly label",
+                        "svg_montage_path": str(temp_dir / "a.svg"),
+                    }
+                }
+            )
+        )
+        result = parse_qc_config(str(qc_path), "demo_task")
+        assert result["display_name"] == "Friendly label"
+
     def test_parse_qc_config_nonexistent_task(self, sample_qc_config):
         """Test parsing QC config with non-existent task."""
         result = parse_qc_config(str(sample_qc_config), "nonexistent_task")
@@ -62,6 +78,7 @@ class TestParseQcConfig:
         assert result["iqm_path"] is None
         assert result["montage_max_rows"] is None
         assert result["montage_max_cols"] is None
+        assert result["display_name"] is None
 
     def test_parse_qc_config_invalid_file(self, temp_dir):
         """Test parsing non-existent QC config file."""
