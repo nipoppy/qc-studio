@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 import streamlit as st
 from managers.panel_layout_manager import PanelLayoutManager
-from constants import PANEL_CONFIG, NIIVUE_SVG_RATIO, EQUAL_RATIO, RATING_IQM_RATIO
+from constants import PANEL_CONFIG, NIIVUE_SECONDARY_RATIO, EQUAL_RATIO, RATING_IQM_RATIO
 
 
 class TestPanelLayoutRatios:
@@ -149,12 +149,12 @@ class TestLayoutConstants:
     """Tests for layout ratio constants."""
     
     def test_niivue_svg_ratio_valid(self):
-        """Test NIIVUE_SVG_RATIO is valid."""
-        assert len(NIIVUE_SVG_RATIO) == 2
-        assert NIIVUE_SVG_RATIO[0] > 0
-        assert NIIVUE_SVG_RATIO[1] > 0
+        """Test NIIVUE_SECONDARY_RATIO is valid."""
+        assert len(NIIVUE_SECONDARY_RATIO) == 3
+        # all values should be positive
+        assert all(value > 0 for value in NIIVUE_SECONDARY_RATIO)
         # Should sum to approximately 1.0
-        assert abs(sum(NIIVUE_SVG_RATIO) - 1.0) < 0.01
+        assert abs(sum(NIIVUE_SECONDARY_RATIO) - 1.0) < 0.01
     
     def test_equal_ratio_valid(self):
         """Test EQUAL_RATIO is valid."""
