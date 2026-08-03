@@ -175,7 +175,7 @@ ERROR_MESSAGES = {
     'base_mri_not_found': 'Base MRI image not found or could not be loaded.',
     'svg_not_found': 'SVG montage not found or could not be loaded.',
     'participant_list_load_error': 'Error loading participant list: {error}',
-     'participant_list_load_error': 'Error loading participant list: {error}',
+    'reference_data_load_error': 'Error loading reference data: {error}',
     'iqm_config_missing': 'IQM distribution configuration is missing from the QC config file.',
     'iqm_config_load_error': 'Failed to load IQM distribution configuration.',
     'iqm_modality_path_error': 'No dataset path configured for modality: {modality}',
