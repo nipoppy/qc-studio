@@ -39,3 +39,12 @@ repos:
           - --config
           - .codespellrc
         files: ^(README\.md|docs/|ui/|pipelines/)
+
+  - repo: local
+    hooks:
+      - id: pytest-ui
+        name: pytest ui tests
+        entry: python -m pytest ui/tests -q
+        language: system
+        pass_filenames: false
+        always_run: true

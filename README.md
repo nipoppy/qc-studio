@@ -46,6 +46,10 @@ uv pip install -r requirements.txt
 
 # Install niivue-streamlit component
 uv pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
+
+# Install development checks
+uv pip install -r requirements-test.txt
+pre-commit install
 ```
 
 ### Option B: Using pip & venv (Traditional)
@@ -67,6 +71,16 @@ pip install -r requirements.txt
 
 # Install niivue-streamlit component
 pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
+
+# Install development checks
+python -m pip install -r requirements-test.txt
+pre-commit install
+```
+
+Before pushing, run all pre-commit checks. This includes the same UI test command used in CI.
+
+```bash
+pre-commit run --all-files
 ```
 
 ### Run the Application
@@ -105,19 +119,6 @@ Contributions are welcome! Please:
 2. Check [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for testing practices
 3. Follow the code organization described above
 4. Ensure all tests pass before submitting PR
-
-Install the development checks once per clone:
-
-```bash
-python -m pip install -r requirements-test.txt
-pre-commit install
-```
-
-Run every pre-commit check manually:
-
-```bash
-pre-commit run --all-files
-```
 
 ## ❓ Support
 
