@@ -46,6 +46,10 @@ uv pip install -r requirements.txt
 
 # Install niivue-streamlit component
 uv pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
+
+# Install development checks
+uv pip install -r requirements-test.txt
+pre-commit install
 ```
 
 ### Option B: Using pip & venv (Traditional)
@@ -67,6 +71,16 @@ pip install -r requirements.txt
 
 # Install niivue-streamlit component
 pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
+
+# Install development checks
+python -m pip install -r requirements-test.txt
+pre-commit install
+```
+
+Before pushing, run all pre-commit checks. This includes the same UI test command used in CI.
+
+```bash
+pre-commit run --all-files
 ```
 
 ### Run the Application

@@ -1,6 +1,10 @@
 """Tests for qc_viewer helper utilities."""
 
+import pytest
+
 from components.qc_viewer import _clean_filename
+
+pytestmark = pytest.mark.unit
 
 
 class TestCleanFilename:

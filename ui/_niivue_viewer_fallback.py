@@ -15,7 +15,4 @@ def niivue_viewer(**kwargs) -> None:
         "`pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit`\n\n"
         "Then restart Streamlit."
     )
-    st.caption(
-        f"Placeholder — `{key}` / `{filename}` / "
-        f"{'volume loaded' if has_data else 'no volume'}"
-    )
+    st.caption(f"Placeholder — `{key}` / `{filename}` / " f"{'volume loaded' if has_data else 'no volume'}")
