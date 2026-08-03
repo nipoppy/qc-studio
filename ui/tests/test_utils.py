@@ -338,6 +338,21 @@ class TestLoadSvgData:
 
         assert result is None
 
+    def test_load_svg_skips_malformed_list_entries(self, temp_dir, sample_svg_content):
+        """Malformed list entries should be ignored instead of raising TypeError."""
+        svg_file = temp_dir / "montage.svg"
+        svg_file.write_text(sample_svg_content)
+
+        path_dict = {"svg_montage_path": [123, svg_file]}
+
+        result = load_svg_data(temp_dir, path_dict)
+
+        assert result is not None
+        assert isinstance(result, dict)
+        assert len(result) == 1
+        filename = list(result.keys())[0]
+        assert result[filename]["type"] == "svg"
+
 
 class TestLoadIqmData:
     """Test load_iqm_data function."""
