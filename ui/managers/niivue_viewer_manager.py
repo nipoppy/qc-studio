@@ -202,6 +202,7 @@ class NiivueViewerManager:
         return viewer_kwargs
     
     @staticmethod
+    @st.fragment()
     def render_viewer(dataset_dir, qc_config, config: NiivueViewerConfig,
                      participant_id: str = None, session_id: str = None,
                      task_suffix: str = ""):
