@@ -10,9 +10,9 @@ from managers.session_manager import SessionManager
 from models import QCRecord
 from managers.panel_layout_manager import PanelLayoutManager
 from managers.niivue_viewer_manager import NiivueViewerManager
+from utils.bids import bare_bids_id
 from utils.config import list_qc_tasks_from_json, parse_qc_config
 from utils.cohort import (
-	bare_bids_id,
 	build_qc_cohort,
 	count_complete_cohort_pages,
 	decided_rating_keys_from_df,
