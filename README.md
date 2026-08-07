@@ -14,11 +14,9 @@ A web-based quality control (QC) application for neuroimaging data. QC-Studio al
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
-| [DEVELOPER_QUICKREF.md](docs/DEVELOPER_QUICKREF.md) | Quick reference for common tasks | Developers |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Complete architecture overview | All |
-| [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Testing best practices | Developers |
-| [TEST_INTEGRATION_GUIDE.md](docs/TEST_INTEGRATION_GUIDE.md) | Test suite details | QA/CI-CD |
-| [IMPLEMENTATION_CHECKLIST.md](docs/IMPLEMENTATION_CHECKLIST.md) | Feature implementation status | Project managers |
+| [DEV_PLAN.md](docs/DEV_PLAN.md) | Product scope and design overview | Contributors |
+| [ui/tests/README.md](ui/tests/README.md) | Test suite usage and testing patterns | Developers |
 | [SCanD QC guidelines](https://github.com/TIGRLab/SCanD_project/tree/Fir/docs) | Pipeline QC pass/fail criteria (fMRIPrep, FreeSurfer, QSIPrep, XCP-D, NODDIreg) | Raters / supervisors |
 
 ## 🚀 Quick Start
@@ -116,14 +114,10 @@ See LICENSE file for details.
 Contributions are welcome! Please:
 
 1. Read the [ARCHITECTURE.md](docs/ARCHITECTURE.md) for design patterns
-2. Check [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for testing practices
+2. Check [ui/tests/README.md](ui/tests/README.md) for testing practices
 3. Follow the code organization described above
 4. Ensure all tests pass before submitting PR
 
 ## ❓ Support
 
-For issues, questions, or suggestions:
-
-1. Check existing documentation in `/docs`
-2. Review test files for usage examples
-3. Open an issue on GitHub with detailed description
+For issues, questions, or suggestions open an issue on GitHub with detailed description
