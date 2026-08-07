@@ -138,8 +138,13 @@ def display_qc_viewers(
 		# Full-width IQM only
 		elif show_iqm:
 			_display_iqm_panel()
-	
-	SessionManager.set_session_start_time(time.time())
+
+	# Start timing when the displayed participant/session changes (avoid resetting on every rerun)
+	timing_key = (participant_id, session_id, qc_task)
+	if st.session_state.get("_qc_timing_key") != timing_key:
+		print(st.session_state.get("_qc_timing_key"))
+		st.session_state["_qc_timing_key"] = timing_key
+		SessionManager.set_session_start_time(time.time())
 	# Autoplay rerun loop: panels have now rendered; keep refreshing so the
 	# countdown display stays live and the timer expiry check fires on time
 	if SessionManager.is_autoplay_enabled():
