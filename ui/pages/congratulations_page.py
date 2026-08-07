@@ -1,12 +1,13 @@
 """Congratulations page component for QC-Studio UI."""
 
-import altair as alt
 from constants import MESSAGES, SUCCESS_MESSAGES, INFO_MESSAGES, QC_RATINGS
 from managers.session_manager import SessionManager
+import numpy as np
 import pandas as pd
 from pathlib import Path
 import streamlit as st
 from utils.export import save_qc_results_to_csv 
+import plotly.express as px
 
 
 def show_congratulations_page(
@@ -86,48 +87,56 @@ def _display_session_summary(rater_id: str, qc_task: str, record_list: list) -> 
                     final_qc_counts[qc_value] = final_qc_counts.get(qc_value, 0) + 1
                     labels.append(qc_value)
                 durations.append(int(record.duration))
+
             duration_dict = {"duration": durations, "qc_value": labels}
             duration_df = pd.DataFrame(duration_dict, columns=["duration", "qc_value"])
 
-            final_qc_df = pd.DataFrame.from_dict(
-                final_qc_counts, orient="index", columns=["Count"]
-            )
+            final_qc_df = pd.DataFrame.from_dict(final_qc_counts, orient="index", columns=["Count"])
             final_qc_df['Percentage (%)'] = (final_qc_df['Count'] / num_reviewed).mul(100).round(1)
+
             total_duration_s = int(sum(durations))
             avg_duration_s = (total_duration_s / num_reviewed) if num_reviewed else 0.0
 
+            # Annotation duration general information
             st.write(f"**Total QC session duration:** {total_duration_s}s")
             st.write(f"**Average rating time per participant:** {avg_duration_s:.1f}s")
-            st.dataframe(final_qc_df, width='stretch')
 
-            # stacked histogram of duration count
-            selection = alt.selection_point(fields=["qc_value"], bind="legend")
-            line_chart = (
-                alt.Chart(duration_df)
-                .encode(
-                    alt.X(
-                        "duration:Q",
-                        title="Duration (s)",
-                        axis=alt.Axis(tickMinStep=1),
-                        bin=alt.Bin(step=1),
-                    ),
-                    alt.Y(
-                        "count()",
-                    ).stack(False),  # change True to None to get non-stacked histogram
-                    alt.Color("qc_value:N").scale(scheme="observable10"),
-                    opacity=alt.condition(
-                        selection, alt.value(1), alt.value(0.2)
-                    ),  # link opacity to the selection state
-                )
-                .add_params(
-                    selection,
-                )
-                .mark_bar(
-                    opacity=1  # to adapt if layering histograms
-                )
+            # Table showing the label count and percentage of overall annotated cohort
+            st.dataframe(final_qc_df, width='stretch') 
+
+            # Grouped histogram of duration count
+            count_df = duration_df.groupby(['duration','qc_value']).size().reset_index(name='count')
+
+            # Create the grouped bar chart
+            fig = px.bar(
+                count_df,
+                x='duration',
+                y='count',
+                color='qc_value',
+                barmode='group',
+                title='Distribution of rating duration across quality categories'
+            )
+            # Force integer ticks
+            fig.update_yaxes(
+                tickvals=np.arange(0, int(count_df['count'].max()) + 1, 1),
+                tick0=0
             )
 
-            st.altair_chart(line_chart)
+            fig.update_layout(
+                xaxis_title='Duration (s)',
+                yaxis_title='Count',
+                legend_title='',
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
+                bargap=0.1  # Add small gap between groups for readability
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
 
 
 def _export_qc_results(
