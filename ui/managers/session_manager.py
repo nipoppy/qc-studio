@@ -304,6 +304,7 @@ class SessionManager:
         """Get the timestamp when the session page was shown."""
         return st.session_state.get('session_start_time', 0.0)
     
-    #staticmethod
+    @staticmethod
     def set_session_start_time(t: float):
+        """Set the timestamp for when the session page was shown."""
         st.session_state['session_start_time'] = t
