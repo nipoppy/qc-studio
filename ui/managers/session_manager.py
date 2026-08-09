@@ -41,6 +41,8 @@ class SessionManager:
             'autoplay_enabled': False,
             'autoplay_start_time': 0.0,
             'autoplay_duration': 5,
+            SESSION_KEYS['iqm_view_selection']: 'Overview',
+            SESSION_KEYS['iqm_display_mode_selection']: 'Dataset',
         }
         
         for key, value in defaults.items():
@@ -442,3 +444,42 @@ class SessionManager:
     def set_autoplay_duration(seconds: int):
         """Set the autoplay countdown duration in seconds (2–10)."""
         st.session_state['autoplay_duration'] = max(2, min(10, seconds))
+
+    # IQM Viewer Widget Selection Mirrors
+    #
+    # The IQM viewer's Overview/Detail, Dataset/Dataset+reference, and metric
+    # group widgets live downstream of the sidebar in the script. Sidebar
+    # navigation calls st.rerun()/st.switch_page() mid-script, which aborts
+    # the run before those widgets are created, so Streamlit garbage-collects
+    # their own widget-keyed state. These mirrors are plain session_state
+    # entries the widgets are re-seeded from every run, so selections survive
+    # a subject/session switch instead of silently resetting.
+    @staticmethod
+    def get_iqm_view_selection() -> str:
+        """Get the remembered IQM Overview/Detail selection."""
+        return st.session_state.get(SESSION_KEYS['iqm_view_selection'], 'Overview')
+
+    @staticmethod
+    def set_iqm_view_selection(view: str):
+        """Remember the IQM Overview/Detail selection."""
+        st.session_state[SESSION_KEYS['iqm_view_selection']] = view
+
+    @staticmethod
+    def get_iqm_display_mode_selection() -> str:
+        """Get the remembered IQM Dataset/Dataset+reference selection."""
+        return st.session_state.get(SESSION_KEYS['iqm_display_mode_selection'], 'Dataset')
+
+    @staticmethod
+    def set_iqm_display_mode_selection(mode: str):
+        """Remember the IQM Dataset/Dataset+reference selection."""
+        st.session_state[SESSION_KEYS['iqm_display_mode_selection']] = mode
+
+    @staticmethod
+    def get_iqm_group_select_selection() -> str | None:
+        """Get the remembered IQM metric group selection, or None if never set."""
+        return st.session_state.get(SESSION_KEYS['iqm_group_select_selection'])
+
+    @staticmethod
+    def set_iqm_group_select_selection(group: str):
+        """Remember the IQM metric group selection."""
+        st.session_state[SESSION_KEYS['iqm_group_select_selection']] = group

@@ -92,6 +92,11 @@ SESSION_KEYS = {
     'montage_max_cols': 'montage_max_cols',
     # Set once per Streamlit session after reading qc.json (avoid re-applying on every rerun)
     'montage_defaults_applied_qc_task': 'montage_defaults_applied_qc_task',
+    # IQM viewer widget selections, mirrored outside the widgets' own keys so
+    # they survive the sidebar's mid-script st.rerun()/st.switch_page() calls.
+    'iqm_view_selection': 'iqm_view_selection',
+    'iqm_display_mode_selection': 'iqm_display_mode_selection',
+    'iqm_group_select_selection': 'iqm_group_select_selection',
 }
 
 # File upload settings
