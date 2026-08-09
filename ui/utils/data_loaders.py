@@ -5,10 +5,64 @@ from files and directories.
 """
 
 import json
+import os
 import pandas as pd
 import re
 from pathlib import Path
 from typing import Optional, Dict, List, Union
+
+import requests
+import streamlit as st
+
+
+# Reference-data host is not committed to source; set REFERENCE_DATA_URL in
+# the environment before running the app.
+URL_PARENT = os.environ.get("REFERENCE_DATA_URL")
+
+REFERENCE_CACHE_DIR = Path(".streamlit/reference_cache")
+REFERENCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_REFERENCE_ROWS = 50_000
+CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
+
+UNKNOWN_LABELS = {"", "unknown", "nan", "none", "na", "n/a", "null"}
+
+MANUFACTURER_ALIASES = {
+    "siemens": "siemens",
+    "siemens healthineers": "siemens",
+    "siemens healthcare": "siemens",
+
+    "ge": "ge",
+    "general electric": "ge",
+    "ge healthcare": "ge",
+    "ge medical systems": "ge",
+
+    "philips": "philips",
+    "philips healthcare": "philips",
+    "philips medical systems": "philips",
+}
+
+FIELD_STRENGTH_ALIASES = {
+	# "1": "1T",
+	# "1.0": "1T",
+	# "1t": "1T",
+	# "1.5": "1.5T",
+	# "1.5t": "1.5T",
+	# "2": "2T",
+	# "2.0": "2T",
+	# "2t": "2T",
+	# "3": "3T",
+	# "3.0": "3T",
+	# "3t": "3T",
+	# "15000": "1.5T",
+	# "15000.0": "1.5T",
+
+	"1.0": "1",
+	"1t": "1",
+	"3.0": "3",
+	"3T": "3",
+	"3t": "3",
+}
 
 
 def load_mri_data(
@@ -458,31 +512,143 @@ def resolve_reference_data_path(ref_path: str, base_dir: Optional[Path] = None) 
 	return path
 
 
-def load_reference_iqm_data(ref_path: Union[Path, str], manufacturer: str = "Unknown") -> pd.DataFrame:
-	"""Load and manufacturer-filter a reference IQM TSV.
+# def load_reference_iqm_data(ref_path: Union[Path, str], manufacturer: str = "Unknown") -> pd.DataFrame:
+# 	"""Load and manufacturer-filter a reference IQM TSV.
 
-	Args:
-		ref_path: Resolved path to the reference TSV file.
-		manufacturer: Scanner manufacturer used to filter rows.
-		              Rows with unknown/missing manufacturer are always
-		              included as fallback context.
+# 	Args:
+# 		ref_path: Resolved path to the reference TSV file.
+# 		manufacturer: Scanner manufacturer used to filter rows.
+# 		              Rows with unknown/missing manufacturer are always
+# 		              included as fallback context.
 
-	Returns:
-		Filtered :class:`pandas.DataFrame`.
-	"""
-	data = pd.read_csv(ref_path, sep='\t')
+# 	Returns:
+# 		Filtered :class:`pandas.DataFrame`.
+# 	"""
+# 	data = pd.read_csv(ref_path, sep='\t')
 
-	if "Manufacturer" not in data.columns:
-		return data
+# 	if "Manufacturer" not in data.columns:
+# 		return data
 
-	manufacturer_series = data["Manufacturer"].astype(str).str.strip().str.lower()
-	subject_manufacturer = str(manufacturer).strip().lower()
-	unknown_labels = {"", "unknown", "nan", "none", "na", "n/a"}
+# 	manufacturer_series = data["Manufacturer"].astype(str).str.strip().str.lower()
+# 	subject_manufacturer = str(manufacturer).strip().lower()
+# 	unknown_labels = {"", "unknown", "nan", "none", "na", "n/a"}
 
-	if subject_manufacturer in unknown_labels:
-		return data[manufacturer_series.isin(unknown_labels)]
+# 	if subject_manufacturer in unknown_labels:
+# 		return data[manufacturer_series.isin(unknown_labels)]
 
-	return data[
-		(manufacturer_series == subject_manufacturer)
-		| (manufacturer_series.isin(unknown_labels))
-	]
+# 	return data[
+# 		(manufacturer_series == subject_manufacturer)
+# 		| (manufacturer_series.isin(unknown_labels))
+# 	]
+
+
+@st.cache_data(show_spinner="Downloading reference data...", ttl=CACHE_TTL_SECONDS)
+def _download_reference_parquet_bytes(url: str) -> bytes:
+	"""Download reference Parquet content and cache bytes in memory."""
+	response = requests.get(url, timeout=120)
+	response.raise_for_status()
+	return response.content
+
+
+def download_reference_parquet(modality: str, url_parent: str = URL_PARENT) -> str:
+	"""Ensure a reference Parquet file exists locally and return its path."""
+	cache_file_path = REFERENCE_CACHE_DIR / f"{modality}.parquet"
+
+	if cache_file_path.exists():
+		return str(cache_file_path)
+
+	if not url_parent:
+		raise RuntimeError(
+			"REFERENCE_DATA_URL is not set. Set it in the environment to enable "
+			"downloading reference IQM data."
+		)
+
+	url = url_parent.rstrip("/") + f"/{modality}.parquet"
+	cache_file_path.write_bytes(_download_reference_parquet_bytes(url))
+
+	return str(cache_file_path)
+
+
+def normalize_manufacturer(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+
+    if normalized in UNKNOWN_LABELS:
+        return "unknown"
+
+    return MANUFACTURER_ALIASES.get(normalized, normalized)
+
+#fix this
+def normalize_field_strength(value: object) -> Optional[str]:
+	normalized = str(value or "").strip().lower()
+
+	if normalized in UNKNOWN_LABELS:
+		return None
+
+	if normalized in FIELD_STRENGTH_ALIASES:
+		return FIELD_STRENGTH_ALIASES[normalized]
+
+	# try:
+	# 	numeric_value = float(normalized)
+	# except (TypeError, ValueError):
+	# 	return normalized or None
+
+	# # if numeric_value.is_integer():
+	# # 	return f"{int(numeric_value)}T"
+
+	# # return f"{numeric_value:g}T"
+
+
+@st.cache_data(show_spinner="Loading reference data...", ttl=CACHE_TTL_SECONDS)
+def _load_reference_parquet(modality: str) -> pd.DataFrame:
+    """Load and cache the full, unfiltered reference Parquet table for a modality."""
+    local_parquet_path = REFERENCE_CACHE_DIR / f"{modality}.parquet"
+    if not local_parquet_path.exists():
+        download_reference_parquet(url_parent=URL_PARENT, modality=modality)
+
+    return pd.read_parquet(local_parquet_path, engine="pyarrow")
+
+
+def load_reference_iqm_for_subject(
+    modality: str,
+    manufacturer: str,
+	field_strength: Optional[object] = None,
+    max_rows: int = MAX_REFERENCE_ROWS,
+) -> pd.DataFrame:
+    """Load and filter reference data for a given subject's scanner."""
+    manufacturer_subject_norm = normalize_manufacturer(manufacturer)
+    field_strength_subject_norm = normalize_field_strength(field_strength)
+
+    return _load_reference_iqm_filtered(
+        modality, manufacturer_subject_norm, field_strength_subject_norm, max_rows
+    )
+
+
+@st.cache_data(show_spinner="Loading reference data...", ttl=CACHE_TTL_SECONDS)
+def _load_reference_iqm_filtered(
+    modality: str,
+    manufacturer_subject_norm: str,
+    field_strength_subject_norm: Optional[str],
+    max_rows: int,
+) -> pd.DataFrame:
+    """Filter the cached reference table by already-normalized scanner values.
+
+    Cached on the normalized values (not the raw subject metadata) so that
+    different raw spellings that mean the same thing (e.g. "", "N/A", and
+    "Unknown", or "GE" and "General Electric") share one cache entry.
+    """
+    print(f"Loading reference IQM data for modality={modality}, manufacturer={manufacturer_subject_norm}, field_strength={field_strength_subject_norm}")
+
+    data = _load_reference_parquet(modality)
+
+    if manufacturer_subject_norm != "unknown" and "Manufacturer" in data.columns:
+        manufacturer_norm = data["Manufacturer"].map(normalize_manufacturer)
+        data = data[manufacturer_norm == manufacturer_subject_norm]
+
+    if field_strength_subject_norm is not None and "MagneticFieldStrength" in data.columns:
+        field_strength_norm = data["MagneticFieldStrength"].map(normalize_field_strength)
+        data = data[field_strength_norm == field_strength_subject_norm]
+
+    if len(data) > max_rows:
+        data = data.sample(n=max_rows, random_state=42)
+
+    return data
