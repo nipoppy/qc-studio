@@ -5,6 +5,7 @@ __pycache__/
 ui/__pycache__/
 *.pyc
 .DS_Store
+.env
 
 # CMH0001 BIDS NIfTIs are ~500MB each (no Git LFS); keep locally for fMRIPrep Niivue QC.
 sample_data/bids/sub-CMH0001/

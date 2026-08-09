@@ -13,10 +13,12 @@ from typing import Optional, Dict, List, Union
 
 import requests
 import streamlit as st
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # Reference-data host is not committed to source; set REFERENCE_DATA_URL in
-# the environment before running the app.
+# the environment (or a .env file) before running the app.
 URL_PARENT = os.environ.get("REFERENCE_DATA_URL")
 
 REFERENCE_CACHE_DIR = Path(".streamlit/reference_cache")
