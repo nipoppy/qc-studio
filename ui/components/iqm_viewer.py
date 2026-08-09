@@ -26,10 +26,10 @@ from utils.data_loaders import (
     _load_scanner_metadata,
     load_iqm_config,
     resolve_iqm_data_path,
-    resolve_reference_data_path,
-    load_reference_iqm_data,
+    load_reference_iqm_for_subject,
 )
 from constants import MESSAGES, ERROR_MESSAGES
+from managers.session_manager import SessionManager
 from utils.iqm_distribution_config import IQM_DISTRIBUTION_GROUPS, REFERENCE_DATA_PATHS
 
 MODALITY_KEYWORDS = {
@@ -50,6 +50,11 @@ MAX_REFERENCE_ROWS = 50000
 CONTAINER_HEIGHT = 520
 NUM_OVERVIEW_COLUMNS = 2
 
+# Above this many rows in a series, Plotly's boxpoints='all' renders every
+# point individually and becomes noticeably slow; fall back to outlier-only
+# points instead.
+MAX_ALL_BOXPOINTS_ROWS = 500
+
 
 def _load_iqm_config(qc_config_path: str) -> dict:
     """Load IQM configuration from the QC config file."""
@@ -58,24 +63,6 @@ def _load_iqm_config(qc_config_path: str) -> dict:
         st.warning(ERROR_MESSAGES['iqm_config_missing'])
     return iqm_config
 
-
-@st.cache_data(show_spinner="Loading reference data…")
-def _load_reference_data(modality: str, scanner_meta: Optional[Union[dict, str]] = None) -> "pd.DataFrame":
-    """Cached thin wrapper: resolves path + manufacturer, then delegates to load_reference_iqm_data."""
-    ref_path = REFERENCE_DATA_PATHS.get(modality)
-    if ref_path is None:
-        raise ValueError(f"No reference data path defined for modality '{modality}'")
-
-    if isinstance(scanner_meta, dict):
-        manufacturer = scanner_meta.get("Manufacturer", "Unknown")
-    elif isinstance(scanner_meta, str):
-        manufacturer = scanner_meta or "Unknown"
-    else:
-        manufacturer = "Unknown"
-
-    repo_root = Path(__file__).resolve().parents[2]
-    resolved_ref_path = resolve_reference_data_path(ref_path, base_dir=repo_root)
-    return load_reference_iqm_data(resolved_ref_path, manufacturer)
 
 def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str=None)-> pd.DataFrame:
     """Extract subject-specific data for the given participant ID and columns."""
@@ -231,7 +218,14 @@ def _build_iqm_distribution_figure(
 
     #____________Render distribution plot___________
     fig = go.Figure()
-    boxpoints = False if compact else 'all'
+    if compact:
+        boxpoints = False
+    else:
+        largest_series_rows = max(
+            len(dataset_plot_data),
+            len(reference_plot_data) if reference_plot_data is not None else 0,
+        )
+        boxpoints = 'all' if largest_series_rows <= MAX_ALL_BOXPOINTS_ROWS else 'outliers'
 
     if group_display_mode == "Dataset":
         _add_box_traces(
@@ -358,10 +352,22 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         return 
 
     #____________Display mode selection___________
+    # Same st.switch_page-vs-widget-state issue as "iqm_view_mode" below: the
+    # sidebar's subject switcher aborts the script before this widget runs,
+    # so "iqm_display_mode" gets wiped and silently reverts to "Dataset" on
+    # every subject switch (making the reference box disappear). Mirror the
+    # selection via SessionManager so it survives.
+    display_mode_options = ["Dataset", "Dataset + reference"]
+
+    def _remember_iqm_display_mode():
+        SessionManager.set_iqm_display_mode_selection(st.session_state["iqm_display_mode"])
+
     mode = st.radio(
         "Display mode",
-        options=["Dataset", "Dataset + reference"],
+        options=display_mode_options,
+        index=display_mode_options.index(SessionManager.get_iqm_display_mode_selection()),
         key="iqm_display_mode",
+        on_change=_remember_iqm_display_mode,
         horizontal=True
     )
   
@@ -376,9 +382,14 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
     reference_data = None
     try:
         if mode == "Dataset + reference":
-            reference_data = _load_reference_data(modality, scanner_metadata)
-            if len(reference_data) > MAX_REFERENCE_ROWS:
-                reference_data = reference_data.sample(n=MAX_REFERENCE_ROWS, random_state=42)
+            manufacturer = scanner_metadata.get("Manufacturer", "Unknown") if isinstance(scanner_metadata, dict) else scanner_metadata
+            field_strength = scanner_metadata.get("MagneticFieldStrength") if isinstance(scanner_metadata, dict) else None
+            reference_data = load_reference_iqm_for_subject(
+                modality=modality,
+                manufacturer=manufacturer,
+                field_strength=field_strength,
+                max_rows=MAX_REFERENCE_ROWS,
+            )
     except Exception as e:
         st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=modality, error=e))
         return
@@ -399,8 +410,37 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         return
 
     #____________Select Tab____________
-    overview_tab, detail_tab = st.tabs(["Overview", "Detail"])
-    with overview_tab:
+    # st.segmented_control (unlike st.tabs) is a real widget backed by
+    # session state, so only the selected branch below actually executes.
+    # st.tabs renders both branches on every rerun regardless of which tab
+    # is visually active, which was rebuilding the expensive Detail plot
+    # (up to MAX_REFERENCE_ROWS points) even while viewing Overview.
+    #
+    # The sidebar's subject/session switcher calls st.rerun()/st.switch_page()
+    # mid-script, which aborts the run before this widget is ever created.
+    # Streamlit garbage-collects widget state for keys not touched during a
+    # run, so "iqm_view_mode" itself gets wiped on every subject switch and
+    # silently reverts to "Overview". Mirror the selection via SessionManager
+    # (a plain session_state entry not tied to this widget's lifecycle), and
+    # re-seed the widget's default from it every run so the selection
+    # survives switches.
+    def _remember_iqm_view_selection():
+        SessionManager.set_iqm_view_selection(st.session_state["iqm_view_mode"])
+
+    view = st.segmented_control(
+        "IQM view",
+        options=["Overview", "Detail"],
+        default=SessionManager.get_iqm_view_selection(),
+        key="iqm_view_mode",
+        on_change=_remember_iqm_view_selection,
+        label_visibility="collapsed",
+    )
+    if view is None:
+        # Clicking the active pill again deselects it; fall back rather
+        # than rendering nothing.
+        view = "Overview"
+
+    if view == "Overview":
         st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
         with st.container(height=CONTAINER_HEIGHT, border=False):
             _render_montage_of_iqm_groups(
@@ -412,12 +452,23 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
                 modality=modality,
                 display_mode=mode,
             )
-    with detail_tab:
+    elif view == "Detail":
         st.write("Detailed view of a single IQM group with full-size plot and subject overlay.")
+        group_options = list(valid_groups.keys())
+        remembered_group = SessionManager.get_iqm_group_select_selection()
+        if remembered_group not in group_options:
+            remembered_group = group_options[0]
+        SessionManager.set_iqm_group_select_selection(remembered_group)
+
+        def _remember_iqm_group_select():
+            SessionManager.set_iqm_group_select_selection(st.session_state["iqm_group_select"])
+
         group = st.selectbox(
             "Select metric group",
-            options=list(valid_groups.keys()),
+            options=group_options,
+            index=group_options.index(remembered_group),
             key="iqm_group_select",
+            on_change=_remember_iqm_group_select,
         )
 
         fig = _build_iqm_distribution_figure(

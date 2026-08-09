@@ -22,6 +22,9 @@ class _StreamlitStub:
         self.selectbox = MagicMock()
         self.radio = MagicMock()
         self.plotly_chart = MagicMock()
+        self.segmented_control = MagicMock()
+        self.write = MagicMock()
+        self.session_state = {}
 
     def cache_data(self, *args, **kwargs):
         def decorator(func):
@@ -82,27 +85,6 @@ def test_load_iqm_config_warns_when_missing(iqm_viewer_module, temp_dir):
 
     assert result == {}
     streamlit_stub.warning.assert_called_once()
-
-
-def test_load_reference_data_reads_tsv_and_filters_manufacturer(iqm_viewer_module, temp_dir, monkeypatch):
-    module, _ = iqm_viewer_module
-
-    reference_path = temp_dir / "group_T1w.tsv"
-    df = pd.DataFrame(
-        {
-            "Manufacturer": ["Siemens", "GE", "Siemens"],
-            "efc": [0.1, 0.2, 0.3],
-            "bids_name": ["a", "b", "c"],
-        }
-    )
-    df.to_csv(reference_path, sep="\t", index=False)
-
-    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "t1w", str(reference_path))
-
-    filtered = module._load_reference_data("t1w", {"Manufacturer": "Siemens"})
-
-    assert list(filtered["Manufacturer"].unique()) == ["Siemens"]
-    assert len(filtered) == 2
 
 
 def test_extract_subject_data_filters_participant_and_session(iqm_viewer_module):
@@ -244,10 +226,10 @@ def test_render_iqm_distributions_dataset_only(iqm_viewer_module, temp_dir, monk
     ).to_csv(dataset_path, sep="\t", index=False)
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
-    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "t1w", str(dataset_path))
 
     streamlit_stub.selectbox.return_value = "EFC"
     streamlit_stub.radio.return_value = "Dataset"
+    streamlit_stub.segmented_control.return_value = "Detail"
 
     module._render_iqm_distributions(
         {"t1w": str(dataset_path)},
@@ -267,7 +249,6 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
     module, streamlit_stub = iqm_viewer_module
 
     dataset_path = temp_dir / "dataset.tsv"
-    reference_path = temp_dir / "reference.tsv"
 
     pd.DataFrame(
         {
@@ -276,18 +257,23 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
         }
     ).to_csv(dataset_path, sep="\t", index=False)
 
-    pd.DataFrame(
+    reference_df = pd.DataFrame(
         {
             "Manufacturer": ["Siemens", "GE"],
             "efc": [0.5, 0.9],
         }
-    ).to_csv(reference_path, sep="\t", index=False)
+    )
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
-    monkeypatch.setitem(module.REFERENCE_DATA_PATHS, "t1w", str(reference_path))
+    # Reference loading now goes through data_loaders.load_reference_iqm_for_subject
+    # (Parquet download + filter), not a REFERENCE_DATA_PATHS TSV; mock it directly.
+    monkeypatch.setattr(
+        module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_df)
+    )
 
     streamlit_stub.selectbox.return_value = "EFC"
     streamlit_stub.radio.return_value = "Dataset + reference"
+    streamlit_stub.segmented_control.return_value = "Detail"
 
     module._render_iqm_distributions(
         {"t1w": str(dataset_path)},
