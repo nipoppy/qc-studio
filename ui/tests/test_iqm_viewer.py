@@ -308,6 +308,7 @@ def test_display_iqm_panel_calls_loader_and_renderer(iqm_viewer_module, monkeypa
         "sub-01_T1w.nii.gz",
         participant_id="sub-01",
         session_id="ses-01",
+        dataset_dir=None,
     )
     render.assert_called_once_with(
         {"T1w": "dataset.tsv"},

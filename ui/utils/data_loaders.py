@@ -45,20 +45,6 @@ MANUFACTURER_ALIASES = {
 }
 
 FIELD_STRENGTH_ALIASES = {
-	# "1": "1T",
-	# "1.0": "1T",
-	# "1t": "1T",
-	# "1.5": "1.5T",
-	# "1.5t": "1.5T",
-	# "2": "2T",
-	# "2.0": "2T",
-	# "2t": "2T",
-	# "3": "3T",
-	# "3.0": "3T",
-	# "3t": "3T",
-	# "15000": "1.5T",
-	# "15000.0": "1.5T",
-
 	"1.0": "1",
 	"1t": "1",
 	"3.0": "3",
@@ -379,51 +365,111 @@ def _infer_dataset_root_from_path(image_path: Union[Path, str]) -> Optional[Path
 	return None
 
 
-def _find_bids_metadata_sidecar(dataset_root: Union[Path, str], participant_id: str = None, session_id: str = None) -> Optional[Path]:
-	"""Find a likely raw BIDS metadata sidecar, prioritizing anat T1w JSON files."""
-	if not dataset_root:
+# Folder + filename-suffix to search for, per BIDS modality.
+MODALITY_SIDECAR_HINTS = {
+	"anat": ("anat", "T1w"),
+	"t1w": ("anat", "T1w"),
+	"func": ("func", "bold"),
+	"bold": ("func", "bold"),
+	"dwi": ("dwi", "dwi"),
+	"diffusion": ("dwi", "dwi"),
+}
+
+
+def _infer_modality_from_path(image_path: Union[Path, str]) -> str:
+	"""Infer a BIDS modality hint ('anat', 'func', 'dwi') from an image path/filename."""
+	if not image_path:
+		return "anat"
+
+	path_str = str(image_path).lower()
+	if re.search(r"_(bold|sbref)\.", path_str) or "/func/" in path_str:
+		return "func"
+	if re.search(r"_dwi\.", path_str) or "/dwi/" in path_str:
+		return "dwi"
+	return "anat"
+
+
+def _find_bids_metadata_sidecar(
+	dataset_root: Union[Path, str],
+	participant_id: str = None,
+	session_id: str = None,
+	modality: str = "anat",
+) -> Optional[Path]:
+	"""Find a likely metadata sidecar for a participant, checking raw BIDS first, then derivatives.
+
+	``modality`` selects which BIDS folder/suffix to search (anat/T1w,
+	func/bold, dwi/dwi); unrecognized values fall back to anat/T1w. Every
+	search pattern is scoped to ``participant_id`` (required) so this never
+	returns a *different* participant's sidecar as a guess - if nothing
+	matches, it returns ``None`` so callers fall back to "Unknown" instead
+	of silently mislabeling the subject's scanner metadata.
+	"""
+	if not dataset_root or not participant_id:
 		return None
 
 	dataset_root = Path(dataset_root)
-	bids_root = dataset_root / "bids"
-	if not bids_root.is_dir():
-		bids_root = dataset_root
+	folder, suffix = MODALITY_SIDECAR_HINTS.get(str(modality).lower(), ("anat", "T1w"))
 
+	if not participant_id.startswith("sub-"):
+		participant_id = f"sub-{participant_id}"
 	if session_id and not session_id.startswith("ses-"):
 		session_id = f"ses-{session_id}"
 
-	search_patterns = []
-	if participant_id and session_id:
-		search_patterns.extend([
-			f"{participant_id}/{session_id}/anat/*T1w*.json",
-			f"{participant_id}/{session_id}/anat/*.json",
-			f"{participant_id}/{session_id}/**/*T1w*.json",
+	def _patterns_for(prefix: str) -> list:
+		patterns = []
+		if session_id:
+			patterns.extend([
+				f"{prefix}{participant_id}/{session_id}/{folder}/*{suffix}*.json",
+				f"{prefix}{participant_id}/{session_id}/{folder}/*.json",
+				f"{prefix}{participant_id}/{session_id}/**/*{suffix}*.json",
+			])
+		patterns.extend([
+			f"{prefix}{participant_id}/**/*{suffix}*.json",
+			f"{prefix}{participant_id}/**/{folder}/*.json",
 		])
+		return patterns
 
-	if participant_id:
-		search_patterns.extend([
-			f"{participant_id}/**/*T1w*.json",
-			f"{participant_id}/**/anat/*.json",
-			f"{participant_id}/**/*.json",
-		])
+	# Raw BIDS sidecars are the authoritative source when present.
+	bids_root = dataset_root / "bids"
+	if not bids_root.is_dir():
+		bids_root = dataset_root
+	search_roots = [(bids_root, "")]
 
-	search_patterns.extend([
-		"**/*T1w*.json",
-		"**/anat/*.json",
-	])
+	# Datasets that only ship pipeline outputs (no raw bids/ folder) still
+	# carry scanner metadata in derivative JSON sidecars (e.g. MRIQC), under
+	# an unknown pipeline subdirectory - "**/" skips over that layer while
+	# still anchoring on participant_id so it can't match another subject.
+	derivatives_root = dataset_root / "derivatives"
+	if derivatives_root.is_dir():
+		search_roots.append((derivatives_root, "**/"))
 
-	for pattern in search_patterns:
-		matches = sorted(bids_root.glob(pattern))
-		for match in matches:
-			if match.is_file():
-				return match
+	for root, prefix in search_roots:
+		for pattern in _patterns_for(prefix):
+			matches = sorted(root.glob(pattern))
+			for match in matches:
+				if match.is_file():
+					return match
 
 	return None
 
 
 def _load_scanner_metadata(image_path:Union[Path, str], participant_id: str = None,
-							 session_id: str = None) -> dict:
-	"""Load scanner metadata from the JSON sidecar of a BIDS image file."""
+							 session_id: str = None, modality: str = None,
+							 dataset_dir: Union[Path, str] = None) -> dict:
+	"""Load scanner metadata from the JSON sidecar of a BIDS image file.
+
+	``modality`` ("anat"/"func"/"dwi", or their common aliases) selects which
+	sidecar to look for when the direct sidecar next to ``image_path`` isn't
+	found; when omitted, it's inferred from ``image_path`` itself.
+
+	``image_path`` is commonly a dataset-relative path (e.g. from qc.json,
+	like ``"bids/sub-01/..."``); join it onto ``dataset_dir`` first so
+	dataset-root/participant/session inference below sees the real root
+	instead of resolving to the current working directory.
+	"""
+	if dataset_dir and image_path:
+		image_path = Path(dataset_dir) / image_path
+
 	json_path = _resolve_metadata_path(image_path)
 	dataset_root = _infer_dataset_root_from_path(image_path)
 
@@ -431,24 +477,30 @@ def _load_scanner_metadata(image_path:Union[Path, str], participant_id: str = No
 	inferred_participant, inferred_session = _infer_bids_ids_from_path(image_path)
 	participant_id = participant_id or inferred_participant
 	session_id = session_id or inferred_session
+	modality = modality or _infer_modality_from_path(image_path)
 
 	if not json_path or not Path(json_path).is_file():
-		json_path = _find_bids_metadata_sidecar(dataset_root, participant_id, session_id)
+		json_path = _find_bids_metadata_sidecar(dataset_root, participant_id, session_id, modality=modality)
 
 	# Metadata sidecar may be absent for derivative images. Fall back to
 	# unknown values instead of failing the whole IQM panel.
 	if not json_path or not Path(json_path).is_file():
 		return {
 			"Manufacturer": "Unknown",
-			"MagneticFieldStrength": "Unknown"
+			"MagneticFieldStrength": "Unknown",
+			"ProtocolName": "Unknown",
 		}
 
 	with open(json_path, 'r') as f:
 		metadata = json.load(f)
 
+	# MRIQC sidecars nest the original BIDS  metadata under "bids_meta" instead of at the top level for individual subjects.
+	bids_meta = metadata.get("bids_meta") or {}
+
 	return {
-		"Manufacturer": metadata.get("Manufacturer", "Unknown"),
-		"MagneticFieldStrength": metadata.get("MagneticFieldStrength", "Unknown")
+		"Manufacturer": metadata.get("Manufacturer") or bids_meta.get("Manufacturer", "Unknown"),
+		"MagneticFieldStrength": metadata.get("MagneticFieldStrength") or bids_meta.get("MagneticFieldStrength", "Unknown"),
+		"ProtocolName": metadata.get("ProtocolName") or bids_meta.get("ProtocolName", "Unknown"),
 	}
 
 
@@ -512,36 +564,6 @@ def resolve_reference_data_path(ref_path: str, base_dir: Optional[Path] = None) 
 			return candidate
 
 	return path
-
-
-# def load_reference_iqm_data(ref_path: Union[Path, str], manufacturer: str = "Unknown") -> pd.DataFrame:
-# 	"""Load and manufacturer-filter a reference IQM TSV.
-
-# 	Args:
-# 		ref_path: Resolved path to the reference TSV file.
-# 		manufacturer: Scanner manufacturer used to filter rows.
-# 		              Rows with unknown/missing manufacturer are always
-# 		              included as fallback context.
-
-# 	Returns:
-# 		Filtered :class:`pandas.DataFrame`.
-# 	"""
-# 	data = pd.read_csv(ref_path, sep='\t')
-
-# 	if "Manufacturer" not in data.columns:
-# 		return data
-
-# 	manufacturer_series = data["Manufacturer"].astype(str).str.strip().str.lower()
-# 	subject_manufacturer = str(manufacturer).strip().lower()
-# 	unknown_labels = {"", "unknown", "nan", "none", "na", "n/a"}
-
-# 	if subject_manufacturer in unknown_labels:
-# 		return data[manufacturer_series.isin(unknown_labels)]
-
-# 	return data[
-# 		(manufacturer_series == subject_manufacturer)
-# 		| (manufacturer_series.isin(unknown_labels))
-# 	]
 
 
 @st.cache_data(show_spinner="Downloading reference data...", ttl=CACHE_TTL_SECONDS)

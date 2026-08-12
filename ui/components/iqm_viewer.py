@@ -345,6 +345,16 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         st.caption(f"IQM modality: {modality}")
     else:
         st.info(f"IQM modality: {modality}")
+
+    manufacturer = scanner_metadata.get("Manufacturer", "Unknown") if isinstance(scanner_metadata, dict) else scanner_metadata
+    field_strength = scanner_metadata.get("MagneticFieldStrength") if isinstance(scanner_metadata, dict) else None
+    protocol = scanner_metadata.get("ProtocolName", "Unknown") if isinstance(scanner_metadata, dict) else "Unknown"
+    field_strength_label = f"{field_strength}T" if str(field_strength).replace(".", "", 1).isdigit() else (field_strength or "Unknown")
+    scanner_summary = f"Vendor: {manufacturer or 'Unknown'}  ·  Protocol: {protocol or 'Unknown'}  ·  Field strength: {field_strength_label}"
+    if hasattr(st, "caption"):
+        st.caption(scanner_summary)
+    else:
+        st.info(scanner_summary)
     modality_path = iqm_config.get(modality)
 
     if modality_path is None:
@@ -382,8 +392,6 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
     reference_data = None
     try:
         if mode == "Dataset + reference":
-            manufacturer = scanner_metadata.get("Manufacturer", "Unknown") if isinstance(scanner_metadata, dict) else scanner_metadata
-            field_strength = scanner_metadata.get("MagneticFieldStrength") if isinstance(scanner_metadata, dict) else None
             reference_data = load_reference_iqm_for_subject(
                 modality=modality,
                 manufacturer=manufacturer,
@@ -410,20 +418,6 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         return
 
     #____________Select Tab____________
-    # st.segmented_control (unlike st.tabs) is a real widget backed by
-    # session state, so only the selected branch below actually executes.
-    # st.tabs renders both branches on every rerun regardless of which tab
-    # is visually active, which was rebuilding the expensive Detail plot
-    # (up to MAX_REFERENCE_ROWS points) even while viewing Overview.
-    #
-    # The sidebar's subject/session switcher calls st.rerun()/st.switch_page()
-    # mid-script, which aborts the run before this widget is ever created.
-    # Streamlit garbage-collects widget state for keys not touched during a
-    # run, so "iqm_view_mode" itself gets wiped on every subject switch and
-    # silently reverts to "Overview". Mirror the selection via SessionManager
-    # (a plain session_state entry not tied to this widget's lifecycle), and
-    # re-seed the widget's default from it every run so the selection
-    # survives switches.
     def _remember_iqm_view_selection():
         SessionManager.set_iqm_view_selection(st.session_state["iqm_view_mode"])
 
@@ -534,6 +528,7 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         qc_config.get("base_mri_image_path"),
         participant_id=participant_id,
         session_id=session_id,
+        dataset_dir=dataset_dir,
     )
 
     _render_iqm_distributions(
