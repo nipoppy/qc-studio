@@ -62,7 +62,13 @@ DISTRIBUTION_BOLD_GROUPS = {
     ],
 }
 
-# Top-level registry: modality name → metric group dictionary
+# Top-level registry: modality name → metric group dictionary, OR (for dwi)
+# a callable(columns) -> dict. DWI's shell-dependent groups (EFC_SHELLS,
+# FBER_SHELLS, SNR_CC) can't be a static dict since their column names depend
+# on how many diffusion shells a given dataset acquired - build_dwi_groups
+# resolves them from the actual group_dwi.tsv columns. See build_dwi_groups
+# below, and its registration a few lines down (defined after this dict
+# since build_dwi_groups isn't declared yet at this point in the file).
 IQM_DISTRIBUTION_GROUPS = {
     "t1w": DISTRIBUTION_T1W_GROUPS,
     "bold": DISTRIBUTION_BOLD_GROUPS,
@@ -74,3 +80,87 @@ REFERENCE_DATA_PATHS = {
     "t1w": "./reference_data/group_T1w.tsv",
     "bold": "./reference_data/group_bold.tsv",
 }
+
+from itertools import product
+
+# --- Static DWI groups (columns identical across datasets) ---
+# Note: the per-shell groups (EFC_SHELLS, FBER_SHELLS, SNR_CC) are NOT here —
+# their columns depend on the number of shells; build them with build_dwi_groups().
+DISTRIBUTION_DWI_GROUPS = {
+    "BDIFFS": ["bdiffs_max", "bdiffs_mean", "bdiffs_median", "bdiffs_min"],
+    "FA": ["fa_degenerate", "fa_nans"],
+    "FD_MEAN": ["fd_mean"],
+    "FD_NUM": ["fd_num"],
+    "FD_PERC": ["fd_perc"],
+    "NDC": ["ndc"],
+    "SIGMA_CC": ["sigma_cc"],
+    "SIGMA": ["sigma_pca", "sigma_piesno"],
+    "SPIKES": ["spikes_global", "spikes_slice_i", "spikes_slice_j", "spikes_slice_k"],
+    "SUMMARY_LOCATION": [
+        "summary_bg_p05", "summary_fg_p05", "summary_wm_p05",
+        "summary_bg_mean", "summary_fg_mean", "summary_wm_mean",
+        "summary_bg_median", "summary_fg_median", "summary_wm_median",
+    ],
+    "SUMMARY_P95": ["summary_bg_p95", "summary_fg_p95", "summary_wm_p95"],
+    "SUMMARY_DISPERSION": [
+        "summary_bg_stdv", "summary_fg_stdv", "summary_wm_stdv",
+        "summary_bg_mad", "summary_fg_mad", "summary_wm_mad",
+    ],
+    "SUMMARY_K_BG": ["summary_bg_k"],
+    "SUMMARY_K_FG_WM": ["summary_fg_k", "summary_wm_k"],
+}
+
+
+def build_dwi_groups(columns, keep_only_present=True):
+    """Return the full, ordered DWI group dict for a given group_dwi.tsv.
+
+    Expands the three shell-dependent groups (EFC_SHELLS, FBER_SHELLS, SNR_CC)
+    to match the actual acquisition, then interleaves them into MRIQC's plotting
+    order.
+
+    Parameters
+    ----------
+    columns : iterable of str
+        The columns of the group_dwi.tsv (e.g. ``list(df.columns)``). Used to
+        infer the number of shells and, if ``keep_only_present``, to drop any
+        metric MRIQC didn't emit for this dataset.
+    keep_only_present : bool
+        If True, prune columns not found in ``columns`` and drop empty groups.
+    """
+    columns = list(columns)
+    n_shells = sum(c.startswith("efc_shell") for c in columns)
+    shells = range(1, n_shells + 1)
+
+    shell_groups = {
+        "EFC_SHELLS": [f"efc_shell{i:02d}" for i in shells],
+        "FBER_SHELLS": [f"fber_shell{i:02d}" for i in shells],
+        "SNR_CC": ["snr_cc_shell0"]
+        + [f"snr_cc_shell{s}_{t}" for s, t in product(shells, ("best", "worst"))],
+    }
+
+    # MRIQC's panel order
+    ordered = [
+        "BDIFFS", "EFC_SHELLS", "FA", "FBER_SHELLS",
+        "FD_MEAN", "FD_NUM", "FD_PERC", "NDC",
+        "SIGMA_CC", "SIGMA", "SNR_CC", "SPIKES",
+        "SUMMARY_LOCATION", "SUMMARY_P95", "SUMMARY_DISPERSION",
+        "SUMMARY_K_BG", "SUMMARY_K_FG_WM",
+    ]
+    merged = {**DISTRIBUTION_DWI_GROUPS, **shell_groups}
+    groups = {name: merged[name] for name in ordered}
+
+    if keep_only_present:
+        colset = set(columns)
+        groups = {
+            name: [c for c in cols if c in colset]
+            for name, cols in groups.items()
+        }
+        groups = {name: cols for name, cols in groups.items() if cols}
+
+    return groups
+
+
+# Registered here (not alongside t1w/bold above) since build_dwi_groups must
+# be defined first. Callers must call this with the loaded group_dwi.tsv's
+# columns before use - see IQM_DISTRIBUTION_GROUPS's docstring comment above.
+IQM_DISTRIBUTION_GROUPS["dwi"] = build_dwi_groups

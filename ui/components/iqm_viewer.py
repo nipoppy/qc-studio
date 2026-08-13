@@ -35,6 +35,7 @@ from utils.iqm_distribution_config import IQM_DISTRIBUTION_GROUPS, REFERENCE_DAT
 MODALITY_KEYWORDS = {
     "bold": ("bold", "func", "sbref"),
     "t1w": ("anat", "t1w"),
+    "dwi": ("dwi", "diffusion"),
 }
 
 DATASET_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(31, 119, 180, 0.55)"),
@@ -402,7 +403,12 @@ def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, sess
         st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=modality, error=e))
         return
     #____________Group selection___________
+    # dwi's groups depend on the actual TSV's columns (shell count varies by
+    # dataset), so its registry entry is a function, not a static dict - see
+    # iqm_distribution_config.IQM_DISTRIBUTION_GROUPS's comment.
     distribution_groups = IQM_DISTRIBUTION_GROUPS.get(modality, [])
+    if callable(distribution_groups):
+        distribution_groups = distribution_groups(iqm_data.columns)
     if not distribution_groups:
         st.warning(ERROR_MESSAGES.get(
             "iqm_no_groups",
