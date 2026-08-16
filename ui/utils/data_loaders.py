@@ -6,8 +6,9 @@ from files and directories.
 
 import json
 import os
-import pandas as pd
 import re
+import pandas as pd
+
 from pathlib import Path
 from typing import Optional, Dict, List, Union
 
@@ -97,23 +98,6 @@ def load_mri_data(
 		file_bytes_dict["overlay_mri_image_path"] = overlay_mri_path
 
 	return file_bytes_dict
-
-
-def load_iqm_data(path_dict: dict) -> Optional[dict]:
-	"""Load IQM metrics from a JSON file referenced by ``path_dict['iqm_path']``.
-
-	Returns ``None`` if the path is missing, the file does not exist, or JSON is invalid.
-	"""
-	iqm_ref = path_dict.get("iqm_path")
-	if not iqm_ref:
-		return None
-	iqm_path = Path(iqm_ref)
-	if not iqm_path.is_file():
-		return None
-	try:
-		return json.loads(iqm_path.read_text(encoding="utf-8"))
-	except (json.JSONDecodeError, OSError):
-		return None
 
 
 def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
@@ -503,17 +487,6 @@ def _load_scanner_metadata(image_path:Union[Path, str], participant_id: str = No
 		"ProtocolName": metadata.get("ProtocolName") or bids_meta.get("ProtocolName", "Unknown"),
 	}
 
-
-def load_iqm_config(qc_config_path: str) -> dict:
-	"""Load the ``iqm_distributions`` block from a QC config JSON file.
-
-	Returns an empty dict if the key is absent; does not emit UI warnings.
-	"""
-	with open(qc_config_path, 'r') as f:
-		qc_config = json.load(f)
-	return qc_config.get("iqm_distributions", {})
-
-
 def resolve_iqm_data_path(
 	modality_path: str,
 	qc_config_path: str = None,
@@ -676,3 +649,19 @@ def _load_reference_iqm_filtered(
         data = data.sample(n=max_rows, random_state=42)
 
     return data
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_iqm_distribution_table(resolved_path) -> pd.DataFrame:
+	"""Load a TSV/CSV distribution table and return a DataFrame. Raises on failure -
+	the caller decides how to surface that (st.cache_data doesn't cache a raised
+	exception, so a transient/fixable failure gets retried on the next rerun
+	instead of silently returning a cached None for up to `ttl` seconds)."""
+
+	suffix = resolved_path.suffix.lower()
+	return pd.read_csv(resolved_path, sep="," if suffix == ".csv" else "\t")
+
+
+def _load_iqm_metrics_subject_level(resolved_path) -> dict:
+	"""Read a single per-subject IQM metrics file. Raises on failure."""
+	return json.loads(Path(resolved_path).read_text(encoding="utf-8"))
+	

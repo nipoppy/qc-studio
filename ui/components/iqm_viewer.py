@@ -16,27 +16,30 @@ Data sources
   TSV.  A subject may have multiple rows (multiple runs).
 """
 
-from pathlib import Path
-from typing import Optional, Union
+import re
 import pandas as pd
 import streamlit as st
+
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Optional, Union
+
 import plotly.graph_objects as go
 
 from utils.data_loaders import (
     _load_scanner_metadata,
-    load_iqm_config,
     resolve_iqm_data_path,
+    _load_iqm_distribution_table,
+    _load_iqm_metrics_subject_level,
     load_reference_iqm_for_subject,
 )
 from constants import MESSAGES, ERROR_MESSAGES
 from managers.session_manager import SessionManager
-from utils.iqm_distribution_config import IQM_DISTRIBUTION_GROUPS, REFERENCE_DATA_PATHS
-
-MODALITY_KEYWORDS = {
-    "bold": ("bold", "func", "sbref"),
-    "t1w": ("anat", "t1w"),
-    "dwi": ("dwi", "diffusion"),
-}
+from utils.iqm_distribution_config import (
+    IQM_DISTRIBUTION_GROUPS,
+    infer_pipeline_from_iqm_path,
+    is_mriqc_pipeline,
+)
 
 DATASET_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(31, 119, 180, 0.55)"),
                 line=dict(color="rgba(31, 119, 180, 0.8)", width=1),
@@ -56,13 +59,154 @@ NUM_OVERVIEW_COLUMNS = 2
 # points instead.
 MAX_ALL_BOXPOINTS_ROWS = 500
 
+NON_METRIC_COLUMNS = {"bids_name", "subject", "subject_id", "participant_id"}
 
-def _load_iqm_config(qc_config_path: str) -> dict:
-    """Load IQM configuration from the QC config file."""
-    iqm_config = load_iqm_config(qc_config_path)
-    if not iqm_config:
-        st.warning(ERROR_MESSAGES['iqm_config_missing'])
-    return iqm_config
+DISPLAY_MODE_OPTIONS = ["Dataset", "Dataset + Reference"]
+
+@dataclass(frozen=True)
+class DistributionSource:
+    path: "Path"
+    pipeline_name: str
+    modality: "Optional[str]"
+    iqm_data: "pd.DataFrame"
+    valid_groups: dict
+
+
+@dataclass(frozen=True)
+class MetricsSource:
+    path: "Path"
+    pipeline_name: str
+    metrics: dict
+
+
+def _infer_modality_from_path(path: str) -> Optional[str]:
+    """Infer the modality (t1w, bold, dwi) from the IQM path string."""
+    path_str = str(path).lower()
+    name = Path(path).name.lower()
+
+    if "/func/" in path_str or re.search(r"_(bold|sbref)\.", path_str) or "bold" in name:
+        return "bold"
+    if "/dwi/" in path_str or re.search(r"_dwi\.", path_str) or "dwi" in name:
+        return "dwi"
+    if "/anat/" in path_str or "t1w" in name:
+        return "t1w"
+    
+    return None
+
+def _generic_groups_from_columns(iqm_data) -> dict:
+    #need to expand this based on the pipeline and modality, but for now just return all numeric columns as a single group
+    """Return a generic IQM group for any modality with all numeric columns."""
+    metric_columns = [col for col in iqm_data.columns if (pd.api.types.is_numeric_dtype(iqm_data[col]) and col.lower() not in NON_METRIC_COLUMNS)]
+
+    return {col: [col] for col in metric_columns}
+
+
+def _row_to_metrics(row) -> dict:
+    """Flatten a single-row Series into a metrics dict, dropping non-metric/index columns."""
+    return {
+        col: value for col, value in row.items()
+        if str(col).lower() not in NON_METRIC_COLUMNS and not str(col).startswith("Unnamed:")
+    }
+
+
+def _load_distribution_source(path, resolved, pipeline_name):
+    """Load a TSV/CSV distribution source and return a DistributionSource or MetricsSource object."""
+    try:
+        iqm_data = _load_iqm_distribution_table(resolved)
+    except Exception as e:
+        st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=pipeline_name, error=e))
+        return None
+
+    if len(iqm_data) == 0:
+        st.warning(ERROR_MESSAGES.get(
+            "iqm_no_valid_groups",
+            f"No rows found in {pipeline_name} ({path}).",
+        ))
+        return None
+
+    if len(iqm_data) == 1:
+        return MetricsSource(
+            path=resolved,
+            pipeline_name=pipeline_name,
+            metrics=_row_to_metrics(iqm_data.iloc[0]),
+        )
+
+    modality = None
+    distribution_groups = {}
+
+    if is_mriqc_pipeline(pipeline_name):
+        modality = _infer_modality_from_path(path)
+        if modality is not None:
+            distribution_groups = IQM_DISTRIBUTION_GROUPS.get(modality, {})
+            if callable(distribution_groups):
+                distribution_groups = distribution_groups(iqm_data.columns)
+
+    if distribution_groups:
+        valid_groups = _get_valid_iqm_groups(distribution_groups, iqm_data)
+
+    else:
+        valid_groups = _generic_groups_from_columns(iqm_data) #already guaranteed valid.
+
+    if not valid_groups:
+        st.warning(ERROR_MESSAGES.get(
+            "iqm_no_valid_groups",
+            f"No usable metric columns found in {pipeline_name} ({path}).",
+        ))
+        return None
+
+    return DistributionSource(
+        path=resolved,
+        pipeline_name=pipeline_name,
+        modality=modality,
+        iqm_data=iqm_data,
+        valid_groups=valid_groups,
+    )
+
+def _load_metrics_source(path, resolved, pipeline_name):
+    """JSON branch: a single per-subject metrics dict, rendered as one tab of a plain table."""
+    try:
+        metrics = _load_iqm_metrics_subject_level(resolved)
+    except Exception as e:
+        st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=pipeline_name, error=e))
+        return None
+
+    return MetricsSource(
+        path=resolved,
+        pipeline_name=pipeline_name,
+        metrics=metrics,
+    )
+
+
+def _load_iqm_sources(iqm_paths, qc_config_path=None, dataset_dir=None) -> list:
+    """Resolve and load every configured IQM source. Skips (with a UI warning)
+    any path that fails to load, so one bad source doesn't take down the
+    other tabs."""
+    sources = []
+    for path in iqm_paths:
+        resolved = resolve_iqm_data_path(path, qc_config_path, dataset_dir)
+        pipeline_name = infer_pipeline_from_iqm_path(path)
+        suffix = Path(path).suffix.lower()
+
+        if suffix == ".json":
+            source = _load_metrics_source(path, resolved, pipeline_name)
+        else:
+            source = _load_distribution_source(path, resolved, pipeline_name)
+
+        if source is not None:
+            sources.append(source)
+    return sources
+
+
+#for now I have decided to return a table if the user put participant level json metrics, and a distribution plot if the user put group level tsv metrics.
+#this behaviour might change in the future, but for now it is a simple way to handle both types of metrics.
+def _render_iqm_metrics_table(metrics: dict, participant_id: str) -> None:
+    """Render a single JSON/single-row metrics source as a plain key/value table."""
+    scalar_metrics = {k: v for k, v in metrics.items() if not isinstance(v, (dict, list))}
+    if not scalar_metrics:
+        st.warning("No metrics found in this IQM source.")
+        return
+    st.write(f"QC metrics for {participant_id}.")
+    st.table(pd.DataFrame(sorted(scalar_metrics.items()), columns=["Metric", "Value"]))
 
 
 def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str=None)-> pd.DataFrame:
@@ -210,11 +354,11 @@ def _build_iqm_distribution_figure(
 
     reference_plot_data = None
     group_display_mode = display_mode
-    if display_mode == "Dataset + reference" and reference_data is not None:
-        reference_plot_data = _coerce_numeric_columns(reference_data, metric_columns)
-        reference_plot_data = reference_plot_data[metric_columns]
-        if reference_plot_data.dropna(how='all').empty:
-            st.warning("Reference data is empty after filtering; showing dataset-only distribution.")
+    if display_mode == DISPLAY_MODE_OPTIONS[1]:
+        if reference_data is not None:
+            reference_plot_data = _coerce_numeric_columns(reference_data, metric_columns)
+            reference_plot_data = reference_plot_data[metric_columns]
+        if reference_plot_data is None or reference_plot_data.dropna(how='all').empty:
             group_display_mode = "Dataset"
 
     #____________Render distribution plot___________
@@ -238,7 +382,7 @@ def _build_iqm_distribution_figure(
         )
         _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
 
-    elif group_display_mode == "Dataset + reference":
+    elif group_display_mode == DISPLAY_MODE_OPTIONS[1]:
         _add_box_traces(
             fig,
             dataset_plot_data,
@@ -319,199 +463,120 @@ def _render_montage_of_iqm_groups(
                 )
 
 
-def _render_iqm_distributions(iqm_config, scanner_metadata, participant_id, session_id,
-                              qc_config_path: str = None, dataset_dir: str = None,
-                              qc_task: str = None, qc_config: dict = None):
-    #___________Modality selection___________
-    available_modalities = [
-        m for m in IQM_DISTRIBUTION_GROUPS if m in iqm_config
-    ]
-    if not available_modalities:
-        st.warning(ERROR_MESSAGES.get(
-            "iqm_no_modalities",
-            "No matching modalities between config and IQM_DISTRIBUTION_GROUPS.",
-        ))
+def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, session_id,
+                              qc_config_path: str = None, dataset_dir: str = None):
+
+    if not iqm_paths:
+        st.warning(ERROR_MESSAGES['iqm_no_sources_configured'])
         return
     
     st.subheader(MESSAGES['iqm_distribution_header'])
-    modality = _infer_iqm_modality(qc_task, qc_config, iqm_config)
-    if modality is None:
-        st.warning(
-            f"Could not infer IQM modality from QC task '{qc_task}'. "
-            "Please make the task name or configured paths indicate anat/t1w or bold/func."
-        )
-        return
-
-    if hasattr(st, "caption"):
-        st.caption(f"IQM modality: {modality}")
-    else:
-        st.info(f"IQM modality: {modality}")
-
+  
     manufacturer = scanner_metadata.get("Manufacturer", "Unknown") if isinstance(scanner_metadata, dict) else scanner_metadata
     field_strength = scanner_metadata.get("MagneticFieldStrength") if isinstance(scanner_metadata, dict) else None
     protocol = scanner_metadata.get("ProtocolName", "Unknown") if isinstance(scanner_metadata, dict) else "Unknown"
     field_strength_label = f"{field_strength}T" if str(field_strength).replace(".", "", 1).isdigit() else (field_strength or "Unknown")
     scanner_summary = f"Vendor: {manufacturer or 'Unknown'}  ·  Protocol: {protocol or 'Unknown'}  ·  Field strength: {field_strength_label}"
-    if hasattr(st, "caption"):
-        st.caption(scanner_summary)
-    else:
-        st.info(scanner_summary)
-    modality_path = iqm_config.get(modality)
 
-    if modality_path is None:
-        st.error(ERROR_MESSAGES['iqm_modality_path_error'].format(modality=modality))
-        return 
+    sources = _load_iqm_sources(iqm_paths, qc_config_path, dataset_dir)
+    if not sources:
+        return  # per-source errors/warnings already surfaced above
 
     #____________Display mode selection___________
-    # Same st.switch_page-vs-widget-state issue as "iqm_view_mode" below: the
-    # sidebar's subject switcher aborts the script before this widget runs,
-    # so "iqm_display_mode" gets wiped and silently reverts to "Dataset" on
-    # every subject switch (making the reference box disappear). Mirror the
-    # selection via SessionManager so it survives.
-    display_mode_options = ["Dataset", "Dataset + reference"]
+    # pipeline_name alone isn't guaranteed unique - e.g. MRIQC contributes
+    # both a T1w and a bold table, same pipeline_name, different sources.
+    # Disambiguate with modality (falling back to the filename stem) so
+    # segmented_control always gets distinct option values; otherwise two
+    # tabs render with an identical label and only the first is reachable.
+    pipeline_counts = {}
+    for s in sources:
+        pipeline_counts[s.pipeline_name] = pipeline_counts.get(s.pipeline_name, 0) + 1
 
-    def _remember_iqm_display_mode():
-        SessionManager.set_iqm_display_mode_selection(st.session_state["iqm_display_mode"])
+    tab_options = []
+    for s in sources:
+        if pipeline_counts[s.pipeline_name] > 1:
+            disambiguator = getattr(s, "modality", None) or Path(s.path).stem
+            tab_options.append(f"{s.pipeline_name} ({disambiguator})")
+        else:
+            tab_options.append(s.pipeline_name)
 
-    mode = st.radio(
-        "Display mode",
-        options=display_mode_options,
-        index=display_mode_options.index(SessionManager.get_iqm_display_mode_selection()),
-        key="iqm_display_mode",
-        on_change=_remember_iqm_display_mode,
-        horizontal=True
-    )
-  
-   #____________Load TSV file ____________
-    try:
-        resolved_modality_path = resolve_iqm_data_path(modality_path, qc_config_path, dataset_dir)
-        iqm_data = pd.read_csv(resolved_modality_path, sep='\t')
-    except Exception as e:
-        st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=modality, error=e))
-        return
-    
-    reference_data = None
-    try:
-        if mode == "Dataset + reference":
-            reference_data = load_reference_iqm_for_subject(
-                modality=modality,
-                manufacturer=manufacturer,
-                field_strength=field_strength,
-                max_rows=MAX_REFERENCE_ROWS,
-            )
-    except Exception as e:
-        st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=modality, error=e))
-        return
-    #____________Group selection___________
-    # dwi's groups depend on the actual TSV's columns (shell count varies by
-    # dataset), so its registry entry is a function, not a static dict - see
-    # iqm_distribution_config.IQM_DISTRIBUTION_GROUPS's comment.
-    distribution_groups = IQM_DISTRIBUTION_GROUPS.get(modality, [])
-    if callable(distribution_groups):
-        distribution_groups = distribution_groups(iqm_data.columns)
-    if not distribution_groups:
-        st.warning(ERROR_MESSAGES.get(
-            "iqm_no_groups",
-            f"No distribution groups defined for modality '{modality}'.",
-        ))
-        return
-    valid_groups = _get_valid_iqm_groups(distribution_groups, iqm_data)
-    if not valid_groups:
-        st.warning(ERROR_MESSAGES.get(
-            "iqm_no_valid_groups",
-            "None of the defined IQM groups have valid columns in the data.",
-        ))
-        return
+    remembered_tab = SessionManager.get_iqm_view_selection()
+    if remembered_tab not in tab_options:
+        remembered_tab = tab_options[0]
+        SessionManager.set_iqm_view_selection(remembered_tab)
 
-    #____________Select Tab____________
     def _remember_iqm_view_selection():
-        SessionManager.set_iqm_view_selection(st.session_state["iqm_view_mode"])
+            SessionManager.set_iqm_view_selection(st.session_state["iqm_view_mode"])
 
-    view = st.segmented_control(
-        "IQM view",
-        options=["Overview", "Detail"],
-        default=SessionManager.get_iqm_view_selection(),
+    selected_label = st.segmented_control(
+        "IQM source",
+        options=tab_options,
+        default=remembered_tab,
         key="iqm_view_mode",
         on_change=_remember_iqm_view_selection,
         label_visibility="collapsed",
     )
-    if view is None:
-        # Clicking the active pill again deselects it; fall back rather
-        # than rendering nothing.
-        view = "Overview"
+    if selected_label is None:
+        selected_label = remembered_tab
 
-    if view == "Overview":
-        st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
-        with st.container(height=CONTAINER_HEIGHT, border=False):
-            _render_montage_of_iqm_groups(
-                valid_groups=valid_groups,
-                iqm_data=iqm_data,
-                reference_data=reference_data,
-                participant_id=participant_id,
-                session_id=session_id,
-                modality=modality,
-                display_mode=mode,
+    #find the selected source
+    source = next((s for s, label in zip(sources, tab_options) if label == selected_label), None)
+
+    source_modality = getattr(source, "modality", None)
+    caption = f"{scanner_summary}  ·  Modality: {source_modality}" if source_modality else scanner_summary
+    if hasattr(st, "caption"):
+        st.caption(caption)
+    else:
+        st.info(caption)
+
+    if isinstance(source, MetricsSource):
+        _render_iqm_metrics_table(source.metrics, participant_id)
+        return
+
+    can_compare_reference = is_mriqc_pipeline(source.pipeline_name) and source.modality is not None
+
+    with st.container(height=CONTAINER_HEIGHT, border=False):
+        mode = DISPLAY_MODE_OPTIONS[0]
+        reference_data = None
+        if can_compare_reference:
+            def _remember_iqm_display_mode():
+                SessionManager.set_iqm_display_mode_selection(st.session_state["iqm_display_mode"])
+
+            mode = st.radio(
+                "Display mode",
+                options=DISPLAY_MODE_OPTIONS,
+                index=DISPLAY_MODE_OPTIONS.index(SessionManager.get_iqm_display_mode_selection()),
+                key="iqm_display_mode",
+                on_change=_remember_iqm_display_mode,
+                horizontal=True
             )
-    elif view == "Detail":
-        st.write("Detailed view of a single IQM group with full-size plot and subject overlay.")
-        group_options = list(valid_groups.keys())
-        remembered_group = SessionManager.get_iqm_group_select_selection()
-        if remembered_group not in group_options:
-            remembered_group = group_options[0]
-        SessionManager.set_iqm_group_select_selection(remembered_group)
+            if mode == DISPLAY_MODE_OPTIONS[1]:
+                try:
+                    reference_data = load_reference_iqm_for_subject(
+                        modality=source.modality,
+                        manufacturer=manufacturer,
+                        field_strength=field_strength,
+                        max_rows=MAX_REFERENCE_ROWS,
+                    )
+                except Exception as e:
+                    st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=source.modality, error=e))
+                    reference_data = None
+                else:
+                    if reference_data is None or reference_data.empty:
+                        st.warning("No reference data available for this scanner/field strength; showing dataset-only distribution.")
+                        reference_data = None
 
-        def _remember_iqm_group_select():
-            SessionManager.set_iqm_group_select_selection(st.session_state["iqm_group_select"])
-
-        group = st.selectbox(
-            "Select metric group",
-            options=group_options,
-            index=group_options.index(remembered_group),
-            key="iqm_group_select",
-            on_change=_remember_iqm_group_select,
-        )
-
-        fig = _build_iqm_distribution_figure(
-            metric_group_name=group,
-            modality=modality,
-            iqm_data=iqm_data,
+        st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
+        _render_montage_of_iqm_groups(
+            valid_groups=source.valid_groups,
+            iqm_data=source.iqm_data,
+            reference_data=reference_data,
             participant_id=participant_id,
             session_id=session_id,
-            metric_columns=valid_groups[group],
+            modality=source.modality or source.pipeline_name,
             display_mode=mode,
-            reference_data=reference_data,
         )
-
-        if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
-
-
-def _infer_iqm_modality(qc_task: str, qc_config: dict, iqm_config: dict) -> Optional[str]:
-    """Infer IQM modality from the selected QC task/config."""
-    task_name = str(qc_task or "").lower()
-
-    # First try to infer modality from the QC task name itself, as this is most likely to reflect the rater's intent.
-    for modality, keywords in MODALITY_KEYWORDS.items():
-        if modality in iqm_config and any(keyword in task_name for keyword in keywords):
-            return modality
-    
-    # If that fails, look for modality keywords in the paths of the selected QC task config, as a secondary signal.
-    path_values = []
-    for value in (qc_config or {}).values():
-        if isinstance(value, list):
-            path_values.extend(str(item) for item in value if item)
-        elif value:
-            path_values.append(str(value))
-    path_text = " ".join(path_values).lower()
-    for modality, keywords in MODALITY_KEYWORDS.items():
-        if modality in iqm_config and any(keyword in path_text for keyword in keywords):
-            return modality
-    # If that also fails, but there's only one modality available in the config, return that one as a last resort since it's the only option.
-    available_modalities = [m for m in IQM_DISTRIBUTION_GROUPS if m in iqm_config]
-    if len(available_modalities) == 1:
-        return available_modalities[0]
-    return None
-
+            
 
 def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str, session_id: str,
                        dataset_dir: str = None, qc_task: str = None) -> None:
@@ -524,11 +589,7 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         qc_task: The QC task for which to display IQM distributions
     """
 
-
-    iqm_config = _load_iqm_config(qc_config_path)
-    if not iqm_config:
-        st.error(ERROR_MESSAGES['iqm_config_load_error'])
-        return
+    iqm_config = qc_config.get("iqm_path", {})
 
     scanner_metadata = _load_scanner_metadata(
         qc_config.get("base_mri_image_path"),
@@ -543,7 +604,5 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         participant_id,
         session_id,
         qc_config_path=qc_config_path,
-        dataset_dir=dataset_dir,
-        qc_task=qc_task,
-        qc_config=qc_config,
+        dataset_dir=dataset_dir
     )

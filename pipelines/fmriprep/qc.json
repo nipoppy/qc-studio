@@ -5,7 +5,10 @@
             "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_run-1_desc-reconall_T1w.svg",
             "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_run-1_space-MNI152NLin2009cAsym_T1w.svg"
         ],
-        "iqm_path": "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_task-rest_run-1_desc-confoundcorr_bold.svg",
+        "iqm_path": [
+            "derivatives/mriqc/group_T1w.tsv",
+            "derivatives/mriqc/group_bold.tsv"
+        ],
         "montage_max_rows": 2,
         "montage_max_cols": 2
     },
@@ -16,9 +19,5 @@
     "coreg_wf_qc": {
         "base_mri_image_path": "bids/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/[[NIPOPPY_BIDS_SESSION_ID]]/func/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_task-rest_run-1_bold.nii.gz",
         "svg_montage_path": "derivatives/fmriprep/[[NIPOPPY_BIDS_PARTICIPANT_ID]]/figures/[[NIPOPPY_BIDS_PARTICIPANT_ID]]_[[NIPOPPY_BIDS_SESSION_ID]]_task-rest_run-1_desc-coreg_bold.svg"
-    },
-    "iqm_distributions": {
-        "t1w": "derivatives/mriqc/group_T1w.tsv",
-        "bold": "derivatives/mriqc/group_bold.tsv"
     }
 }

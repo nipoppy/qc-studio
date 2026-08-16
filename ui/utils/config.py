@@ -5,9 +5,6 @@ from models import QCConfig
 from constants import SUBSTITUTIONS_DICT
 
 
-NON_TASK_QC_CONFIG_KEYS = {"iqm_distributions"}
-
-
 def list_qc_tasks_from_json(qc_json) -> list[str]:
 	"""Return top-level QC task keys from a ``qc.json`` file (JSON object keys, file order)."""
 	qc_json_path = Path(qc_json) if qc_json else None
@@ -19,7 +16,7 @@ def list_qc_tasks_from_json(qc_json) -> list[str]:
 		return []
 	if not isinstance(data, dict):
 		return []
-	return [key for key in data.keys() if key not in NON_TASK_QC_CONFIG_KEYS]
+	return list(data.keys()) 
 
 
 def build_substitution_values(participant_id: str, session_id: str) -> dict:
@@ -39,7 +36,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
 	  - 'base_mri_image_path': Path | None
 	  - 'overlay_mri_image_path': Path | None
 	  - 'svg_montage_path': list[Path] | None
-	  - 'iqm_path': Path | None
+	  - 'iqm_path': list[Path] | None
 	  - 'montage_max_rows': int | None
 	  - 'montage_max_cols': int | None
 

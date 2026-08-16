@@ -96,7 +96,6 @@ SESSION_KEYS = {
     # they survive the sidebar's mid-script st.rerun()/st.switch_page() calls.
     'iqm_view_selection': 'iqm_view_selection',
     'iqm_display_mode_selection': 'iqm_display_mode_selection',
-    'iqm_group_select_selection': 'iqm_group_select_selection',
 }
 
 # File upload settings
@@ -181,12 +180,12 @@ ERROR_MESSAGES = {
     'svg_not_found': 'SVG montage not found or could not be loaded.',
     'participant_list_load_error': 'Error loading participant list: {error}',
     'reference_data_load_error': 'Error loading reference data: {error}',
-    'iqm_config_missing': 'IQM distribution configuration is missing from the QC config file.',
-    'iqm_config_load_error': 'Failed to load IQM distribution configuration.',
+    'iqm_no_sources_configured': 'No IQM distribution sources are configured for this task.',
     'iqm_modality_path_error': 'No dataset path configured for modality: {modality}',
     'iqm_data_load_error': 'Failed to load IQM data for {modality}: {error}',
     'iqm_no_modalities': 'No matching modalities between config and IQM_DISTRIBUTION_GROUPS.',
-    'iqm_no_groups': 'No metric groups are defined for the selected modality.'
+    'iqm_no_groups': 'No metric groups are defined for the selected modality.',
+    'iqm_no_valid_groups': 'None of the defined IQM groups have valid columns in the data.'
 }
 
 # Success messages

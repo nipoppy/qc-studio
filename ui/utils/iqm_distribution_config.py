@@ -74,14 +74,10 @@ IQM_DISTRIBUTION_GROUPS = {
     "bold": DISTRIBUTION_BOLD_GROUPS,
 }
 
-# Paths to reference population TSVs (relative to the ui/ directory).
-# These are used when the user selects "Dataset + reference" display mode.
-REFERENCE_DATA_PATHS = {
-    "t1w": "./reference_data/group_T1w.tsv",
-    "bold": "./reference_data/group_bold.tsv",
-}
-
 from itertools import product
+import pathlib
+
+from streamlit import form
 
 # --- Static DWI groups (columns identical across datasets) ---
 # Note: the per-shell groups (EFC_SHELLS, FBER_SHELLS, SNR_CC) are NOT here —
@@ -164,3 +160,30 @@ def build_dwi_groups(columns, keep_only_present=True):
 # be defined first. Callers must call this with the loaded group_dwi.tsv's
 # columns before use - see IQM_DISTRIBUTION_GROUPS's docstring comment above.
 IQM_DISTRIBUTION_GROUPS["dwi"] = build_dwi_groups
+
+from pathlib import Path
+def infer_pipeline_from_iqm_path(path: Path) -> str:
+    """Infer the pipeline name from an IQM path. 
+    derivatives/<pipeline>/... -> <pipeline>; falls back to the file stem if no pipeline is found.
+    Parameters
+    ----------
+    path : Path
+        Path to an IQM TSV or JSON file.
+
+    Returns
+    -------
+    str
+        The inferred pipeline name.
+    """
+
+    parts = Path(path).parts
+    if "derivatives" in parts:
+        idx = parts.index("derivatives")
+        if idx + 1 < len(parts):
+            return parts[idx + 1]
+    return Path(path).stem
+
+
+def is_mriqc_pipeline(pipeline_name: str) -> bool:
+    """Check if a pipeline name is one of the known MRIQC pipelines."""
+    return pipeline_name.lower() == "mriqc"
