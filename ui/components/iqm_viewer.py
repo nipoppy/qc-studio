@@ -54,11 +54,6 @@ MAX_REFERENCE_ROWS = 50000
 CONTAINER_HEIGHT = 520
 NUM_OVERVIEW_COLUMNS = 2
 
-# Above this many rows in a series, Plotly's boxpoints='all' renders every
-# point individually and becomes noticeably slow; fall back to outlier-only
-# points instead.
-MAX_ALL_BOXPOINTS_ROWS = 500
-
 NON_METRIC_COLUMNS = {"bids_name", "subject", "subject_id", "participant_id"}
 
 DISPLAY_MODE_OPTIONS = ["Dataset", "Dataset + Reference"]
@@ -272,35 +267,44 @@ def _coerce_numeric_columns(data: pd.DataFrame, columns: list) -> pd.DataFrame:
     return converted
 
 
-def _add_box_traces(
+def _add_violin_traces(
     fig:go.Figure,
     data:pd.DataFrame,
     style: dict,
-    offsetgroup: str = "",
-    pointpos: float = 0,
-    boxpoints: Union[str, bool] = 'all'
+    name: str = "",
+    side: str = "both",
+    points: Union[bool, str] = False,
     )-> None:
-    """Add one box trace per metric column to the figure."""
+    """Add one violin trace per metric column to the figure.
+    
+    side="both" draws a full violin (dataset-only mode). side="negative"/
+    "positive" draws just the left/right half - call twice with the same
+    metric columns (once per side) and violinmode="overlay" to get a split
+    violin comparing dataset (left) against reference (right).
+    """
     first_shown = True
     cols = data.columns
+
     for col in cols:
         values = data[col].dropna()
         if values.empty:
             continue
-        fig.add_trace(go.Box(
+        fig.add_trace(go.Violin(
             x = [col] * len(values),
             y = values,
-            name=offsetgroup,
-            pointpos=pointpos,
-            offsetgroup=offsetgroup.lower(),
+            side = side,
+            name = name,
+            scalegroup = col,
+            legendgroup = name,
+            spanmode = 'hard',
             showlegend=first_shown,
-            boxpoints=boxpoints,
+            points=points,
             jitter=0.45,
             marker=style['marker'],
             line=style['line'],
             fillcolor=style['fillcolor'],
             hovertemplate=(
-                f"Source: {offsetgroup}<br>Metric: {col}<br>Value: %{{y}}<extra></extra>"
+                f"Source: {name}<br>Metric: {col}<br>Value: %{{y}}<extra></extra>"
             )
              
         ))
@@ -323,7 +327,7 @@ def _add_subject_overlay(
  
     In comparison mode, call this twice with different ``offsetgroup``
     values (``"dataset"`` and ``"reference"``) so the stars align on
-    top of the correct box plot group.
+    top of the correct violin half.
     """
 
     for _, row in subject_rows.iterrows():
@@ -367,7 +371,6 @@ def _build_iqm_distribution_figure(
     metric_columns: list,
     display_mode: str,
     reference_data: Optional[pd.DataFrame] = None,
-    compact: bool = False,
     run_identifier: Optional[str] = None,
 ) -> Optional[go.Figure]:
     """Construct the Plotly figure for the IQM distribution panel."""
@@ -395,67 +398,52 @@ def _build_iqm_distribution_figure(
             reference_plot_data = _coerce_numeric_columns(reference_data, metric_columns)
             reference_plot_data = reference_plot_data[metric_columns]
         if reference_plot_data is None or reference_plot_data.dropna(how='all').empty:
-            group_display_mode = "Dataset"
+            group_display_mode = DISPLAY_MODE_OPTIONS[0]
 
     #____________Render distribution plot___________
     fig = go.Figure()
-    if compact:
-        boxpoints = False
-    else:
-        largest_series_rows = max(
-            len(dataset_plot_data),
-            len(reference_plot_data) if reference_plot_data is not None else 0,
-        )
-        boxpoints = 'all' if largest_series_rows <= MAX_ALL_BOXPOINTS_ROWS else 'outliers'
-
-    if group_display_mode == "Dataset":
-        _add_box_traces(
+    
+    if group_display_mode == DISPLAY_MODE_OPTIONS[0]:
+        _add_violin_traces(
             fig,
             dataset_plot_data,
             DATASET_STYLE,
-            offsetgroup="Dataset",
-            boxpoints=boxpoints,
+            name=DISPLAY_MODE_OPTIONS[0],
+            side="both",
+            points=False,
         )
         _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
 
     elif group_display_mode == DISPLAY_MODE_OPTIONS[1]:
-        _add_box_traces(
+        _add_violin_traces(
             fig,
             dataset_plot_data,
-            offsetgroup="Dataset",
-            style=DATASET_STYLE,
-            pointpos=-0.3,
-            boxpoints=boxpoints,
+            DATASET_STYLE,
+            name="Dataset",
+            side="negative",
+            points=False,
         )
         _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
         # Keep sampling for performance, but show reference points for parity with dataset view.
-        _add_box_traces(
+        _add_violin_traces(
             fig,
             reference_plot_data,
-            offsetgroup="Reference",
-            style=REFERENCE_STYLE,
-            pointpos=0.3,
-            boxpoints=boxpoints,
+            REFERENCE_STYLE,
+            name="Reference",
+            side="positive",
+            points=False,
         )
     
     fig.update_layout(
-        title=f"IQM Distributions for {metric_group_name} ({modality})",
-        xaxis_title="Metrics",
-        yaxis_title="Values",
-        boxmode='group',
-        legend_title="Legend",
-        template="plotly_white"
+        title=metric_group_name,
+        height=220,
+        showlegend=False,
+        xaxis_title=None,
+        yaxis_title=None,
+        violinmode='overlay',
+        margin=dict(l=20, r=20, t=45, b=25),
     )
 
-    if compact:
-        fig.update_layout(
-            title=metric_group_name,
-            height=220,
-            showlegend=False,
-            xaxis_title=None,
-            yaxis_title=None,
-            margin=dict(l=20, r=20, t=45, b=25),
-        )
 
     if not fig.data:
         st.warning("No plottable numeric data found for the selected group.")
@@ -487,7 +475,6 @@ def _render_montage_of_iqm_groups(
             metric_columns=metric_columns,
             display_mode=display_mode,
             reference_data=reference_data,
-            compact=True,
             run_identifier=run_identifier,
         )
 
