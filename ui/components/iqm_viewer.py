@@ -209,7 +209,33 @@ def _render_iqm_metrics_table(metrics: dict, participant_id: str) -> None:
     st.table(pd.DataFrame(sorted(scalar_metrics.items()), columns=["Metric", "Value"]))
 
 
-def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str=None)-> pd.DataFrame:
+def _extract_run_identifier(base_mri_image_path, participant_id: str, session_id: str = None) -> Optional[str]:
+    """Pull whatever BIDS entities identify a specific run/task out of the
+    current QC task's base_mri_image_path filename, once participant_id and
+    session_id are stripped out - e.g. "task-rest_run-1_bold" from
+    ..._task-rest_run-1_bold.nii.gz. Used to scope the subject-overlay
+    markers to the exact acquisition being reviewed elsewhere on the page,
+    instead of every run this subject/session has in the group table."""
+    if not base_mri_image_path:
+        return None
+
+    name = Path(base_mri_image_path).name
+    for suffix in (".nii.gz", ".nii", ".json"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+
+    if participant_id:
+        name = name.replace(participant_id, "")
+    if session_id:
+        name = name.replace(session_id, "")
+
+    name = re.sub(r"_+", "_", name).strip("_")
+    return name or None
+
+
+def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str = None,
+                          run_identifier: str = None) -> pd.DataFrame:
     """Extract subject-specific data for the given participant ID and columns."""
     if "bids_name" not in data.columns:
         raise ValueError("Expected 'bids_name' column not found in data.")
@@ -226,7 +252,21 @@ def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list
         if session_mask.any():
             mask = session_mask
 
-    data_subject = data.loc[mask, columns]
+    if run_identifier:
+        # Narrow further to the specific run/task being reviewed, but only
+        # if that actually matches something - naming conventions between
+        # qc.json's base_mri_image_path and the IQM table's bids_name column
+        # aren't guaranteed to line up for every pipeline, so fall back to
+        # the broader (participant[+session]) match rather than show nothing.
+        run_mask = mask & data["bids_name"].str.contains(run_identifier, regex=False)
+        if run_mask.any():
+            mask = run_mask
+
+    # Keep bids_name alongside the requested metric columns so callers (the
+    # subject-overlay hover text) can show which specific run each point is,
+    # when more than one row matches (e.g. multiple BOLD runs for a session).
+    select_columns = columns if "bids_name" in columns else ["bids_name"] + list(columns)
+    data_subject = data.loc[mask, select_columns]
     return data_subject
 
 
@@ -293,8 +333,12 @@ def _add_subject_overlay(
     top of the correct box plot group.
     """
 
-    for _, rows in subject_rows.iterrows():
-        participant_values = rows.dropna()
+    for _, row in subject_rows.iterrows():
+        # bids_name identifies which specific run this row is - shown in the
+        # hover text so multiple points (e.g. several BOLD runs) are
+        # distinguishable instead of all showing an identical label.
+        run_label = row.get("bids_name") or f"{participant_id}{label_suffix}"
+        participant_values = row.drop(labels=["bids_name"], errors="ignore").dropna()
         if participant_values.empty:
             continue
         for col, value in participant_values.items():
@@ -307,10 +351,10 @@ def _add_subject_overlay(
                 showlegend=show_legend,
                 offsetgroup=offsetgroup.lower(),
                 hovertemplate=(
-                    f"Source: {participant_id}{label_suffix}<br>Metric: {col}<br>Value: %{{y}}<extra></extra>"
+                    f"Run: {run_label}<br>Value: %{{y}}<extra></extra>"
                 )
             ))
-            show_legend = False     
+            show_legend = False
  
 
 def _get_valid_iqm_groups(distribution_groups: dict, iqm_data: pd.DataFrame) -> dict:
@@ -334,6 +378,7 @@ def _build_iqm_distribution_figure(
     display_mode: str,
     reference_data: Optional[pd.DataFrame] = None,
     compact: bool = False,
+    run_identifier: Optional[str] = None,
 ) -> Optional[go.Figure]:
     """Construct the Plotly figure for the IQM distribution panel."""
 
@@ -349,6 +394,7 @@ def _build_iqm_distribution_figure(
         participant_id,
         metric_columns,
         session_id=session_id,
+        run_identifier=run_identifier,
     )
     dataset_plot_data = iqm_data_for_group[metric_columns]
 
@@ -436,6 +482,7 @@ def _render_montage_of_iqm_groups(
     session_id,
     modality,
     display_mode,
+    run_identifier=None,
 ):
     """Render compact plots for all available IQM groups."""
     overview_columns = st.columns(NUM_OVERVIEW_COLUMNS)
@@ -451,6 +498,7 @@ def _render_montage_of_iqm_groups(
             display_mode=display_mode,
             reference_data=reference_data,
             compact=True,
+            run_identifier=run_identifier,
         )
 
         if fig is not None:
@@ -464,7 +512,8 @@ def _render_montage_of_iqm_groups(
 
 
 def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, session_id,
-                              qc_config_path: str = None, dataset_dir: str = None):
+                              qc_config_path: str = None, dataset_dir: str = None,
+                              run_identifier: str = None):
 
     if not iqm_paths:
         st.warning(ERROR_MESSAGES['iqm_no_sources_configured'])
@@ -575,6 +624,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
             session_id=session_id,
             modality=source.modality or source.pipeline_name,
             display_mode=mode,
+            run_identifier=run_identifier,
         )
             
 
@@ -598,11 +648,18 @@ def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str
         dataset_dir=dataset_dir,
     )
 
+    run_identifier = _extract_run_identifier(
+        qc_config.get("base_mri_image_path"),
+        participant_id,
+        session_id,
+    )
+
     _render_iqm_distributions(
         iqm_config,
         scanner_metadata,
         participant_id,
         session_id,
         qc_config_path=qc_config_path,
-        dataset_dir=dataset_dir
+        dataset_dir=dataset_dir,
+        run_identifier=run_identifier,
     )
