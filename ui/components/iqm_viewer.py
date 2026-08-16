@@ -247,24 +247,17 @@ def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list
             raise ValueError("session_id should start with 'ses-'.")
 
         session_mask = participant_mask & data["bids_name"].str.contains(session_id)
-        # Some MRIQC files encode runs without session tags; in that case,
-        # fall back to participant-only rows so subject markers remain visible.
+
+        # Some MRIQC files encode runs without session tags; in that case,fall back to participant-only rows so subject markers remain visible.
         if session_mask.any():
             mask = session_mask
 
     if run_identifier:
-        # Narrow further to the specific run/task being reviewed, but only
-        # if that actually matches something - naming conventions between
-        # qc.json's base_mri_image_path and the IQM table's bids_name column
-        # aren't guaranteed to line up for every pipeline, so fall back to
-        # the broader (participant[+session]) match rather than show nothing.
+        # Narrow further to the specific run/task being reviewed, but only if that actually matches something 
         run_mask = mask & data["bids_name"].str.contains(run_identifier, regex=False)
         if run_mask.any():
             mask = run_mask
 
-    # Keep bids_name alongside the requested metric columns so callers (the
-    # subject-overlay hover text) can show which specific run each point is,
-    # when more than one row matches (e.g. multiple BOLD runs for a session).
     select_columns = columns if "bids_name" in columns else ["bids_name"] + list(columns)
     data_subject = data.loc[mask, select_columns]
     return data_subject
@@ -334,9 +327,6 @@ def _add_subject_overlay(
     """
 
     for _, row in subject_rows.iterrows():
-        # bids_name identifies which specific run this row is - shown in the
-        # hover text so multiple points (e.g. several BOLD runs) are
-        # distinguishable instead of all showing an identical label.
         run_label = row.get("bids_name") or f"{participant_id}{label_suffix}"
         participant_values = row.drop(labels=["bids_name"], errors="ignore").dropna()
         if participant_values.empty:
@@ -584,38 +574,38 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
 
     can_compare_reference = is_mriqc_pipeline(source.pipeline_name) and source.modality is not None
 
-    with st.container(height=CONTAINER_HEIGHT, border=False):
-        mode = DISPLAY_MODE_OPTIONS[0]
-        reference_data = None
-        if can_compare_reference:
-            def _remember_iqm_display_mode():
-                SessionManager.set_iqm_display_mode_selection(st.session_state["iqm_display_mode"])
+    mode = DISPLAY_MODE_OPTIONS[0]
+    reference_data = None
+    if can_compare_reference:
+        def _remember_iqm_display_mode():
+            SessionManager.set_iqm_display_mode_selection(st.session_state["iqm_display_mode"])
 
-            mode = st.radio(
-                "Display mode",
-                options=DISPLAY_MODE_OPTIONS,
-                index=DISPLAY_MODE_OPTIONS.index(SessionManager.get_iqm_display_mode_selection()),
-                key="iqm_display_mode",
-                on_change=_remember_iqm_display_mode,
-                horizontal=True
-            )
-            if mode == DISPLAY_MODE_OPTIONS[1]:
-                try:
-                    reference_data = load_reference_iqm_for_subject(
-                        modality=source.modality,
-                        manufacturer=manufacturer,
-                        field_strength=field_strength,
-                        max_rows=MAX_REFERENCE_ROWS,
-                    )
-                except Exception as e:
-                    st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=source.modality, error=e))
+        mode = st.radio(
+            "Display mode",
+            options=DISPLAY_MODE_OPTIONS,
+            index=DISPLAY_MODE_OPTIONS.index(SessionManager.get_iqm_display_mode_selection()),
+            key="iqm_display_mode",
+            on_change=_remember_iqm_display_mode,
+            horizontal=True
+        )
+        if mode == DISPLAY_MODE_OPTIONS[1]:
+            try:
+                reference_data = load_reference_iqm_for_subject(
+                    modality=source.modality,
+                    manufacturer=manufacturer,
+                    field_strength=field_strength,
+                    max_rows=MAX_REFERENCE_ROWS,
+                )
+            except Exception as e:
+                st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=source.modality, error=e))
+                reference_data = None
+            else:
+                if reference_data is None or reference_data.empty:
+                    st.warning("No reference data available for this scanner/field strength; showing dataset-only distribution.")
                     reference_data = None
-                else:
-                    if reference_data is None or reference_data.empty:
-                        st.warning("No reference data available for this scanner/field strength; showing dataset-only distribution.")
-                        reference_data = None
 
-        st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
+    st.write("Overview of IQM distributions across the dataset, with current subject highlighted.")
+    with st.container(height=CONTAINER_HEIGHT, border=False):
         _render_montage_of_iqm_groups(
             valid_groups=source.valid_groups,
             iqm_data=source.iqm_data,
