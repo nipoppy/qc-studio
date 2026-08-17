@@ -2,9 +2,25 @@
 
 import pytest
 
-from components.qc_viewer import _clean_filename
+from components.qc_viewer import _clean_filename, _compact_session_label
 
 pytestmark = pytest.mark.unit
+
+
+class TestCompactSessionLabel:
+    """Tests for the compact QC page header."""
+
+    def test_includes_participant_and_session(self):
+        assert _compact_session_label("sub-CMH0001", "ses-01") == "sub-CMH0001 · ses-01"
+
+    def test_omits_pipeline_and_task_count(self):
+        label = _compact_session_label("sub-CMH0001", "ses-01")
+        assert "fmriprep" not in label.lower()
+        assert "task" not in label.lower()
+        assert "count" not in label.lower()
+
+    def test_omits_session_when_missing(self):
+        assert _compact_session_label("sub-CMH0001", None) == "sub-CMH0001"
 
 
 class TestCleanFilename:

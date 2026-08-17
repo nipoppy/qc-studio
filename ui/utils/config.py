@@ -20,6 +20,19 @@ def list_qc_tasks_from_json(qc_json) -> list[str]:
     return list(data.keys())
 
 
+def qc_task_display_labels(qc_json, task_keys: list[str]) -> list[str]:
+    """Human-readable QC task names (qc.json ``display_name``, else the task key)."""
+    dummy = {"participant_id": "sub-x", "session_id": "ses-01"}
+    labels: list[str] = []
+    for key in task_keys:
+        key_s = str(key).strip()
+        if not key_s:
+            continue
+        cfg = parse_qc_config(qc_json, key_s, dummy)
+        labels.append(cfg.get("display_name") or key_s)
+    return labels
+
+
 def build_substitution_values(participant_id: str, session_id: str) -> dict:
     """Template values for ``qc.json`` path placeholders."""
     sid = str(session_id or "ses-01").strip()

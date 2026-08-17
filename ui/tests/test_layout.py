@@ -142,7 +142,36 @@ class TestShowLandingPage:
                 qc_config_path=_stub_qc_config_path(tmp_path),
             )
 
-        mock_st.subheader.assert_called()
+        markdown_calls = [str(c.args[0]) for c in mock_st.markdown.call_args_list if c.args]
+        assert any("Task:** anat_wf_qc" in text for text in markdown_calls)
+        assert any("Subjects:**" in text for text in markdown_calls)
+        assert any("Cohort pages:**" in text for text in markdown_calls)
+        mock_st.header.assert_any_call("fmriprep")
+        assert not any("QC Pipeline:" in text and "|" in text for text in markdown_calls)
+
+    def test_landing_run_summary_uses_subject_page_task_names(self):
+        from views.landing_page import _landing_run_summary_lines
+
+        line1, line2 = _landing_run_summary_lines(
+            "noddireg",
+            ["Tissue density distributions"],
+            1,
+            2,
+        )
+        assert line1 == "noddireg"
+        assert "Task:** Tissue density distributions" in line2
+        assert "noddireg_density" not in line2
+        assert "Subjects:** 1" in line2 and "Cohort pages:** 2" in line2
+
+        _, all_line = _landing_run_summary_lines(
+            "fmriprep",
+            ["Susceptibility distortion correction (SDC)", "BOLD-T1w coregistration"],
+            1,
+            2,
+            all_tasks=True,
+        )
+        assert "Task:** all tasks (2 tasks)" in all_line
+        assert "Susceptibility distortion correction" not in all_line
 
     @patch("views.landing_page.pd.read_csv")
     def test_landing_page_error_handling(self, mock_read_csv, tmp_path):

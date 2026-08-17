@@ -4,7 +4,7 @@ import time
 
 import streamlit as st
 
-from constants import MESSAGES
+from constants import MESSAGES, SIDEBAR_SUBJECT_LIST_HEIGHT
 from managers.session_manager import SessionManager
 
 _MAX_PID_DISPLAY_LEN = 28
@@ -22,12 +22,12 @@ def render_sidebar_cohort_subjects(
     prepend_navigation: bool = False,
     navigation_kwargs: dict | None = None,
 ) -> None:
-    """Add sidebar content: **Navigation** (page count), **Subjects**, then nav controls.
+    """Add sidebar QC navigation, then a scrollable subject list.
 
-    When ``prepend_navigation`` is True and ``navigation_kwargs`` is set, renders the
-    ``#### 📄 Navigation`` header and **Page X of Y** line, then the subject list with
-    checkmarks, then autoplay / prev–confirm–next / save. Call **before** main-column
-    content so Streamlit shows the sidebar reliably.
+    When ``prepend_navigation`` is True and ``navigation_kwargs`` is set, order is:
+    **Navigation** / Page X of Y, Play/Pause, prev–confirm–next / save, then Subjects.
+    The subject list is a fixed-height, internally scrollable container. Call
+    **before** main-column content so Streamlit shows the sidebar reliably.
 
     Each subject row is a full-width button: ✅ if QC saved for all active tasks, ⬜ otherwise.
     When ``entrypoint_rel_path`` is set (e.g. ``\"main.py\"``), uses ``st.switch_page``.
@@ -56,8 +56,27 @@ def render_sidebar_cohort_subjects(
             )
 
             _display_qc_pagination_header(kw["current_page"], kw["total_participants"])
-        st.caption(MESSAGES["sidebar_subjects_header"])
-        current_page = SessionManager.get_current_page()
+            _display_qc_pagination_controls(**kw)
+            st.divider()
+        _render_subject_list(
+            entries=entries,
+            session_id=session_id,
+            tasks_eff=tasks_eff,
+            entrypoint_rel_path=entrypoint_rel_path,
+        )
+
+
+def _render_subject_list(
+    *,
+    entries: list,
+    session_id: str,
+    tasks_eff: list,
+    entrypoint_rel_path: str | None,
+) -> None:
+    """Render the cohort subject buttons inside a fixed-height scroller."""
+    st.caption(MESSAGES["sidebar_subjects_header"])
+    current_page = SessionManager.get_current_page()
+    with st.container(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True):
         for i, entry in enumerate(entries):
             page_num = i + 1
             pid = str(entry.get("participant_id", ""))
@@ -76,6 +95,3 @@ def render_sidebar_cohort_subjects(
                     st.switch_page(entrypoint_rel_path)
                 else:
                     st.rerun()
-        if kw:
-            st.divider()
-            _display_qc_pagination_controls(**kw)

@@ -17,6 +17,14 @@ from models import QCRecord
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
 
 
+def _compact_session_label(participant_id: str | None, session_id: str | None) -> str:
+    """One-line QC header: participant, plus session when present."""
+    pid = participant_id or ""
+    if session_id:
+        return f"{pid} · {session_id}"
+    return pid
+
+
 def _clean_filename(filename: str) -> str:
     """Return a compact tab label from an internal image key."""
     # Functional-style names: ses/task/run are the most informative tokens.
@@ -186,16 +194,14 @@ def display_qc_viewers(
 
     _render_autoplay_countdown_main_banner()
 
-    sid = session_id or "ses-01"
-    st.subheader(f"{participant_id} · {sid} · {qc_pipeline} · " f"QC task count: {len(tasks)}")
+    st.markdown(f"**{_compact_session_label(participant_id, session_id)}**")
 
     for i, tname in enumerate(tasks):
         qc_config = parse_qc_config(qc_config_path, tname, substitution_values)
         display_label = qc_config.get("display_name") or tname
-        if multi_task:
-            if i > 0:
-                st.divider()
-            st.subheader(display_label)
+        if multi_task and i > 0:
+            st.divider()
+        st.subheader(display_label)
         task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
         if task_has_niivue and show_svg and show_iqm:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
@@ -316,7 +322,7 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
             dataset_dir: Root dataset directory
             qc_config: QC configuration object
     """
-    st.header(MESSAGES["svg_header"])
+    st.caption(MESSAGES["svg_header"])
 
     # Get montage grid settings from session manager
     max_montage_rows = SessionManager.get_montage_max_rows()
@@ -406,6 +412,34 @@ def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str,
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
 
 
+def _render_previous_page_button() -> None:
+    """Sidebar Previous control; no-ops visually when omitted by the caller."""
+    if st.button(
+        MESSAGES["previous_button"],
+        width="stretch",
+        key="pag_prev",
+        help=MESSAGES["nav_tooltip_previous"],
+    ):
+        SessionManager.previous_page()
+        if SessionManager.is_autoplay_enabled():
+            SessionManager.set_autoplay_start_time(time.time())
+        st.rerun()
+
+
+def _render_next_page_button() -> None:
+    """Sidebar Next control (does not save ratings)."""
+    if st.button(
+        MESSAGES["next_button"],
+        width="stretch",
+        key="pag_next",
+        help=MESSAGES["nav_tooltip_next"],
+    ):
+        SessionManager.next_page()
+        if SessionManager.is_autoplay_enabled():
+            SessionManager.set_autoplay_start_time(time.time())
+        st.rerun()
+
+
 def _display_qc_pagination_header(current_page: int, total_participants: int) -> None:
     """Sidebar: Navigation title and page counter (call inside ``with st.sidebar:``)."""
     st.markdown("#### 📄 Navigation")
@@ -444,62 +478,62 @@ def _display_qc_pagination_controls(
 
     st.divider()
 
-    pag_col1, pag_col2, pag_col3 = st.columns([1, 1, 1])
+    show_previous = current_page > 1
+    show_next = current_page < total_participants
+    if show_previous and show_next:
+        prev_col, next_col = st.columns(2)
+        with prev_col:
+            _render_previous_page_button()
+        with next_col:
+            _render_next_page_button()
+    elif show_previous:
+        _render_previous_page_button()
+    elif show_next:
+        _render_next_page_button()
 
-    with pag_col1:
-        if current_page > 1:
-            if st.button(
-                MESSAGES["previous_button"],
-                width="stretch",
-                key="pag_prev",
-                help=MESSAGES["nav_tooltip_previous"],
-            ):
-                SessionManager.previous_page()
-                if SessionManager.is_autoplay_enabled():
-                    SessionManager.set_autoplay_start_time(time.time())
-                st.rerun()
-
-    with pag_col2:
-        if st.button(
-            MESSAGES["confirm_next_button"],
-            width="stretch",
-            key="pag_confirm",
-            help=MESSAGES["nav_tooltip_confirm_next"],
-        ):
-            _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
-            if SessionManager.is_autoplay_enabled():
-                SessionManager.set_autoplay_start_time(time.time())
-            elif current_page < total_participants:
-                SessionManager.next_page()
-            elif qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
+    if st.button(
+        MESSAGES["confirm_next_button"],
+        width="stretch",
+        key="pag_confirm",
+        help=MESSAGES["nav_tooltip_confirm_next"],
+    ):
+        _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+        if SessionManager.is_autoplay_enabled():
+            SessionManager.set_autoplay_start_time(time.time())
+        elif current_page < total_participants:
+            SessionManager.next_page()
+        elif qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
+            SessionManager.set_current_page(total_participants + 1)
+        elif not qc_cohort and participant_ids and session_id:
+            temp_cohort = []
+            for pid in participant_ids:
+                p = str(pid).strip()
+                if not p.startswith("sub-"):
+                    p = f"sub-{p}"
+                temp_cohort.append({"participant_id": p, "session_id": session_id})
+            if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
                 SessionManager.set_current_page(total_participants + 1)
-            elif not qc_cohort and participant_ids and session_id:
-                temp_cohort = []
-                for pid in participant_ids:
-                    p = str(pid).strip()
-                    if not p.startswith("sub-"):
-                        p = f"sub-{p}"
-                    temp_cohort.append({"participant_id": p, "session_id": session_id})
-                if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
-                    SessionManager.set_current_page(total_participants + 1)
-            st.rerun()
-
-    with pag_col3:
-        if current_page < total_participants:
-            if st.button(
-                MESSAGES["next_button"],
-                width="stretch",
-                key="pag_next",
-                help=MESSAGES["nav_tooltip_next"],
-            ):
-                SessionManager.next_page()
-                if SessionManager.is_autoplay_enabled():
-                    SessionManager.set_autoplay_start_time(time.time())
-                st.rerun()
+        st.rerun()
 
     st.divider()
 
-    if st.button(MESSAGES["save_csv_button"], width="content", key="pag_save_csv"):
+    st.markdown(
+        """
+        <style>
+        section[data-testid="stSidebar"] .st-key-pag_save_csv button {
+            width: 100% !important;
+            white-space: nowrap !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button(
+        MESSAGES["save_csv_button"],
+        width="stretch",
+        key="pag_save_csv",
+        help=MESSAGES["save_csv_help"],
+    ):
         _save_qc_record(
             participant_id=participant_id,
             session_id=session_id,
@@ -521,7 +555,7 @@ def _display_qc_pagination(
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
 ) -> None:
-    """Full navigation block (header + controls) for callers that do not inject Subjects between."""
+    """Full navigation block (header + playback / page controls)."""
     _display_qc_pagination_header(current_page, total_participants)
     st.divider()
     _display_qc_pagination_controls(
@@ -538,7 +572,7 @@ def _display_qc_pagination(
 
 def _display_iqm_panel() -> None:
     """Display IQM metrics panel."""
-    st.subheader(MESSAGES["metrics_header"])
+    st.caption(MESSAGES["metrics_header"])
     st.write("Add QC metrics here (e.g., SNR, motion). This is a placeholder area.")
 
 

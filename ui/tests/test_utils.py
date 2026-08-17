@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch, mock_open
 import pandas as pd
 import pytest
 
-from utils.config import parse_qc_config
+from utils.config import parse_qc_config, qc_task_display_labels
 from utils.data_loaders import (
     load_mri_data,
     load_svg_data,
@@ -67,6 +67,21 @@ class TestParseQcConfig:
         )
         result = parse_qc_config(str(qc_path), "demo_task")
         assert result["display_name"] == "Friendly label"
+
+    def test_qc_task_display_labels_uses_display_name(self, temp_dir):
+        qc_path = temp_dir / "qc.json"
+        (temp_dir / "a.svg").write_text("<svg></svg>")
+        qc_path.write_text(
+            json.dumps(
+                {
+                    "demo_task": {
+                        "display_name": "Friendly label",
+                        "svg_montage_path": str(temp_dir / "a.svg"),
+                    }
+                }
+            )
+        )
+        assert qc_task_display_labels(str(qc_path), ["demo_task"]) == ["Friendly label"]
 
     def test_parse_qc_config_nonexistent_task(self, sample_qc_config):
         """Test parsing QC config with non-existent task."""
