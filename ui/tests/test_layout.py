@@ -20,6 +20,8 @@ from constants import (
     DEFAULT_MONTAGE_MAX_ROWS,
     DEFAULT_MONTAGE_MAX_COLS,
     EXPERIENCE_LEVELS,
+    MESSAGES,
+    SIDEBAR_SUBJECT_LIST_HEIGHT,
 )
 
 pytestmark = pytest.mark.integration
@@ -172,6 +174,15 @@ class TestShowLandingPage:
         )
         assert "Task:** all tasks (2 tasks)" in all_line
         assert "Susceptibility distortion correction" not in all_line
+
+    def test_compact_session_label_omits_pipeline_and_task_count(self):
+        from components.qc_viewer import _compact_session_label
+
+        assert _compact_session_label("sub-CMH0001", "ses-01") == "sub-CMH0001 · ses-01"
+        assert _compact_session_label("sub-CMH0001", None) == "sub-CMH0001"
+        label = _compact_session_label("sub-CMH0001", "ses-01")
+        assert "fmriprep" not in label.lower()
+        assert "count" not in label.lower()
 
     @patch("views.landing_page.pd.read_csv")
     def test_landing_page_error_handling(self, mock_read_csv, tmp_path):
@@ -471,3 +482,71 @@ class TestNavigationControls:
         valid_page = min(max(current_page, 1), total_participants)
 
         assert valid_page == total_participants
+
+
+def _sidebar_ctx():
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=ctx)
+    ctx.__exit__ = MagicMock(return_value=False)
+    return ctx
+
+
+class TestSidebarCohortNavOrder:
+    """Playback and page controls stay above a scrollable subject list."""
+
+    def test_controls_render_before_subject_list(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        order = []
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        nav_kwargs = {
+            "current_page": 1,
+            "total_participants": 2,
+            "participant_id": "sub-CMH0001",
+            "session_id": "ses-01",
+            "qc_pipeline": "fmriprep",
+            "qc_tasks": ["sdc_wf_qc"],
+            "participant_ids": ["sub-CMH0001"],
+            "qc_cohort": cohort,
+        }
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.button.return_value = False
+        mock_st.caption.side_effect = lambda text, *a, **k: order.append(("caption", text))
+        mock_st.divider.side_effect = lambda: order.append(("divider", None))
+
+        def header(*args, **kwargs):
+            order.append(("header", None))
+
+        def controls(**kwargs):
+            order.append(("controls", None))
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+            patch("components.qc_viewer._display_qc_pagination_header", side_effect=header),
+            patch("components.qc_viewer._display_qc_pagination_controls", side_effect=controls),
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 1
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+                prepend_navigation=True,
+                navigation_kwargs=nav_kwargs,
+            )
+
+        names = [name for name, _ in order]
+        assert names[:3] == ["header", "controls", "divider"]
+        assert names.index("controls") < names.index("caption")
+        mock_st.container.assert_called_once_with(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True)
+        mock_st.caption.assert_called_with(MESSAGES["sidebar_subjects_header"])
+        assert mock_st.button.call_count == 2

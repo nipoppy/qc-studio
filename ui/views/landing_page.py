@@ -21,7 +21,7 @@ from managers.session_manager import SessionManager
 from models import QCRecord
 from managers.panel_layout_manager import PanelLayoutManager
 from managers.niivue_viewer_manager import NiivueViewerManager
-from utils.config import list_qc_tasks_from_json, parse_qc_config, qc_task_display_labels
+from utils.config import list_qc_tasks_from_json, parse_qc_config
 from utils.cohort import (
     bare_bids_id,
     build_qc_cohort,
@@ -106,6 +106,19 @@ def _upload_filter_label(qc_task: str, qc_config_path: str) -> str:
     return str(qc_task)
 
 
+def _qc_task_display_labels(qc_config_path: str, task_keys: list[str]) -> list[str]:
+    """Human-readable QC task names (qc.json ``display_name``, else the task key)."""
+    dummy = {"participant_id": "sub-x", "session_id": "ses-01"}
+    labels: list[str] = []
+    for key in task_keys:
+        key_s = str(key).strip()
+        if not key_s:
+            continue
+        cfg = parse_qc_config(qc_config_path, key_s, dummy)
+        labels.append(cfg.get("display_name") or key_s)
+    return labels
+
+
 def _landing_run_summary_lines(
     qc_pipeline: str,
     task_labels: list[str],
@@ -175,7 +188,7 @@ def show_landing_page(
 
     qc_tasks_for_page = _upload_qc_task_filter_keys(qc_task, qc_config_path) or []
     task_keys = qc_tasks_for_page if qc_tasks_for_page else [str(qc_task).strip()]
-    task_labels = qc_task_display_labels(qc_config_path, task_keys)
+    task_labels = _qc_task_display_labels(qc_config_path, task_keys)
     line1, line2 = _landing_run_summary_lines(
         qc_pipeline,
         task_labels,
