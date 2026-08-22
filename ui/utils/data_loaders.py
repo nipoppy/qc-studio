@@ -360,17 +360,31 @@ MODALITY_SIDECAR_HINTS = {
 }
 
 
-def _infer_modality_from_path(image_path: Union[Path, str]) -> str:
-	"""Infer a BIDS modality hint ('anat', 'func', 'dwi') from an image path/filename."""
-	if not image_path:
-		return "anat"
+def _infer_bids_folder_from_path(path: Union[Path, str]) -> Optional[str]:
+	"""Infer a BIDS modality folder ('anat', 'func', 'dwi') from a path/filename.
 
-	path_str = str(image_path).lower()
-	if re.search(r"_(bold|sbref)\.", path_str) or "/func/" in path_str:
+	Checks the directory segment, filename suffix regex, and a bare filename
+	substring (in that order of specificity) - shared by both
+	_load_scanner_metadata (BIDS sidecar lookup) and iqm_viewer.py's MRIQC
+	group-registry selection, which each apply their own default/vocabulary
+	on top since their failure-mode needs differ (a wrong guess here is
+	low-stakes for a sidecar search, but would apply the wrong curated MRIQC
+	columns to unrelated data for the IQM viewer). Returns None on no match -
+	callers that want a best-guess default apply it themselves.
+	"""
+	if not path:
+		return None
+
+	path_str = str(path).lower()
+	name = Path(path).name.lower()
+
+	if "/func/" in path_str or re.search(r"_(bold|sbref)\.", path_str) or "bold" in name:
 		return "func"
-	if re.search(r"_dwi\.", path_str) or "/dwi/" in path_str:
+	if "/dwi/" in path_str or re.search(r"_dwi\.", path_str) or "dwi" in name:
 		return "dwi"
-	return "anat"
+	if "/anat/" in path_str or "t1w" in name:
+		return "anat"
+	return None
 
 
 def _find_bids_metadata_sidecar(
@@ -461,7 +475,7 @@ def _load_scanner_metadata(image_path:Union[Path, str], participant_id: str = No
 	inferred_participant, inferred_session = _infer_bids_ids_from_path(image_path)
 	participant_id = participant_id or inferred_participant
 	session_id = session_id or inferred_session
-	modality = modality or _infer_modality_from_path(image_path)
+	modality = modality or _infer_bids_folder_from_path(image_path) or "anat"
 
 	if not json_path or not Path(json_path).is_file():
 		json_path = _find_bids_metadata_sidecar(dataset_root, participant_id, session_id, modality=modality)

@@ -149,7 +149,7 @@ class TestQCTask:
         assert task.base_mri_image_path == base_path
         assert task.overlay_mri_image_path == overlay_path
         assert task.svg_montage_path == [svg_path]
-        assert task.iqm_path == iqm_path
+        assert task.iqm_path == [iqm_path]
 
     def test_create_qc_task_with_minimal_fields(self):
         """Test creating QCTask with minimal fields."""

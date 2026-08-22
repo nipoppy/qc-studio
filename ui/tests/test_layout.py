@@ -405,7 +405,7 @@ class TestQcViewerLayout:
     @patch('components.qc_viewer.NiivueViewerManager.render_viewer')
     @patch('components.qc_viewer._get_or_render_niivue_config')
     @patch('components.qc_viewer.st')
-    def test_secondary_iqm_panel_receives_qc_task(
+    def test_secondary_iqm_panel_receives_config_and_ids(
         self,
         mock_st,
         mock_get_niivue_config,
@@ -413,7 +413,13 @@ class TestQcViewerLayout:
         mock_render_controls,
         mock_display_iqm,
     ):
-        """Test that the IQM panel receives qc_task for modality inference."""
+        """Test that the IQM panel is forwarded qc_config/ids/dataset_dir.
+
+        qc_task is no longer part of this call - modality inference now
+        comes from the IQM source path itself (infer_pipeline_from_iqm_path /
+        _infer_modality_from_path), not the QC task name, so it's not
+        threaded through here anymore.
+        """
         from components.qc_viewer import _display_niivue_with_secondary_panel
 
         viewer_col = MagicMock()
@@ -431,7 +437,7 @@ class TestQcViewerLayout:
             qc_config_path="qc.json",
             participant_id="sub-01",
             session_id="ses-01",
-            qc_task="anat_wf_qc",
+            task_suffix="anat_wf_qc",
         )
 
         mock_display_iqm.assert_called_once_with(
@@ -440,7 +446,6 @@ class TestQcViewerLayout:
             "sub-01",
             "ses-01",
             "/dataset",
-            qc_task="anat_wf_qc",
         )
 
 

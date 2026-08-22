@@ -76,6 +76,9 @@ class MetricsSource:
 
 def _infer_modality_from_path(path: str) -> Optional[str]:
     """Infer the modality (t1w, bold, dwi) from the IQM path string."""
+    if not path:
+        return None
+
     path_str = str(path).lower()
     name = Path(path).name.lower()
 
@@ -85,8 +88,71 @@ def _infer_modality_from_path(path: str) -> Optional[str]:
         return "dwi"
     if "/anat/" in path_str or "t1w" in name:
         return "t1w"
-    
+
     return None
+
+
+def _path_after_pipeline(path) -> str:
+    """Path segments after derivatives/<pipeline>/, extension stripped -
+    e.g. "23.1.0/group_T1w" for derivatives/mriqc/23.1.0/group_T1w.tsv.
+    Distinguishes sibling sources that share both pipeline_name and
+    modality but differ by a pipeline-version subdirectory. Falls back to
+    the filename stem if there's no derivatives segment to anchor on."""
+    parts = Path(path).parts
+    if "derivatives" in parts:
+        idx = parts.index("derivatives")
+        remainder = parts[idx + 2:]
+        if remainder:
+            return str(Path(*remainder).with_suffix(""))
+    return Path(path).stem
+
+
+def _disambiguate_tab_labels(sources) -> list:
+    """Build a unique display label per source, in source order.
+
+    pipeline_name alone isn't unique (MRIQC contributes both a T1w and a
+    bold table). Escalates through increasingly specific disambiguators -
+    modality, then the path segments after derivatives/<pipeline>/ (so two
+    MRIQC pipeline-version folders emitting the same filename, e.g.
+    derivatives/mriqc/23.1.0/group_T1w.tsv vs .../24.0.0/group_T1w.tsv,
+    still get distinct labels even though pipeline_name AND modality
+    match) - and numbers anything still colliding as a last resort.
+    segmented_control breaks silently on duplicate option values (only the
+    first is selectable), so uniqueness here is a hard requirement, not
+    just cosmetic.
+    """
+    labels = [s.pipeline_name for s in sources]
+
+    for discriminator in (
+        lambda s: getattr(s, "modality", None),
+        lambda s: _path_after_pipeline(s.path),
+    ):
+        counts = {}
+        for label in labels:
+            counts[label] = counts.get(label, 0) + 1
+        if not any(count > 1 for count in counts.values()):
+            break
+        labels = [
+            f"{s.pipeline_name} ({discriminator(s)})" if counts[label] > 1 and discriminator(s) else label
+            for s, label in zip(sources, labels)
+        ]
+
+    counts = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    if any(count > 1 for count in counts.values()):
+        seen = {}
+        numbered = []
+        for label in labels:
+            if counts[label] > 1:
+                seen[label] = seen.get(label, 0) + 1
+                numbered.append(f"{label} #{seen[label]}")
+            else:
+                numbered.append(label)
+        labels = numbered
+
+    return labels
+
 
 def _generic_groups_from_columns(iqm_data) -> dict:
     #need to expand this based on the pipeline and modality, but for now just return all numeric columns as a single group
@@ -509,22 +575,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
         return  # per-source errors/warnings already surfaced above
 
     #____________Display mode selection___________
-    # pipeline_name alone isn't guaranteed unique - e.g. MRIQC contributes
-    # both a T1w and a bold table, same pipeline_name, different sources.
-    # Disambiguate with modality (falling back to the filename stem) so
-    # segmented_control always gets distinct option values; otherwise two
-    # tabs render with an identical label and only the first is reachable.
-    pipeline_counts = {}
-    for s in sources:
-        pipeline_counts[s.pipeline_name] = pipeline_counts.get(s.pipeline_name, 0) + 1
-
-    tab_options = []
-    for s in sources:
-        if pipeline_counts[s.pipeline_name] > 1:
-            disambiguator = getattr(s, "modality", None) or Path(s.path).stem
-            tab_options.append(f"{s.pipeline_name} ({disambiguator})")
-        else:
-            tab_options.append(s.pipeline_name)
+    tab_options = _disambiguate_tab_labels(sources)
 
     remembered_tab = SessionManager.get_iqm_view_selection()
     if remembered_tab not in tab_options:

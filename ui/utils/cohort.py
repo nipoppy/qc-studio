@@ -27,6 +27,8 @@ def normalize_session_id_bids(sid: str) -> str:
 	if s.isdigit():
 		return f"ses-{int(s):02d}"
 	return f"ses-{s}"
+
+
 def parse_session_list(raw: str | None) -> list[str] | None:
 	"""Return ordered unique BIDS session ids from CLI ``--session_list``.
 

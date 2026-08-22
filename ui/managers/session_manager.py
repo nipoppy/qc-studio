@@ -7,13 +7,7 @@ from constants import (
     DEFAULT_MONTAGE_MAX_COLS,
     QC_RATINGS,
 )
-
-
-def _bare_bids_id(val: str, prefix: str) -> str:
-    val = str(val)
-    if val.startswith(prefix):
-        val = val[len(prefix) :]
-    return val.lstrip("0") or "0"
+from utils.cohort import bare_bids_id as _bare_bids_id
 
 
 class SessionManager:

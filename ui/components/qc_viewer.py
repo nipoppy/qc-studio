@@ -231,7 +231,6 @@ def display_qc_viewers(
 				participant_id,
 				session_id,
 				dataset_dir,
-				qc_task=tname,
 			)
 
 		_display_qc_rating_for_task(
@@ -293,7 +292,6 @@ def _display_niivue_with_secondary_panel(
 				participant_id,
 				session_id,
 				dataset_dir,
-				qc_task=task_suffix,
 			)
 
 def _display_niivue_full_width(dataset_dir, qc_config,
