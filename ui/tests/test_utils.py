@@ -13,8 +13,15 @@ from utils.data_loaders import (
     _resolve_metadata_path,
     _infer_bids_ids_from_path,
     _infer_dataset_root_from_path,
+    _infer_bids_folder_from_path,
     _find_bids_metadata_sidecar,
     _load_scanner_metadata,
+    resolve_iqm_data_path,
+    _load_iqm_distribution_table,
+    _load_iqm_metrics_subject_level,
+    normalize_manufacturer,
+    normalize_field_strength,
+    load_reference_iqm_for_subject,
 )
 from utils.export import save_qc_results_to_csv
 
@@ -534,3 +541,213 @@ class TestSaveQcResultsToCsv:
         ]
         assert list(df["session_id"]) == ["ses-01", "ses-01", "ses-02", "ses-01"]
         assert list(df["qc_task"]) == ["anat_wf_qc", "b_task", "a_task", "z_task"]
+
+
+class TestInferBidsFolderFromPath:
+    """Test _infer_bids_folder_from_path - shared by _load_scanner_metadata
+    (BIDS sidecar lookup) and mirrored by iqm_viewer.py's own
+    _infer_modality_from_path (already tested against the same cases in
+    test_iqm_viewer.py::test_infer_bids_from_path, different return
+    vocabulary: anat/func/dwi here vs t1w/bold/dwi there)."""
+
+    def test_infers_modality_folder_from_directory_and_filename(self):
+        cases = [
+            ("bids/sub-01/ses-01/anat/sub-01_ses-01_T1w.nii.gz", "anat"),
+            ("bids/sub-01/ses-01/func/sub-01_ses-01_task-rest_bold.nii.gz", "func"),
+            ("bids/sub-01/ses-01/dwi/sub-01_ses-01_dwi.nii.gz", "dwi"),
+            ("derivatives/mriqc/group_T1w.tsv", "anat"),
+            ("derivatives/mriqc/group_bold.tsv", "func"),
+            ("derivatives/mriqc/group_dwi.tsv", "dwi"),
+            ("derivatives/fsqc/2.1.4/output/metrics.csv", None),
+            (None, None),
+            ("", None),
+        ]
+        for path, expected in cases:
+            assert _infer_bids_folder_from_path(path) == expected, f"failed for {path!r}"
+
+
+class TestResolveIqmDataPath:
+    """Test resolve_iqm_data_path's candidate-directory resolution."""
+
+    def test_absolute_existing_path_returned_as_is(self, temp_dir):
+        f = temp_dir / "group_T1w.tsv"
+        f.write_text("data")
+
+        assert resolve_iqm_data_path(str(f)) == f
+
+    def test_resolves_relative_to_dataset_dir(self, temp_dir):
+        f = temp_dir / "derivatives" / "mriqc" / "group_T1w.tsv"
+        f.parent.mkdir(parents=True)
+        f.write_text("data")
+
+        result = resolve_iqm_data_path("derivatives/mriqc/group_T1w.tsv", dataset_dir=str(temp_dir))
+
+        assert result == f
+
+    def test_resolves_relative_to_qc_config_path_parent(self, temp_dir):
+        f = temp_dir / "group_T1w.tsv"
+        f.write_text("data")
+        qc_config_path = temp_dir / "qc.json"
+
+        result = resolve_iqm_data_path("group_T1w.tsv", qc_config_path=str(qc_config_path))
+
+        assert result == f
+
+    def test_falls_back_to_original_path_when_no_candidate_exists(self):
+        result = resolve_iqm_data_path("nonexistent_dir/group_T1w.tsv")
+
+        assert result == Path("nonexistent_dir/group_T1w.tsv")
+
+
+class TestLoadIqmDistributionTable:
+    """Test _load_iqm_distribution_table's extension-based separator dispatch."""
+
+    def test_loads_tsv_with_tab_separator(self, temp_dir):
+        f = temp_dir / "group_T1w.tsv"
+        f.write_text("bids_name\tefc\nsub-01_T1w\t0.1\n")
+
+        df = _load_iqm_distribution_table(f)
+
+        assert list(df.columns) == ["bids_name", "efc"]
+        assert df.iloc[0]["efc"] == 0.1
+
+    def test_loads_csv_with_comma_separator(self, temp_dir):
+        f = temp_dir / "metrics.csv"
+        f.write_text("bids_name,efc\nsub-01_T1w,0.1\n")
+
+        df = _load_iqm_distribution_table(f)
+
+        assert list(df.columns) == ["bids_name", "efc"]
+        assert df.iloc[0]["efc"] == 0.1
+
+    def test_raises_on_missing_file(self, temp_dir):
+        with pytest.raises(Exception):
+            _load_iqm_distribution_table(temp_dir / "nonexistent.tsv")
+
+
+class TestLoadIqmMetricsSubjectLevel:
+    """Test _load_iqm_metrics_subject_level's JSON reading."""
+
+    def test_reads_json_metrics(self, temp_dir):
+        f = temp_dir / "sub-01_T1w.json"
+        f.write_text(json.dumps({"efc": 0.1, "cjv": 0.5}))
+
+        result = _load_iqm_metrics_subject_level(f)
+
+        assert result == {"efc": 0.1, "cjv": 0.5}
+
+    def test_raises_on_missing_file(self, temp_dir):
+        with pytest.raises(FileNotFoundError):
+            _load_iqm_metrics_subject_level(temp_dir / "nonexistent.json")
+
+    def test_raises_on_malformed_json(self, temp_dir):
+        f = temp_dir / "bad.json"
+        f.write_text("{ not valid json")
+
+        with pytest.raises(json.JSONDecodeError):
+            _load_iqm_metrics_subject_level(f)
+
+
+class TestNormalizeManufacturer:
+    """Test normalize_manufacturer's alias mapping."""
+
+    def test_maps_known_aliases(self):
+        assert normalize_manufacturer("Siemens Healthineers") == "siemens"
+        assert normalize_manufacturer("GE Medical Systems") == "ge"
+        assert normalize_manufacturer("Philips Healthcare") == "philips"
+
+    def test_unknown_labels_normalize_to_unknown(self):
+        for value in ["", "Unknown", "N/A", "null", "none", None]:
+            assert normalize_manufacturer(value) == "unknown", f"failed for {value!r}"
+
+    def test_unrecognized_value_passes_through_lowercased(self):
+        assert normalize_manufacturer("Canon") == "canon"
+
+
+class TestNormalizeFieldStrength:
+    """Test normalize_field_strength's alias mapping.
+
+    Flagging, not fixing: the function has a `#fix this` comment and a
+    dead commented-out numeric-passthrough block (lines ~601-609) - as a
+    result, a bare numeric field strength (e.g. the raw int/float 3 that
+    MagneticFieldStrength commonly is in real BIDS sidecars, not the
+    string "3.0"/"3T") isn't in FIELD_STRENGTH_ALIASES and silently
+    returns None instead of "3". Locking in current behavior below so
+    this doesn't regress further silently, but this looks like a real gap
+    worth a look.
+    """
+
+    def test_maps_known_aliases(self):
+        assert normalize_field_strength("3.0") == "3"
+        assert normalize_field_strength("3T") == "3"
+        assert normalize_field_strength("1.0") == "1"
+
+    def test_unknown_labels_normalize_to_none(self):
+        for value in ["", "Unknown", "N/A", None]:
+            assert normalize_field_strength(value) is None, f"failed for {value!r}"
+
+    def test_bare_numeric_value_currently_returns_none(self):
+        assert normalize_field_strength(3) is None
+        assert normalize_field_strength("3") is None
+
+
+class TestLoadReferenceIqmForSubject:
+    """Test load_reference_iqm_for_subject's manufacturer/field-strength
+    filtering and row-sampling, with _load_reference_parquet mocked out
+    (no real Parquet download/IO). Each test uses a distinct `modality`
+    string so _load_reference_iqm_filtered's @st.cache_data cache key
+    never collides across tests."""
+
+    def test_filters_by_manufacturer_and_field_strength(self):
+        # Field-strength values deliberately use the "3.0"/"1.0" spellings
+        # FIELD_STRENGTH_ALIASES actually recognizes - a bare numeric 3 (as
+        # MagneticFieldStrength commonly appears in real sidecars) hits the
+        # normalize_field_strength gap documented above and silently skips
+        # this filter, which would make this test pass for the wrong reason.
+        reference_df = pd.DataFrame(
+            {
+                "Manufacturer": ["Siemens", "GE", "Siemens"],
+                "MagneticFieldStrength": ["3.0", "3.0", "1.0"],
+                "efc": [0.1, 0.2, 0.3],
+            }
+        )
+        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+            result = load_reference_iqm_for_subject(
+                modality="t1w_test_manufacturer_and_field_strength",
+                manufacturer="Siemens Healthineers",
+                field_strength="3.0",
+            )
+
+        assert len(result) == 1
+        assert result.iloc[0]["efc"] == 0.1
+
+    def test_unknown_manufacturer_skips_manufacturer_filter(self):
+        reference_df = pd.DataFrame(
+            {
+                "Manufacturer": ["Siemens", "GE"],
+                "efc": [0.1, 0.2],
+            }
+        )
+        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+            result = load_reference_iqm_for_subject(
+                modality="t1w_test_unknown_manufacturer",
+                manufacturer=None,
+            )
+
+        assert len(result) == 2
+
+    def test_samples_down_to_max_rows(self):
+        reference_df = pd.DataFrame(
+            {
+                "Manufacturer": ["Siemens"] * 100,
+                "efc": range(100),
+            }
+        )
+        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+            result = load_reference_iqm_for_subject(
+                modality="t1w_test_row_sampling",
+                manufacturer="Siemens",
+                max_rows=10,
+            )
+
+        assert len(result) == 10
