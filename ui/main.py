@@ -54,10 +54,7 @@ def parse_args(args=None):
     )
     parser.add_argument(
         "--qc_task",
-        help=(
-            "QC task key from qc.json (e.g. anat_wf_qc), or **all** to show every task "
-            "on one scrollable page with a rating per task."
-        ),
+        help=("QC task key from qc.json (e.g. anat_wf_qc), or **all** to show every task " "on one scrollable page with a rating per task."),
         dest="qc_task",
         required=True,
     )
@@ -89,6 +86,7 @@ def get_cli_run_context():
     session_ids = _parse_session_list(args.session_list)
     if session_ids is None:
         from bids import BIDSLayout
+
         layout = BIDSLayout(args.dataset_dir, validate=False)
         bids_sessions = layout.get_sessions()
         if bids_sessions:
@@ -108,8 +106,7 @@ def get_cli_run_context():
     qc_tasks = resolve_qc_tasks(args.qc_task, qc_config_path)
     if str(args.qc_task).strip().lower() == "all" and not qc_tasks:
         print(
-            "QC-Studio: --qc_task all requires a readable qc.json (JSON object with task keys). "
-            f"No tasks found at {qc_config_path!r}.",
+            "QC-Studio: --qc_task all requires a readable qc.json (JSON object with task keys). " f"No tasks found at {qc_config_path!r}.",
             file=sys.stderr,
         )
         raise SystemExit(2)
@@ -151,9 +148,9 @@ def main():
     session_id_for_sidebar = qc_cohort[0]["session_id"] if qc_cohort else None
     qc_tasks = ctx["qc_tasks"]
 
-    current_page = st.session_state.get(SESSION_KEYS['current_page'], 1)
+    current_page = st.session_state.get(SESSION_KEYS["current_page"], 1)
     if current_page < 1:
-        st.session_state[SESSION_KEYS['current_page']] = 1
+        st.session_state[SESSION_KEYS["current_page"]] = 1
         current_page = 1
 
     if current_page > total_participants or not qc_cohort:
@@ -164,11 +161,7 @@ def main():
         participant_id = entry["participant_id"]
         session_id = entry["session_id"]
 
-    if (
-        participant_id is not None
-        and qc_cohort
-        and current_page <= total_participants
-    ):
+    if participant_id is not None and qc_cohort and current_page <= total_participants:
         st.session_state[AUTOPLAY_RUN_CTX_KEY] = {
             "participant_id": participant_id,
             "session_id": session_id,
@@ -183,11 +176,7 @@ def main():
         st.session_state.pop(AUTOPLAY_RUN_CTX_KEY, None)
 
     # Sidebar must be drawn before main content so Navigation + Subjects both appear.
-    on_qc_viewer_page = bool(
-        participant_id is not None
-        and qc_cohort
-        and current_page <= total_participants
-    )
+    on_qc_viewer_page = bool(participant_id is not None and qc_cohort and current_page <= total_participants)
     render_sidebar_cohort_subjects(
         qc_cohort=qc_cohort,
         total_participants=total_participants,
@@ -195,18 +184,20 @@ def main():
         qc_tasks=qc_tasks,
         entrypoint_rel_path=None,
         prepend_navigation=on_qc_viewer_page,
-        navigation_kwargs={
-            "current_page": SessionManager.get_current_page(),
-            "total_participants": total_participants,
-            "participant_id": participant_id,
-            "session_id": session_id,
-            "qc_pipeline": qc_pipeline,
-            "qc_tasks": qc_tasks,
-            "participant_ids": participant_ids,
-            "qc_cohort": qc_cohort,
-        }
-        if on_qc_viewer_page
-        else None,
+        navigation_kwargs=(
+            {
+                "current_page": SessionManager.get_current_page(),
+                "total_participants": total_participants,
+                "participant_id": participant_id,
+                "session_id": session_id,
+                "qc_pipeline": qc_pipeline,
+                "qc_tasks": qc_tasks,
+                "participant_ids": participant_ids,
+                "qc_cohort": qc_cohort,
+            }
+            if on_qc_viewer_page
+            else None
+        ),
     )
 
     app(
@@ -228,7 +219,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 # %%

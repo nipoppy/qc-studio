@@ -169,9 +169,7 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
     )
     # Reference loading goes through data_loaders.load_reference_iqm_for_subject
     # (Parquet download + filter), not a REFERENCE_DATA_PATHS TSV; mock it directly.
-    monkeypatch.setattr(
-        module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_df)
-    )
+    monkeypatch.setattr(module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_df))
 
     streamlit_stub.segmented_control.return_value = "mriqc"
     streamlit_stub.radio.return_value = "Dataset + Reference"
@@ -195,7 +193,7 @@ def test_display_iqm_panel_calls_loader_and_renderer(iqm_viewer_module, monkeypa
     module, _ = iqm_viewer_module
 
     qc_config = {"base_mri_image_path": "sub-01_T1w.nii.gz", "iqm_path": ["derivatives/mriqc/group_T1w.tsv"]}
-    
+
     load_scanner_metadata = MagicMock(return_value={"Manufacturer": "Siemens"})
     extract_run_identifier = MagicMock(return_value="run-1_T1w")
     render = MagicMock()
@@ -217,18 +215,26 @@ def test_display_iqm_panel_calls_loader_and_renderer(iqm_viewer_module, monkeypa
         "sub-01",
         "ses-01",
     )
-    render.assert_called_once_with(qc_config.get("iqm_path", []), {"Manufacturer": "Siemens"}, "sub-01", "ses-01", qc_config_path="qc_config.json", dataset_dir=None, run_identifier="run-1_T1w")
-    
+    render.assert_called_once_with(
+        qc_config.get("iqm_path", []),
+        {"Manufacturer": "Siemens"},
+        "sub-01",
+        "ses-01",
+        qc_config_path="qc_config.json",
+        dataset_dir=None,
+        run_identifier="run-1_T1w",
+    )
+
 
 def test__render_iqm_distributions_handles_empty_dataset(iqm_viewer_module):
     module, streamlit_stub = iqm_viewer_module
 
     module._render_iqm_distributions([], {"Manufacturer": "Siemens"}, "sub-01", None)
 
-    streamlit_stub.warning.assert_called_once_with(module.ERROR_MESSAGES['iqm_no_sources_configured'])
+    streamlit_stub.warning.assert_called_once_with(module.ERROR_MESSAGES["iqm_no_sources_configured"])
     streamlit_stub.plotly_chart.assert_not_called()
     streamlit_stub.radio.assert_not_called()
-    
+
 
 def test__render_iqm_distributions_double_tabs_withsame_pipeline_name(iqm_viewer_module, temp_dir, monkeypatch):
     module, streamlit_stub = iqm_viewer_module
@@ -277,9 +283,7 @@ def test__render_iqm_distributions_double_tabs_withsame_pipeline_name(iqm_viewer
     assert 0.33 not in violin_y_values
 
 
-def test__render_iqm_distributions_double_tabs_same_pipeline_same_modality_different_version(
-    iqm_viewer_module, temp_dir, monkeypatch
-):
+def test__render_iqm_distributions_double_tabs_same_pipeline_same_modality_different_version(iqm_viewer_module, temp_dir, monkeypatch):
     """Two MRIQC pipeline-version folders emitting the identically-named
     group_T1w.tsv - pipeline_name AND modality collide, so the filename
     stem alone ("group_T1w") wouldn't disambiguate them either; the tab
@@ -378,9 +382,7 @@ def test__render_iqm_distributions_double_tabs_with_different_pipeline_names(iqm
         }
     ).to_csv(dataset_path2, sep="\t", index=False)
 
-    monkeypatch.setattr(
-        module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_data)
-    )
+    monkeypatch.setattr(module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_data))
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
     streamlit_stub.segmented_control.return_value = "mriqc"
@@ -391,7 +393,7 @@ def test__render_iqm_distributions_double_tabs_with_different_pipeline_names(iqm
         {"Manufacturer": "Siemens"},
         "sub-01",
         None,
-    )   
+    )
 
     called_arg = streamlit_stub.segmented_control.call_args.kwargs["options"]
     assert called_arg == ["mriqc", "customqc"]
@@ -446,19 +448,15 @@ def test_infer_bids_from_path(iqm_viewer_module):
         ("bids/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_T1w.nii.gz", "t1w"),
         ("derivatives/mriqc/group_T1w.tsv", "t1w"),
         ("derivatives/mriqc/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_T1w.json", "t1w"),
-
         # BOLD / func
         ("bids/sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-rest_run-1_bold.nii.gz", "bold"),
         ("derivatives/mriqc/group_bold.tsv", "bold"),
         ("derivatives/mriqc/sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-emp_run-1_bold.json", "bold"),
-
         ("sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-rest_run-1_timeseries.json", "bold"),
-
         # DWI
         ("bids/sub-CMH0001/ses-01/dwi/sub-CMH0001_ses-01_acq-multishelldir92_run-1_dwi.nii.gz", "dwi"),
         ("derivatives/mriqc/group_dwi.tsv", "dwi"),
         ("derivatives/mriqc/sub-CMH0001/ses-01/dwi/sub-CMH0001_ses-01_acq-multishelldir92_run-1_dwi.json", "dwi"),
-
         # no modality signal anywhere - should resolve to None, not a guess
         ("derivatives/fsqc/2.1.4/output/ses-01/metrics/sub-ED01/metrics.csv", None),
         (None, None),
@@ -475,19 +473,18 @@ def test_extract_run_identifier(iqm_viewer_module):
     # (base_mri_image_path, participant_id, session_id, expected)
     cases = [
         ("bids/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_T1w.nii.gz", "sub-CMH0001", "ses-01", "run-1_T1w"),
-
         ("bids/sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-rest_run-1_bold.nii.gz", "sub-CMH0001", "ses-01", "task-rest_run-1_bold"),
         ("bids/sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-rest_run-2_bold.nii.gz", "sub-CMH0001", "ses-01", "task-rest_run-2_bold"),
-
-        ("derivatives/fmriprep/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_desc-preproc_T1w.nii.gz", "sub-CMH0001", "ses-01", "run-1_desc-preproc_T1w"),
-
+        (
+            "derivatives/fmriprep/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_desc-preproc_T1w.nii.gz",
+            "sub-CMH0001",
+            "ses-01",
+            "run-1_desc-preproc_T1w",
+        ),
         ("derivatives/mriqc/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_T1w.json", "sub-CMH0001", "ses-01", "run-1_T1w"),
-
         ("bids/sub-ED01/anat/sub-ED01_run-1_T1w.nii.gz", "sub-ED01", None, "run-1_T1w"),
-
         (None, "sub-CMH0001", "ses-01", None),
         ("", "sub-CMH0001", "ses-01", None),
-
         ("bids/sub-CMH0001/ses-01/anat/sub-CMH0001_ses-01_run-1_T1w.nii.gz", "sub-CMH9999", "ses-01", "sub-CMH0001_run-1_T1w"),
     ]
 
@@ -526,8 +523,7 @@ def test__coerce_numeric_columns(iqm_viewer_module):
         {
             "efc": ["0.1", "0.2", "not_a_number"],
             "snr_total": [10, 20, 30],
-            "bids_name": ["sub-01_ses-01_T1w", "sub-01_ses-02_T1w", "sub-02_ses-01_T1w"],   
-
+            "bids_name": ["sub-01_ses-01_T1w", "sub-01_ses-02_T1w", "sub-02_ses-01_T1w"],
         }
     )
 
@@ -564,33 +560,39 @@ def test__get_valid_iqm_groups(iqm_viewer_module):
     module, _ = iqm_viewer_module
 
     distribution_groups = {
-        "EFC": ["efc"],  
+        "EFC": ["efc"],
         "SUMMARY_BG": [
-            "summary_bg_mean", "summary_bg_median", "summary_bg_stdv",
-            "summary_bg_mad", "summary_bg_k", "summary_bg_p05", "summary_bg_p95",
-        ], 
-        "FBER": ["fber"], 
+            "summary_bg_mean",
+            "summary_bg_median",
+            "summary_bg_stdv",
+            "summary_bg_mad",
+            "summary_bg_k",
+            "summary_bg_p05",
+            "summary_bg_p95",
+        ],
+        "FBER": ["fber"],
     }
 
-    iqm_data = pd.DataFrame({
-        "bids_name": ["sub-01_ses-01_T1w"],
-        "efc": [0.45],
-        "summary_bg_mean": [13.1],
-        "summary_bg_median": [9.0],
-        "summary_bg_stdv": [17.8],
-        # summary_bg_mad, summary_bg_k, summary_bg_p05, summary_bg_p95: not in this table
-        # fber: not in this table at all
-    })
-    
+    iqm_data = pd.DataFrame(
+        {
+            "bids_name": ["sub-01_ses-01_T1w"],
+            "efc": [0.45],
+            "summary_bg_mean": [13.1],
+            "summary_bg_median": [9.0],
+            "summary_bg_stdv": [17.8],
+            # summary_bg_mad, summary_bg_k, summary_bg_p05, summary_bg_p95: not in this table
+            # fber: not in this table at all
+        }
+    )
+
     expected = {
-    "EFC": ["efc"],
-    "SUMMARY_BG": ["summary_bg_mean", "summary_bg_median", "summary_bg_stdv"],
-    # no "FBER" key at all
+        "EFC": ["efc"],
+        "SUMMARY_BG": ["summary_bg_mean", "summary_bg_median", "summary_bg_stdv"],
+        # no "FBER" key at all
     }
 
     result = module._get_valid_iqm_groups(distribution_groups, iqm_data)
     assert result == expected
-
 
 
 def test__render_iqm_metrics_table_filters_nested_values(iqm_viewer_module):
@@ -733,9 +735,7 @@ def test__extract_subject_data_narrows_by_run_identifier(iqm_viewer_module):
         }
     )
 
-    result = module._extract_subject_data(
-        data, "sub-01", ["efc"], session_id="ses-01", run_identifier="run-2_bold"
-    )
+    result = module._extract_subject_data(data, "sub-01", ["efc"], session_id="ses-01", run_identifier="run-2_bold")
 
     assert len(result) == 1
     assert result.iloc[0]["efc"] == 0.2
@@ -754,9 +754,7 @@ def test__extract_subject_data_run_identifier_falls_back_when_no_match(iqm_viewe
         }
     )
 
-    result = module._extract_subject_data(
-        data, "sub-01", ["efc"], session_id="ses-01", run_identifier="run-99_bold"
-    )
+    result = module._extract_subject_data(data, "sub-01", ["efc"], session_id="ses-01", run_identifier="run-99_bold")
 
     assert len(result) == 1
 
@@ -875,5 +873,3 @@ def test__render_iqm_distributions_non_mriqc_source_skips_reference_radio(iqm_vi
 
     streamlit_stub.radio.assert_not_called()
     streamlit_stub.plotly_chart.assert_called_once()
-
-

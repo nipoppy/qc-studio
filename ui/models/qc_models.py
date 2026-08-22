@@ -20,15 +20,9 @@ from constants import MAX_MONTAGE_GRID_SIZE, MIN_MONTAGE_GRID_SIZE
 # Future plans:
 # To be used if we want to provide configurable QC scoring options
 class MetricQC(BaseModel):
-    name: Annotated[
-        str, Field(description="Name of the metric, e.g., Euler, segmentation")
-    ]
-    value: Annotated[
-        Optional[float], Field(description="Numeric value if applicable")
-    ] = None
-    qc: Annotated[
-        Optional[str], Field(description="QC decision: PASS, FAIL, UNCERTAIN")
-    ] = None
+    name: Annotated[str, Field(description="Name of the metric, e.g., Euler, segmentation")]
+    value: Annotated[Optional[float], Field(description="Numeric value if applicable")] = None
+    qc: Annotated[Optional[str], Field(description="QC decision: PASS, FAIL, UNCERTAIN")] = None
     notes: Annotated[Optional[str], Field(description="Additional comment")] = None
 
 
@@ -38,12 +32,8 @@ class QCRecord(BaseModel):
     session_id: Annotated[str, Field(description="Session ID, e.g., ses-01")]
     task_id: Optional[str] = None
     run_id: Optional[str] = None
-    pipeline: Annotated[
-        str, Field(description="Pipeline name and version, e.g., freesurfer")
-    ]
-    timestamp: Annotated[
-        Optional[str], Field(description="Completion date")
-    ] = None
+    pipeline: Annotated[str, Field(description="Pipeline name and version, e.g., freesurfer")]
+    timestamp: Annotated[Optional[str], Field(description="Completion date")] = None
     rater_id: Annotated[str, Field(description="Name of the rater")]
     rater_experience: Annotated[Optional[str], Field(description="Rater experience level")] = None
     rater_fatigue: Annotated[Optional[str], Field(description="Rater fatigue level")] = None
@@ -54,6 +44,14 @@ class QCRecord(BaseModel):
 class QCTask(BaseModel):
     """Represents one QC entry in <pipeline>_qc.json (i.e. single QC task)."""
 
+    display_name: Annotated[
+        Optional[str],
+        Field(
+            default=None,
+            description="Optional human-readable label for the UI (export keys stay the task id)",
+        ),
+    ] = None
+
     # Single file paths for mri and overlay images
     base_mri_image_path: Annotated[Optional[Path], Field(description="Path to base MRI image")] = None
     overlay_mri_image_path: Annotated[Optional[Path], Field(description="Path to overlay MRI image (mask etc.)")] = None
@@ -62,7 +60,9 @@ class QCTask(BaseModel):
     svg_montage_path: Annotated[Optional[List[Path]], Field(description="List of paths to SVG montages for visual QC")] = None
 
     # Path for IQMs or other QC files (e.g. CSV, JSON)
-    iqm_path: Annotated[Optional[List[Path]], Field(description="List of paths to IQM sources (TSV/CSV distribution tables or JSON metrics), one per pipeline source")] = None
+    iqm_path: Annotated[
+        Optional[List[Path]], Field(description="List of paths to IQM sources (TSV/CSV distribution tables or JSON metrics), one per pipeline source")
+    ] = None
 
     # Optional grid constraints for multi-image SVG/raster montage (see utils.data_loaders.load_svg_data)
     montage_max_rows: Annotated[
@@ -94,7 +94,6 @@ class QCTask(BaseModel):
             return [str(Path(x)) for x in v]
         return [str(Path(v))]
 
-    
     @field_validator("iqm_path", mode="before")
     @classmethod
     def _coerce_iqm_path(cls, v):
@@ -123,6 +122,7 @@ class QCConfig(RootModel[Dict[str, QCTask]]):
         }
     }
     """
+
     # RootModel holds the mapping as `.root` (dict[str, QCTask])
     pass
 

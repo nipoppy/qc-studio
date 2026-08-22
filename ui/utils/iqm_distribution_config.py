@@ -18,20 +18,40 @@ DISTRIBUTION_T1W_GROUPS = {
     "RPVE": ["rpve_csf", "rpve_gm", "rpve_wm"],
     "TPM_OVERLAP": ["tpm_overlap_csf", "tpm_overlap_gm", "tpm_overlap_wm"],
     "SUMMARY_BG": [
-        "summary_bg_mean", "summary_bg_median", "summary_bg_stdv",
-        "summary_bg_mad", "summary_bg_k", "summary_bg_p05", "summary_bg_p95",
+        "summary_bg_mean",
+        "summary_bg_median",
+        "summary_bg_stdv",
+        "summary_bg_mad",
+        "summary_bg_k",
+        "summary_bg_p05",
+        "summary_bg_p95",
     ],
     "SUMMARY_CSF": [
-        "summary_csf_mean", "summary_csf_median", "summary_csf_stdv",
-        "summary_csf_mad", "summary_csf_k", "summary_csf_p05", "summary_csf_p95",
+        "summary_csf_mean",
+        "summary_csf_median",
+        "summary_csf_stdv",
+        "summary_csf_mad",
+        "summary_csf_k",
+        "summary_csf_p05",
+        "summary_csf_p95",
     ],
     "SUMMARY_GM": [
-        "summary_gm_mean", "summary_gm_median", "summary_gm_stdv",
-        "summary_gm_mad", "summary_gm_k", "summary_gm_p05", "summary_gm_p95",
+        "summary_gm_mean",
+        "summary_gm_median",
+        "summary_gm_stdv",
+        "summary_gm_mad",
+        "summary_gm_k",
+        "summary_gm_p05",
+        "summary_gm_p95",
     ],
     "SUMMARY_WM": [
-        "summary_wm_mean", "summary_wm_median", "summary_wm_stdv",
-        "summary_wm_mad", "summary_wm_k", "summary_wm_p05", "summary_wm_p95",
+        "summary_wm_mean",
+        "summary_wm_median",
+        "summary_wm_stdv",
+        "summary_wm_mad",
+        "summary_wm_k",
+        "summary_wm_p05",
+        "summary_wm_p95",
     ],
 }
 
@@ -53,12 +73,18 @@ DISTRIBUTION_BOLD_GROUPS = {
     "AOR": ["aor"],
     "AQI": ["aqi"],
     "SUMMARY_BG": [
-        "summary_bg_mean", "summary_bg_stdv", "summary_bg_k",
-        "summary_bg_p05", "summary_bg_p95",
+        "summary_bg_mean",
+        "summary_bg_stdv",
+        "summary_bg_k",
+        "summary_bg_p05",
+        "summary_bg_p95",
     ],
     "SUMMARY_FG": [
-        "summary_fg_mean", "summary_fg_stdv", "summary_fg_k",
-        "summary_fg_p05", "summary_fg_p95",
+        "summary_fg_mean",
+        "summary_fg_stdv",
+        "summary_fg_k",
+        "summary_fg_p05",
+        "summary_fg_p95",
     ],
 }
 
@@ -90,14 +116,24 @@ DISTRIBUTION_DWI_GROUPS = {
     "SIGMA": ["sigma_pca", "sigma_piesno"],
     "SPIKES": ["spikes_global", "spikes_slice_i", "spikes_slice_j", "spikes_slice_k"],
     "SUMMARY_LOCATION": [
-        "summary_bg_p05", "summary_fg_p05", "summary_wm_p05",
-        "summary_bg_mean", "summary_fg_mean", "summary_wm_mean",
-        "summary_bg_median", "summary_fg_median", "summary_wm_median",
+        "summary_bg_p05",
+        "summary_fg_p05",
+        "summary_wm_p05",
+        "summary_bg_mean",
+        "summary_fg_mean",
+        "summary_wm_mean",
+        "summary_bg_median",
+        "summary_fg_median",
+        "summary_wm_median",
     ],
     "SUMMARY_P95": ["summary_bg_p95", "summary_fg_p95", "summary_wm_p95"],
     "SUMMARY_DISPERSION": [
-        "summary_bg_stdv", "summary_fg_stdv", "summary_wm_stdv",
-        "summary_bg_mad", "summary_fg_mad", "summary_wm_mad",
+        "summary_bg_stdv",
+        "summary_fg_stdv",
+        "summary_wm_stdv",
+        "summary_bg_mad",
+        "summary_fg_mad",
+        "summary_wm_mad",
     ],
     "SUMMARY_K_BG": ["summary_bg_k"],
     "SUMMARY_K_FG_WM": ["summary_fg_k", "summary_wm_k"],
@@ -127,27 +163,35 @@ def build_dwi_groups(columns, keep_only_present=True):
     shell_groups = {
         "EFC_SHELLS": [f"efc_shell{i:02d}" for i in shells],
         "FBER_SHELLS": [f"fber_shell{i:02d}" for i in shells],
-        "SNR_CC": ["snr_cc_shell0"]
-        + [f"snr_cc_shell{s}_{t}" for s, t in product(shells, ("best", "worst"))],
+        "SNR_CC": ["snr_cc_shell0"] + [f"snr_cc_shell{s}_{t}" for s, t in product(shells, ("best", "worst"))],
     }
 
     # MRIQC's panel order
     ordered = [
-        "BDIFFS", "EFC_SHELLS", "FA", "FBER_SHELLS",
-        "FD_MEAN", "FD_NUM", "FD_PERC", "NDC",
-        "SIGMA_CC", "SIGMA", "SNR_CC", "SPIKES",
-        "SUMMARY_LOCATION", "SUMMARY_P95", "SUMMARY_DISPERSION",
-        "SUMMARY_K_BG", "SUMMARY_K_FG_WM",
+        "BDIFFS",
+        "EFC_SHELLS",
+        "FA",
+        "FBER_SHELLS",
+        "FD_MEAN",
+        "FD_NUM",
+        "FD_PERC",
+        "NDC",
+        "SIGMA_CC",
+        "SIGMA",
+        "SNR_CC",
+        "SPIKES",
+        "SUMMARY_LOCATION",
+        "SUMMARY_P95",
+        "SUMMARY_DISPERSION",
+        "SUMMARY_K_BG",
+        "SUMMARY_K_FG_WM",
     ]
     merged = {**DISTRIBUTION_DWI_GROUPS, **shell_groups}
     groups = {name: merged[name] for name in ordered}
 
     if keep_only_present:
         colset = set(columns)
-        groups = {
-            name: [c for c in cols if c in colset]
-            for name, cols in groups.items()
-        }
+        groups = {name: [c for c in cols if c in colset] for name, cols in groups.items()}
         groups = {name: cols for name, cols in groups.items() if cols}
 
     return groups
@@ -159,8 +203,10 @@ def build_dwi_groups(columns, keep_only_present=True):
 IQM_DISTRIBUTION_GROUPS["dwi"] = build_dwi_groups
 
 from pathlib import Path
+
+
 def infer_pipeline_from_iqm_path(path: Path) -> str:
-    """Infer the pipeline name from an IQM path. 
+    """Infer the pipeline name from an IQM path.
     derivatives/<pipeline>/... -> <pipeline>; falls back to the file stem if no pipeline is found.
     Parameters
     ----------

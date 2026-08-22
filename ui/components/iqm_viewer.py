@@ -1,10 +1,10 @@
 """IQM distribution viewer component for QC-Studio UI.
- 
+
 Displays grouped Image Quality Metric (IQM) distributions as interactive
 Plotly box plots with the current subject highlighted. Supports
 dataset-only and dataset-vs-reference comparison modes, with modality
 (T1w / BOLD) and metric group selection.
- 
+
 Data sources
 ------------
 - **Dataset group TSV** - path specified in the QC config JSON under the
@@ -41,14 +41,17 @@ from utils.iqm_distribution_config import (
     is_mriqc_pipeline,
 )
 
-DATASET_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(31, 119, 180, 0.55)"),
-                line=dict(color="rgba(31, 119, 180, 0.8)", width=1),
-                fillcolor="rgba(31, 119, 180, 0.25)")
-REFERENCE_STYLE = dict(marker=dict(size=4, symbol='circle', color="rgba(214, 39, 40, 0.55)"),
-                line=dict(color="rgba(214, 39, 40, 1.0)", width=1),
-                fillcolor="rgba(214, 39, 40, 0.25)")
-SUBJECT_MARKER_STYLE = dict(size=8, symbol='diamond', color="rgba(255, 127, 14, 0.9)",
-                        line=dict(color="rgba(255, 127, 14, 1.0)", width=2))
+DATASET_STYLE = dict(
+    marker=dict(size=4, symbol="circle", color="rgba(31, 119, 180, 0.55)"),
+    line=dict(color="rgba(31, 119, 180, 0.8)", width=1),
+    fillcolor="rgba(31, 119, 180, 0.25)",
+)
+REFERENCE_STYLE = dict(
+    marker=dict(size=4, symbol="circle", color="rgba(214, 39, 40, 0.55)"),
+    line=dict(color="rgba(214, 39, 40, 1.0)", width=1),
+    fillcolor="rgba(214, 39, 40, 0.25)",
+)
+SUBJECT_MARKER_STYLE = dict(size=8, symbol="diamond", color="rgba(255, 127, 14, 0.9)", line=dict(color="rgba(255, 127, 14, 1.0)", width=2))
 MAX_REFERENCE_ROWS = 50000
 
 CONTAINER_HEIGHT = 520
@@ -57,6 +60,7 @@ NUM_OVERVIEW_COLUMNS = 2
 NON_METRIC_COLUMNS = {"bids_name", "subject", "subject_id", "participant_id"}
 
 DISPLAY_MODE_OPTIONS = ["Dataset", "Dataset + Reference"]
+
 
 @dataclass(frozen=True)
 class DistributionSource:
@@ -101,7 +105,7 @@ def _path_after_pipeline(path) -> str:
     parts = Path(path).parts
     if "derivatives" in parts:
         idx = parts.index("derivatives")
-        remainder = parts[idx + 2:]
+        remainder = parts[idx + 2 :]
         if remainder:
             return str(Path(*remainder).with_suffix(""))
     return Path(path).stem
@@ -132,10 +136,7 @@ def _disambiguate_tab_labels(sources) -> list:
             counts[label] = counts.get(label, 0) + 1
         if not any(count > 1 for count in counts.values()):
             break
-        labels = [
-            f"{s.pipeline_name} ({discriminator(s)})" if counts[label] > 1 and discriminator(s) else label
-            for s, label in zip(sources, labels)
-        ]
+        labels = [f"{s.pipeline_name} ({discriminator(s)})" if counts[label] > 1 and discriminator(s) else label for s, label in zip(sources, labels)]
 
     counts = {}
     for label in labels:
@@ -155,7 +156,7 @@ def _disambiguate_tab_labels(sources) -> list:
 
 
 def _generic_groups_from_columns(iqm_data) -> dict:
-    #need to expand this based on the pipeline and modality, but for now just return all numeric columns as a single group
+    # need to expand this based on the pipeline and modality, but for now just return all numeric columns as a single group
     """Return a generic IQM group for any modality with all numeric columns."""
     metric_columns = [col for col in iqm_data.columns if (pd.api.types.is_numeric_dtype(iqm_data[col]) and col.lower() not in NON_METRIC_COLUMNS)]
 
@@ -164,10 +165,7 @@ def _generic_groups_from_columns(iqm_data) -> dict:
 
 def _row_to_metrics(row) -> dict:
     """Flatten a single-row Series into a metrics dict, dropping non-metric/index columns."""
-    return {
-        col: value for col, value in row.items()
-        if str(col).lower() not in NON_METRIC_COLUMNS and not str(col).startswith("Unnamed:")
-    }
+    return {col: value for col, value in row.items() if str(col).lower() not in NON_METRIC_COLUMNS and not str(col).startswith("Unnamed:")}
 
 
 def _load_distribution_source(path, resolved, pipeline_name):
@@ -175,14 +173,16 @@ def _load_distribution_source(path, resolved, pipeline_name):
     try:
         iqm_data = _load_iqm_distribution_table(resolved)
     except Exception as e:
-        st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=pipeline_name, error=e))
+        st.error(ERROR_MESSAGES["iqm_data_load_error"].format(modality=pipeline_name, error=e))
         return None
 
     if len(iqm_data) == 0:
-        st.warning(ERROR_MESSAGES.get(
-            "iqm_no_valid_groups",
-            f"No rows found in {pipeline_name} ({path}).",
-        ))
+        st.warning(
+            ERROR_MESSAGES.get(
+                "iqm_no_valid_groups",
+                f"No rows found in {pipeline_name} ({path}).",
+            )
+        )
         return None
 
     if len(iqm_data) == 1:
@@ -206,13 +206,15 @@ def _load_distribution_source(path, resolved, pipeline_name):
         valid_groups = _get_valid_iqm_groups(distribution_groups, iqm_data)
 
     else:
-        valid_groups = _generic_groups_from_columns(iqm_data) #already guaranteed valid.
+        valid_groups = _generic_groups_from_columns(iqm_data)  # already guaranteed valid.
 
     if not valid_groups:
-        st.warning(ERROR_MESSAGES.get(
-            "iqm_no_valid_groups",
-            f"No usable metric columns found in {pipeline_name} ({path}).",
-        ))
+        st.warning(
+            ERROR_MESSAGES.get(
+                "iqm_no_valid_groups",
+                f"No usable metric columns found in {pipeline_name} ({path}).",
+            )
+        )
         return None
 
     return DistributionSource(
@@ -223,12 +225,13 @@ def _load_distribution_source(path, resolved, pipeline_name):
         valid_groups=valid_groups,
     )
 
+
 def _load_metrics_source(path, resolved, pipeline_name):
     """JSON branch: a single per-subject metrics dict, rendered as one tab of a plain table."""
     try:
         metrics = _load_iqm_metrics_subject_level(resolved)
     except Exception as e:
-        st.error(ERROR_MESSAGES['iqm_data_load_error'].format(modality=pipeline_name, error=e))
+        st.error(ERROR_MESSAGES["iqm_data_load_error"].format(modality=pipeline_name, error=e))
         return None
 
     return MetricsSource(
@@ -258,8 +261,8 @@ def _load_iqm_sources(iqm_paths, qc_config_path=None, dataset_dir=None) -> list:
     return sources
 
 
-#for now I have decided to return a table if the user put participant level json metrics, and a distribution plot if the user put group level tsv metrics.
-#this behaviour might change in the future, but for now it is a simple way to handle both types of metrics.
+# for now I have decided to return a table if the user put participant level json metrics, and a distribution plot if the user put group level tsv metrics.
+# this behaviour might change in the future, but for now it is a simple way to handle both types of metrics.
 def _render_iqm_metrics_table(metrics: dict, participant_id: str) -> None:
     """Render a single JSON/single-row metrics source as a plain key/value table."""
     scalar_metrics = {k: v for k, v in metrics.items() if not isinstance(v, (dict, list))}
@@ -295,15 +298,14 @@ def _extract_run_identifier(base_mri_image_path, participant_id: str, session_id
     return name or None
 
 
-def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str = None,
-                          run_identifier: str = None) -> pd.DataFrame:
+def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list, session_id: str = None, run_identifier: str = None) -> pd.DataFrame:
     """Extract subject-specific data for the given participant ID and columns."""
     if "bids_name" not in data.columns:
         raise ValueError("Expected 'bids_name' column not found in data.")
 
     participant_mask = data["bids_name"].str.startswith(participant_id)
     mask = participant_mask
-    if  session_id:
+    if session_id:
         if not session_id.startswith("ses-"):
             raise ValueError("session_id should start with 'ses-'.")
 
@@ -314,7 +316,7 @@ def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list
             mask = session_mask
 
     if run_identifier:
-        # Narrow further to the specific run/task being reviewed, but only if that actually matches something 
+        # Narrow further to the specific run/task being reviewed, but only if that actually matches something
         run_mask = mask & data["bids_name"].str.contains(run_identifier, regex=False)
         if run_mask.any():
             mask = run_mask
@@ -329,20 +331,20 @@ def _coerce_numeric_columns(data: pd.DataFrame, columns: list) -> pd.DataFrame:
     converted = data.copy()
     for col in columns:
         if col in converted.columns:
-            converted[col] = pd.to_numeric(converted[col], errors='coerce')
+            converted[col] = pd.to_numeric(converted[col], errors="coerce")
     return converted
 
 
 def _add_violin_traces(
-    fig:go.Figure,
-    data:pd.DataFrame,
+    fig: go.Figure,
+    data: pd.DataFrame,
     style: dict,
     name: str = "",
     side: str = "both",
     points: Union[bool, str] = False,
-    )-> None:
+) -> None:
     """Add one violin trace per metric column to the figure.
-    
+
     side="both" draws a full violin (dataset-only mode). side="negative"/
     "positive" draws just the left/right half - call twice with the same
     metric columns (once per side) and violinmode="overlay" to get a split
@@ -355,42 +357,41 @@ def _add_violin_traces(
         values = data[col].dropna()
         if values.empty:
             continue
-        fig.add_trace(go.Violin(
-            x = [col] * len(values),
-            y = values,
-            side = side,
-            name = name,
-            scalegroup = col,
-            legendgroup = name,
-            spanmode = 'hard',
-            showlegend=first_shown,
-            points=points,
-            jitter=0.45,
-            marker=style['marker'],
-            line=style['line'],
-            fillcolor=style['fillcolor'],
-            hovertemplate=(
-                f"Source: {name}<br>Metric: {col}<br>Value: %{{y}}<extra></extra>"
+        fig.add_trace(
+            go.Violin(
+                x=[col] * len(values),
+                y=values,
+                side=side,
+                name=name,
+                scalegroup=col,
+                legendgroup=name,
+                spanmode="hard",
+                showlegend=first_shown,
+                points=points,
+                jitter=0.45,
+                marker=style["marker"],
+                line=style["line"],
+                fillcolor=style["fillcolor"],
+                hovertemplate=(f"Source: {name}<br>Metric: {col}<br>Value: %{{y}}<extra></extra>"),
             )
-             
-        ))
+        )
         first_shown = False
 
 
 def _add_subject_overlay(
-        fig: go.Figure,
-        subject_rows: pd.Series,
-        participant_id: str,
-        style: dict = SUBJECT_MARKER_STYLE,
-        offsetgroup: str = "",
-        label_suffix: str = "", 
-        show_legend: bool =True)-> None:
-    
+    fig: go.Figure,
+    subject_rows: pd.Series,
+    participant_id: str,
+    style: dict = SUBJECT_MARKER_STYLE,
+    offsetgroup: str = "",
+    label_suffix: str = "",
+    show_legend: bool = True,
+) -> None:
     """Overlay subject data on the plot.
     When a subject has multiple runs, each run is shown as a separate
     star at the same x position so the rater can see run-to-run
     variability.
- 
+
     In comparison mode, call this twice with different ``offsetgroup``
     values (``"dataset"`` and ``"reference"``) so the stars align on
     top of the correct violin half.
@@ -402,20 +403,20 @@ def _add_subject_overlay(
         if participant_values.empty:
             continue
         for col, value in participant_values.items():
-            fig.add_trace(go.Scatter(
-                x=[col],
-                y=[value],
-                mode='markers',
-                name=f"{participant_id}{label_suffix}",
-                marker=style,
-                showlegend=show_legend,
-                offsetgroup=offsetgroup.lower(),
-                hovertemplate=(
-                    f"Run: {run_label}<br>Value: %{{y}}<extra></extra>"
+            fig.add_trace(
+                go.Scatter(
+                    x=[col],
+                    y=[value],
+                    mode="markers",
+                    name=f"{participant_id}{label_suffix}",
+                    marker=style,
+                    showlegend=show_legend,
+                    offsetgroup=offsetgroup.lower(),
+                    hovertemplate=(f"Run: {run_label}<br>Value: %{{y}}<extra></extra>"),
                 )
-            ))
+            )
             show_legend = False
- 
+
 
 def _get_valid_iqm_groups(distribution_groups: dict, iqm_data: pd.DataFrame) -> dict:
     """Return IQM groups with at least one column present in the data."""
@@ -441,12 +442,12 @@ def _build_iqm_distribution_figure(
 ) -> Optional[go.Figure]:
     """Construct the Plotly figure for the IQM distribution panel."""
 
-    #____________Filter data ___________
+    # ____________Filter data ___________
     if not metric_columns:
         st.error("None of the required columns for this group are present in the data.")
         return None
 
-    #___________load data for plotting___________
+    # ___________load data for plotting___________
     iqm_data_for_group = _coerce_numeric_columns(iqm_data, metric_columns)
     participant_columns = _extract_subject_data(
         iqm_data_for_group,
@@ -463,12 +464,12 @@ def _build_iqm_distribution_figure(
         if reference_data is not None:
             reference_plot_data = _coerce_numeric_columns(reference_data, metric_columns)
             reference_plot_data = reference_plot_data[metric_columns]
-        if reference_plot_data is None or reference_plot_data.dropna(how='all').empty:
+        if reference_plot_data is None or reference_plot_data.dropna(how="all").empty:
             group_display_mode = DISPLAY_MODE_OPTIONS[0]
 
-    #____________Render distribution plot___________
+    # ____________Render distribution plot___________
     fig = go.Figure()
-    
+
     if group_display_mode == DISPLAY_MODE_OPTIONS[0]:
         _add_violin_traces(
             fig,
@@ -499,22 +500,21 @@ def _build_iqm_distribution_figure(
             side="positive",
             points=False,
         )
-    
+
     fig.update_layout(
         title=metric_group_name,
         height=220,
         showlegend=False,
         xaxis_title=None,
         yaxis_title=None,
-        violinmode='overlay',
+        violinmode="overlay",
         margin=dict(l=20, r=20, t=45, b=25),
     )
-
 
     if not fig.data:
         st.warning("No plottable numeric data found for the selected group.")
         return None
-    
+
     return fig
 
 
@@ -554,16 +554,16 @@ def _render_montage_of_iqm_groups(
                 )
 
 
-def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, session_id,
-                              qc_config_path: str = None, dataset_dir: str = None,
-                              run_identifier: str = None):
+def _render_iqm_distributions(
+    iqm_paths, scanner_metadata, participant_id, session_id, qc_config_path: str = None, dataset_dir: str = None, run_identifier: str = None
+):
 
     if not iqm_paths:
-        st.warning(ERROR_MESSAGES['iqm_no_sources_configured'])
+        st.warning(ERROR_MESSAGES["iqm_no_sources_configured"])
         return
-    
-    st.subheader(MESSAGES['iqm_distribution_header'])
-  
+
+    st.subheader(MESSAGES["iqm_distribution_header"])
+
     manufacturer = scanner_metadata.get("Manufacturer", "Unknown") if isinstance(scanner_metadata, dict) else scanner_metadata
     field_strength = scanner_metadata.get("MagneticFieldStrength") if isinstance(scanner_metadata, dict) else None
     protocol = scanner_metadata.get("ProtocolName", "Unknown") if isinstance(scanner_metadata, dict) else "Unknown"
@@ -574,7 +574,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
     if not sources:
         return  # per-source errors/warnings already surfaced above
 
-    #____________Display mode selection___________
+    # ____________Display mode selection___________
     tab_options = _disambiguate_tab_labels(sources)
 
     remembered_tab = SessionManager.get_iqm_view_selection()
@@ -583,7 +583,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
         SessionManager.set_iqm_view_selection(remembered_tab)
 
     def _remember_iqm_view_selection():
-            SessionManager.set_iqm_view_selection(st.session_state["iqm_view_mode"])
+        SessionManager.set_iqm_view_selection(st.session_state["iqm_view_mode"])
 
     selected_label = st.segmented_control(
         "IQM source",
@@ -596,7 +596,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
     if selected_label is None:
         selected_label = remembered_tab
 
-    #find the selected source
+    # find the selected source
     source = next((s for s, label in zip(sources, tab_options) if label == selected_label), None)
 
     source_modality = getattr(source, "modality", None)
@@ -615,6 +615,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
     mode = DISPLAY_MODE_OPTIONS[0]
     reference_data = None
     if can_compare_reference:
+
         def _remember_iqm_display_mode():
             SessionManager.set_iqm_display_mode_selection(st.session_state["iqm_display_mode"])
 
@@ -624,7 +625,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
             index=DISPLAY_MODE_OPTIONS.index(SessionManager.get_iqm_display_mode_selection()),
             key="iqm_display_mode",
             on_change=_remember_iqm_display_mode,
-            horizontal=True
+            horizontal=True,
         )
         if mode == DISPLAY_MODE_OPTIONS[1]:
             try:
@@ -635,7 +636,7 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
                     max_rows=MAX_REFERENCE_ROWS,
                 )
             except Exception as e:
-                st.error(ERROR_MESSAGES['reference_data_load_error'].format(modality=source.modality, error=e))
+                st.error(ERROR_MESSAGES["reference_data_load_error"].format(modality=source.modality, error=e))
                 reference_data = None
             else:
                 if reference_data is None or reference_data.empty:
@@ -654,12 +655,13 @@ def _render_iqm_distributions(iqm_paths, scanner_metadata, participant_id, sessi
             display_mode=mode,
             run_identifier=run_identifier,
         )
-            
 
-def _display_iqm_panel(qc_config: dict, qc_config_path: str, participant_id: str, session_id: str,
-                       dataset_dir: str = None, qc_task: str = None) -> None:
+
+def _display_iqm_panel(
+    qc_config: dict, qc_config_path: str, participant_id: str, session_id: str, dataset_dir: str = None, qc_task: str = None
+) -> None:
     """Display the IQM distribution panel.
-    
+
     Args:
         qc_config: QC configuration object
         qc_config_path: Path to the QC configuration file

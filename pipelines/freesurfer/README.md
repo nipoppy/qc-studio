@@ -2,7 +2,7 @@
 
 QC-Studio loads **only** `qc.json` from this folder. Run `streamlit run ui/main.py …` from the repository root, or use **`ui/freesurfer_test.sh`** (from `ui/`) for the same defaults.
 
-Example (after `cd` to the qc-studio root):
+Example (BIDS dataset root):
 
 ```bash
 streamlit run ui/main.py --server.port=8501 -- \
@@ -23,6 +23,8 @@ This bundle defines a **single** task (`anat_wf_qc`). **`--qc_task all`** is equ
 
 Paths inside `qc.json` are relative to **`--dataset_dir`**. Use **`[[NIPOPPY_BIDS_PARTICIPANT_ID]]`** and **`[[NIPOPPY_BIDS_SESSION_ID]]`** where filenames include those entities.
 
-This pipeline’s **`qc.json`** points only at **fMRIPrep derivatives** (anatomical NIfTIs under `derivatives/fmriprep/<subject>/<session>/anat/` and figures under `derivatives/fmriprep/<subject>/figures/`). There is no separate FreeSurfer or fsQC sample tree to ship in this layout.
+This pipeline’s **`qc.json`** reads preproc T1w, brain mask, and recon-all figures from **`derivatives/fmriprep/`** under the BIDS dataset root (see **`ui/freesurfer_test.sh`**).
 
-The bundled sample subject **`sub-CMH0001`** uses the same fMRIPrep-style paths as **`../fmriprep/qc.json`**; add the matching `anat/*.nii.gz` files if you want the Niivue anatomical panels to load (figures alone are enough for SVG-only viewing).
+The bundled sample subject **`sub-CMH0001`** ships session-level anat NIfTIs under **`derivatives/fmriprep/sub-CMH0001/ses-*/anat/`** plus recon-all figures under **`derivatives/fmriprep/sub-CMH0001/figures/`**.
+
+See [FreeSurfer QC guidelines](https://github.com/TIGRLab/SCanD_project/blob/Fir/docs/freesurfer_QC_guidelines.md) (SCanD_project) for pass/fail criteria.
