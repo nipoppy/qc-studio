@@ -803,6 +803,58 @@ def test__build_iqm_distribution_figure_falls_back_when_reference_empty(iqm_view
     assert all(trace.name != "Reference" for trace in fig.data)
 
 
+def test__clip_reference_outliers_caps_without_dropping_rows(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    # A handful of degenerate rows (fber) shouldn't stretch the axis, but
+    # every row must still survive - only the extreme values get pulled in.
+    data = pd.DataFrame({"fber": [1.0, 1.1, 1.2, 1.15, 561536.06]})
+
+    result = module._clip_reference_outliers(data, ["fber"])
+
+    assert len(result) == 5
+    assert result["fber"].max() < 561536.06
+    assert result["fber"].iloc[0] == pytest.approx(1.0, abs=0.5)
+
+
+def test__clip_reference_outliers_ignores_missing_columns(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    data = pd.DataFrame({"efc": [0.1, 0.2, 0.3]})
+
+    result = module._clip_reference_outliers(data, ["efc", "not_a_column"])
+
+    assert list(result.columns) == ["efc"]
+
+
+def test__build_iqm_distribution_figure_clips_reference_outliers(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    data = pd.DataFrame(
+        {
+            "bids_name": ["sub-01_ses-01_T1w", "sub-02_ses-01_T1w"],
+            "efc": [0.1, 0.2],
+        }
+    )
+    # One corrupted reference row stretched far beyond where the real
+    # population lives - the violin trace's rendered range shouldn't include it.
+    reference_data = pd.DataFrame({"efc": [0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 999.0]})
+
+    fig = module._build_iqm_distribution_figure(
+        metric_group_name="EFC",
+        modality="t1w",
+        iqm_data=data,
+        participant_id="sub-01",
+        session_id=None,
+        metric_columns=["efc"],
+        display_mode=module.DISPLAY_MODE_OPTIONS[1],
+        reference_data=reference_data,
+    )
+
+    reference_trace = next(trace for trace in fig.data if trace.name == "Reference")
+    assert max(reference_trace.y) < 999.0
+
+
 def test__build_iqm_distribution_figure_warns_when_no_plottable_data(iqm_viewer_module):
     module, streamlit_stub = iqm_viewer_module
 

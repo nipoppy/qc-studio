@@ -335,6 +335,30 @@ def _coerce_numeric_columns(data: pd.DataFrame, columns: list) -> pd.DataFrame:
     return converted
 
 
+REFERENCE_OUTLIER_PERCENTILES = (0.01, 0.99)
+
+
+def _clip_reference_outliers(
+    data: pd.DataFrame, columns, low: float = REFERENCE_OUTLIER_PERCENTILES[0], high: float = REFERENCE_OUTLIER_PERCENTILES[1]
+) -> pd.DataFrame:
+    """Cap each column's values to its [low, high] percentile range.
+
+    A handful of corrupted/degenerate rows in a large reference population
+    can otherwise stretch the shared y-axis so far that the actual
+    comparison becomes unreadable (e.g. fber ranging 0-561536 with a median
+    of 1.15). Caps values rather than dropping rows, so sample count and
+    the bulk shape stay intact - only the rendered extremity is pulled in.
+    """
+    clipped = data.copy()
+    for col in columns:
+        if col not in clipped.columns:
+            continue
+        lower = clipped[col].quantile(low)
+        upper = clipped[col].quantile(high)
+        clipped[col] = clipped[col].clip(lower=lower, upper=upper)
+    return clipped
+
+
 def _add_violin_traces(
     fig: go.Figure,
     data: pd.DataFrame,
@@ -464,6 +488,7 @@ def _build_iqm_distribution_figure(
         if reference_data is not None:
             reference_plot_data = _coerce_numeric_columns(reference_data, metric_columns)
             reference_plot_data = reference_plot_data[metric_columns]
+            reference_plot_data = _clip_reference_outliers(reference_plot_data, metric_columns)
         if reference_plot_data is None or reference_plot_data.dropna(how="all").empty:
             group_display_mode = DISPLAY_MODE_OPTIONS[0]
 
