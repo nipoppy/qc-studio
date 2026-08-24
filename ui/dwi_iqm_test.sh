@@ -3,12 +3,12 @@
 #
 # Exercises the DWI IQM distribution viewer end to end: group_dwi.tsv
 # (shell-dependent groups) plus a per-subject dwi.json (metrics-table path)
-# for sub-CMH0001/2/3, using ../sandbox/dwi_iqm_test_qc.json (uncommitted,
-# not a real pipeline config - group_dwi.tsv/dwi.json aren't wired into
-# pipelines/qsiprep/qc.json yet).
+# for sub-CMH0001/2/3, using ../pipelines/mriqc/dwi_iqm_test_qc.json
+# (uncommitted, not a real pipeline config - group_dwi.tsv/dwi.json aren't
+# wired into pipelines/qsiprep/qc.json yet).
 #
 # Optional arguments:
-#   $1 — path to qc.json (default: ../sandbox/dwi_iqm_test_qc.json)
+#   $1 — path to qc.json (default: ../pipelines/mriqc/dwi_iqm_test_qc.json)
 #   $2 — qc_task name (default: dwi_iqm_qc). Same as env QC_TASK.
 # Examples:
 #   ./dwi_iqm_test.sh
@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 qc_launch_script="main.py"
 qc_pipeline="mriqc"
-qc_json="${1:-${QC_JSON:-${SCRIPT_DIR}/../sandbox/dwi_iqm_test_qc.json}}"
+qc_json="${1:-${QC_JSON:-${SCRIPT_DIR}/../pipelines/mriqc/dwi_iqm_test_qc.json}}"
 qc_task="${2:-${QC_TASK:-dwi_iqm_qc}}"
 dataset_dir="${SCRIPT_DIR}/../sample_data"
 participant_list="${SCRIPT_DIR}/../sandbox/dwi_iqm_test_participants.tsv"
