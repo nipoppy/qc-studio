@@ -29,6 +29,7 @@ class _StreamlitStub:
         self.table = MagicMock()
         self.columns = MagicMock()
         self.container = MagicMock()
+        self.markdown = MagicMock()
         self.session_state = {}
 
     def cache_data(self, *args, **kwargs):
@@ -900,6 +901,84 @@ def test__render_montage_of_iqm_groups_renders_one_chart_per_group(iqm_viewer_mo
     assert streamlit_stub.plotly_chart.call_count == 2
     keys = [call.kwargs["key"] for call in streamlit_stub.plotly_chart.call_args_list]
     assert keys == ["iqm_overview_t1w_EFC", "iqm_overview_t1w_FBER"]
+
+
+def test__build_iqm_distribution_figure_never_shows_its_own_legend(iqm_viewer_module):
+    """Individual per-group charts never carry a legend - it's rendered
+    once for the whole tab instead (see _render_iqm_legend)."""
+    module, _ = iqm_viewer_module
+
+    data = pd.DataFrame(
+        {
+            "bids_name": ["sub-01_ses-01_T1w", "sub-02_ses-01_T1w"],
+            "efc": [0.1, 0.2],
+        }
+    )
+
+    fig = module._build_iqm_distribution_figure(
+        metric_group_name="EFC",
+        modality="t1w",
+        iqm_data=data,
+        participant_id="sub-01",
+        session_id=None,
+        metric_columns=["efc"],
+        display_mode="Dataset",
+    )
+
+    assert fig.layout.showlegend is not True
+
+
+def test__render_iqm_legend_dataset_only(iqm_viewer_module):
+    module, streamlit_stub = iqm_viewer_module
+
+    module._render_iqm_legend(show_reference=False)
+
+    streamlit_stub.markdown.assert_called_once()
+    html = streamlit_stub.markdown.call_args.args[0]
+    assert "Dataset" in html
+    assert "Current subject" in html
+    assert "Reference" not in html
+
+
+def test__render_iqm_legend_includes_reference_when_shown(iqm_viewer_module):
+    module, streamlit_stub = iqm_viewer_module
+
+    module._render_iqm_legend(show_reference=True)
+
+    html = streamlit_stub.markdown.call_args.args[0]
+    assert "Dataset" in html
+    assert "Reference" in html
+    assert "Current subject" in html
+
+
+def test__render_montage_of_iqm_groups_renders_legend_once_not_per_chart(iqm_viewer_module):
+    module, streamlit_stub = iqm_viewer_module
+    streamlit_stub.columns.return_value = [MagicMock(), MagicMock()]
+
+    iqm_data = pd.DataFrame(
+        {
+            "bids_name": ["sub-01_ses-01_T1w", "sub-02_ses-01_T1w"],
+            "efc": [0.1, 0.2],
+            "fber": [100, 200],
+            "cjv": [0.3, 0.4],
+        }
+    )
+    valid_groups = {"EFC": ["efc"], "FBER": ["fber"], "CJV": ["cjv"]}
+
+    module._render_montage_of_iqm_groups(
+        valid_groups=valid_groups,
+        iqm_data=iqm_data,
+        reference_data=None,
+        participant_id="sub-01",
+        session_id=None,
+        modality="t1w",
+        display_mode="Dataset",
+    )
+
+    streamlit_stub.markdown.assert_called_once()
+    figs = [call.args[0] for call in streamlit_stub.plotly_chart.call_args_list]
+    assert len(figs) == 3
+    assert all(fig.layout.showlegend is not True for fig in figs)
 
 
 def test__render_iqm_distributions_non_mriqc_source_skips_reference_radio(iqm_viewer_module, temp_dir):

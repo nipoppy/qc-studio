@@ -543,6 +543,27 @@ def _build_iqm_distribution_figure(
     return fig
 
 
+def _render_iqm_legend(show_reference: bool) -> None:
+    """Render one legend for the whole tab, above the grid of charts."""
+    entries = [(DATASET_STYLE["line"]["color"], "Dataset", "circle")]
+    if show_reference:
+        entries.append((REFERENCE_STYLE["line"]["color"], "Reference", "circle"))
+    entries.append((SUBJECT_MARKER_STYLE["color"], "Current subject", "diamond"))
+
+    def _swatch_style(shape: str) -> str:
+        if shape == "diamond":
+            return "width:9px;height:9px;transform:rotate(45deg);"
+        return "width:11px;height:11px;border-radius:50%;"
+
+    swatches = "".join(
+        f'<span style="display:inline-flex;align-items:center;margin-right:18px;">'
+        f'<span style="{_swatch_style(shape)}background:{color};'
+        f'display:inline-block;margin-right:6px;"></span>{label}</span>'
+        for color, label, shape in entries
+    )
+    st.markdown(f'<div style="margin:0 0 8px 4px;">{swatches}</div>', unsafe_allow_html=True)
+
+
 def _render_montage_of_iqm_groups(
     valid_groups,
     iqm_data,
@@ -554,6 +575,8 @@ def _render_montage_of_iqm_groups(
     run_identifier=None,
 ):
     """Render compact plots for all available IQM groups."""
+    _render_iqm_legend(show_reference=display_mode == DISPLAY_MODE_OPTIONS[1])
+
     overview_columns = st.columns(NUM_OVERVIEW_COLUMNS)
 
     for index, (group_name, metric_columns) in enumerate(valid_groups.items()):
