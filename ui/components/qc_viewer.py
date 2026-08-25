@@ -218,6 +218,16 @@ def display_qc_viewers(
             )
         elif task_has_niivue:
             _display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id, tname)
+        elif show_svg and show_iqm:
+            _display_svg_panel(dataset_dir, qc_config)
+            st.divider()
+            display_iqm_distribution_panel(
+                qc_config,
+                qc_config_path,
+                participant_id,
+                session_id,
+                dataset_dir,
+            )
         elif show_svg:
             _display_svg_panel(dataset_dir, qc_config)
         elif show_iqm:
