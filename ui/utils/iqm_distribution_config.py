@@ -228,5 +228,6 @@ def infer_pipeline_from_iqm_path(path: Path) -> str:
 
 
 def is_mriqc_pipeline(pipeline_name: str) -> bool:
-    """Check if a pipeline name is one of the known MRIQC pipelines."""
-    return pipeline_name.lower() == "mriqc"
+    """Check if a pipeline name is MRIQC, bare or version-suffixed."""
+    name = pipeline_name.lower()
+    return name == "mriqc" or name.startswith("mriqc-")

@@ -1,8 +1,10 @@
-"""Tests for utils/iqm_distribution_config.py - DWI (diffusion) group building."""
+"""Tests for utils/iqm_distribution_config.py."""
 
 from utils.iqm_distribution_config import (
     DISTRIBUTION_DWI_GROUPS,
     build_dwi_groups,
+    infer_pipeline_from_iqm_path,
+    is_mriqc_pipeline,
 )
 
 DWI_PANEL_ORDER = [
@@ -209,3 +211,30 @@ def test_build_dwi_groups_matches_real_mriqc_dwi_columns():
     ]
     assert "snr_cc_shell5_best" not in groups["SNR_CC"]
     assert list(groups.keys()) == DWI_PANEL_ORDER
+
+
+def test_is_mriqc_pipeline_matches_bare_name():
+    assert is_mriqc_pipeline("mriqc") is True
+    assert is_mriqc_pipeline("MRIQC") is True
+
+
+def test_is_mriqc_pipeline_matches_version_suffixed_name():
+    """Real MRIQC output uses a versioned derivatives folder name, e.g.
+    derivatives/mriqc-0.16.1/ - an exact-string match alone would miss
+    this and silently fall back to the generic per-column grouping
+    instead of the curated metric groups."""
+    assert is_mriqc_pipeline("mriqc-0.16.1") is True
+    assert is_mriqc_pipeline("mriqc-23.1.0") is True
+    assert is_mriqc_pipeline("MRIQC-0.16.1") is True
+
+
+def test_is_mriqc_pipeline_rejects_unrelated_names():
+    assert is_mriqc_pipeline("fmriprep") is False
+    assert is_mriqc_pipeline("qsiprep") is False
+    assert is_mriqc_pipeline("mriqcx") is False
+    assert is_mriqc_pipeline("custom-mriqc") is False
+
+
+def test_infer_pipeline_from_iqm_path_with_version_suffix():
+    assert infer_pipeline_from_iqm_path("derivatives/mriqc-0.16.1/group_T1w.tsv") == "mriqc-0.16.1"
+    assert is_mriqc_pipeline(infer_pipeline_from_iqm_path("derivatives/mriqc-0.16.1/group_T1w.tsv")) is True
