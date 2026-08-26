@@ -6,7 +6,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
-from constants import SVG_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
+from constants import (
+    SVG_HEIGHT,
+    MESSAGES,
+    ERROR_MESSAGES,
+    QC_RATINGS,
+    NIIVUE_SECONDARY_RATIO,
+    VIEW_MODES,
+    OVERLAY_COLORMAPS,
+    PENDING_SIDEBAR_RERUN_KEY,
+)
 from utils.data_loaders import load_svg_data
 from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
@@ -412,7 +421,37 @@ def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str,
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
 
 
-def _render_previous_page_button() -> None:
+def _cohort_entries_for_filter(
+    qc_cohort: list | None,
+    participant_ids: list | None,
+    session_id: str,
+    total_participants: int,
+) -> list:
+    limit = max(int(total_participants), 0)
+    if qc_cohort is not None:
+        return list(qc_cohort)[:limit]
+    return [{"participant_id": str(pid), "session_id": session_id} for pid in list(participant_ids or [])][:limit]
+
+
+def _filtered_adjacent_pages(
+    current_page: int,
+    total_participants: int,
+    participant_ids: list | None,
+    qc_cohort: list | None,
+    session_id: str,
+) -> tuple[int | None, int | None]:
+    """Previous/next pages that match the subject filter. Empty filter → full cohort order."""
+    from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
+
+    entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+    query = get_subject_search_query()
+    return (
+        prev_visible_subject_page(entries, query, session_id, current_page),
+        next_visible_subject_page(entries, query, session_id, current_page),
+    )
+
+
+def _render_previous_page_button(target_page: int) -> None:
     """Sidebar Previous control; no-ops visually when omitted by the caller."""
     if st.button(
         MESSAGES["previous_button"],
@@ -420,13 +459,13 @@ def _render_previous_page_button() -> None:
         key="pag_prev",
         help=MESSAGES["nav_tooltip_previous"],
     ):
-        SessionManager.previous_page()
+        SessionManager.set_current_page(target_page)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        st.rerun()
+        st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
 
-def _render_next_page_button() -> None:
+def _render_next_page_button(target_page: int) -> None:
     """Sidebar Next control (does not save ratings)."""
     if st.button(
         MESSAGES["next_button"],
@@ -434,10 +473,10 @@ def _render_next_page_button() -> None:
         key="pag_next",
         help=MESSAGES["nav_tooltip_next"],
     ):
-        SessionManager.next_page()
+        SessionManager.set_current_page(target_page)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        st.rerun()
+        st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
 
 def _display_qc_pagination_header(current_page: int, total_participants: int) -> None:
@@ -462,13 +501,13 @@ def _display_qc_pagination_controls(
         if st.button(MESSAGES["play_button"], width="stretch", key="autoplay_play"):
             SessionManager.set_autoplay_enabled(True)
             SessionManager.set_autoplay_start_time(time.time())
-            st.rerun()
+            st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
     with autoplay_col2:
         if st.button(MESSAGES["pause_button"], width="stretch", key="autoplay_pause"):
             SessionManager.set_autoplay_enabled(False)
             SessionManager.set_autoplay_start_time(0.0)
-            st.rerun()
+            st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
     if SessionManager.is_autoplay_enabled():
         if SessionManager.get_autoplay_start_time() > 0:
@@ -478,18 +517,23 @@ def _display_qc_pagination_controls(
 
     st.divider()
 
-    show_previous = current_page > 1
-    show_next = current_page < total_participants
-    if show_previous and show_next:
+    prev_page, next_page = _filtered_adjacent_pages(
+        current_page=current_page,
+        total_participants=total_participants,
+        participant_ids=participant_ids,
+        qc_cohort=qc_cohort,
+        session_id=session_id,
+    )
+    if prev_page is not None and next_page is not None:
         prev_col, next_col = st.columns(2)
         with prev_col:
-            _render_previous_page_button()
+            _render_previous_page_button(prev_page)
         with next_col:
-            _render_next_page_button()
-    elif show_previous:
-        _render_previous_page_button()
-    elif show_next:
-        _render_next_page_button()
+            _render_next_page_button(next_page)
+    elif prev_page is not None:
+        _render_previous_page_button(prev_page)
+    elif next_page is not None:
+        _render_next_page_button(next_page)
 
     if st.button(
         MESSAGES["confirm_next_button"],
@@ -500,8 +544,8 @@ def _display_qc_pagination_controls(
         _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        elif current_page < total_participants:
-            SessionManager.next_page()
+        elif next_page is not None:
+            SessionManager.set_current_page(next_page)
         elif qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
             SessionManager.set_current_page(total_participants + 1)
         elif not qc_cohort and participant_ids and session_id:
@@ -513,7 +557,7 @@ def _display_qc_pagination_controls(
                 temp_cohort.append({"participant_id": p, "session_id": session_id})
             if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
                 SessionManager.set_current_page(total_participants + 1)
-        st.rerun()
+        st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
     st.divider()
 
@@ -597,7 +641,7 @@ def _save_qc_record(
             temp_cohort.append({"participant_id": p, "session_id": session_id})
         if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
             SessionManager.set_current_page(total_participants + 1)
-    st.rerun()
+    st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:

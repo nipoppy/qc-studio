@@ -72,7 +72,17 @@ SESSION_KEYS = {
     "montage_max_cols": "montage_max_cols",
     # Set once per Streamlit session after reading qc.json (avoid re-applying on every rerun)
     "montage_defaults_applied_qc_task": "montage_defaults_applied_qc_task",
+    # Non-widget copy of the sidebar subject filter so Confirm/Next does not clear it
+    "sidebar_subject_search": "sidebar_subject_search",
 }
+
+# Widget key for the subject search box (must differ from the persist key above).
+SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY = "sidebar_subject_search_input"
+
+# Set by sidebar nav buttons so the subject search widget can render before st.rerun().
+PENDING_SIDEBAR_RERUN_KEY = "_pending_sidebar_rerun"
+# Keep the subject filter across Next/Previous and the follow-up rerun they trigger.
+SIDEBAR_SEARCH_HOLD_KEY = "_sidebar_search_hold"
 
 # File upload settings
 UPLOAD_FILE_TYPES = ["csv", "tsv"]
@@ -125,6 +135,9 @@ MESSAGES = {
     "pause_button": "⏸️ Pause",
     "back_landing_button": "🏠 Back to Landing Page",
     "sidebar_subjects_header": "Subjects",
+    "sidebar_subjects_search": "Search subjects",
+    "sidebar_subjects_search_placeholder": "Filter by subject or session",
+    "sidebar_subjects_search_empty": "No subjects match this search.",
     "niivue_header": "3D MRI (Niivue)",
     "niivue_controls_header": "Niivue Controls",
     "svg_header": "SVG Montage",
