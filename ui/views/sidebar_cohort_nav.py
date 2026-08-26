@@ -17,6 +17,7 @@ from managers.session_manager import SessionManager
 _MAX_PID_DISPLAY_LEN = 28
 _SUBJECT_SEARCH_WIDGET_KEY = SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY
 _NAV_BUTTON_KEYS = ("pag_next", "pag_prev", "pag_confirm", "autoplay_play", "autoplay_pause")
+_LAST_APPLIED_FILTER_KEY = "_sidebar_search_applied_query"
 
 
 def render_sidebar_cohort_subjects(
@@ -70,6 +71,10 @@ def render_sidebar_cohort_subjects(
         # Search is instantiated before Play/Previous/Next so Streamlit does not
         # blank it. JS then places the box immediately above the subject scroller.
         query = _render_subject_search()
+        snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
+        if snap_to is not None:
+            SessionManager.set_current_page(snap_to)
+            st.rerun()
         if kw:
             _display_qc_pagination_controls(**kw)
             st.divider()
@@ -97,6 +102,7 @@ def clear_subject_search() -> None:
     st.session_state[SESSION_KEYS["sidebar_subject_search"]] = ""
     st.session_state[_SUBJECT_SEARCH_WIDGET_KEY] = ""
     st.session_state.pop(SIDEBAR_SEARCH_HOLD_KEY, None)
+    st.session_state.pop(_LAST_APPLIED_FILTER_KEY, None)
 
 
 def _nav_triggered() -> bool:
@@ -200,6 +206,33 @@ def prev_visible_subject_page(entries: list, query: str, session_id: str, curren
         else:
             break
     return previous
+
+
+def page_if_filter_hides_current(entries: list, query: str, session_id: str, current_page: int) -> int | None:
+    """First matching page if ``current_page`` is hidden by the filter; otherwise ``None``."""
+    if current_page < 1 or current_page > len(entries):
+        return None
+    pages = matching_page_numbers(entries, query, session_id)
+    if not pages or current_page in pages:
+        return None
+    return pages[0]
+
+
+def first_visible_subject_page(entries: list, query: str, session_id: str) -> int | None:
+    """1-based page of the first filter match, or ``None`` if nothing matches."""
+    pages = matching_page_numbers(entries, query, session_id)
+    return pages[0] if pages else None
+
+
+def _page_after_filter_change(entries: list, query: str, session_id: str, current_page: int) -> int | None:
+    """When the filter changes, go to the first visible subject (or if the current page is hidden)."""
+    query = (query or "").strip()
+    previous = st.session_state.get(_LAST_APPLIED_FILTER_KEY)
+    st.session_state[_LAST_APPLIED_FILTER_KEY] = query
+    first = first_visible_subject_page(entries, query, session_id)
+    if query and previous != query and first is not None and first != current_page:
+        return first
+    return page_if_filter_hides_current(entries, query, session_id, current_page)
 
 
 def _render_subject_search() -> str:
