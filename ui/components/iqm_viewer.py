@@ -75,6 +75,7 @@ class DistributionSource:
 class MetricsSource:
     path: "Path"
     pipeline_name: str
+    modality: "Optional[str]"
     metrics: dict
 
 
@@ -112,31 +113,43 @@ def _path_after_pipeline(path) -> str:
 
 
 def _disambiguate_tab_labels(sources) -> list:
-    """Build a unique display label per source, in source order.
+    """Build a display label per source, in source order.
 
-    pipeline_name alone isn't unique (MRIQC contributes both a T1w and a
-    bold table). Escalates through increasingly specific disambiguators -
-    modality, then the path segments after derivatives/<pipeline>/ (so two
-    MRIQC pipeline-version folders emitting the same filename, e.g.
-    derivatives/mriqc/23.1.0/group_T1w.tsv vs .../24.0.0/group_T1w.tsv,
-    still get distinct labels even though pipeline_name AND modality
-    match) - and numbers anything still colliding as a last resort.
-    segmented_control breaks silently on duplicate option values (only the
-    first is selectable), so uniqueness here is a hard requirement, not
-    just cosmetic.
+    Always shows modality (when known) and, for a per-subject MetricsSource,
+    a "subject-level" qualifier, so a reviewer can tell tabs apart (and tell
+    a group-level distribution tab from a per-subject metrics tab) without
+    opening them. If those qualifiers still leave two labels identical -
+    same pipeline_name and modality, e.g. two MRIQC pipeline-version folders
+    emitting the same group_T1w.tsv - falls back to the path segments after
+    derivatives/<pipeline>/, then numbers anything still colliding as a
+    last resort. segmented_control breaks silently on duplicate option
+    values (only the first is selectable), so uniqueness here is a hard
+    requirement, not just cosmetic.
     """
-    labels = [s.pipeline_name for s in sources]
 
-    for discriminator in (
-        lambda s: getattr(s, "modality", None),
-        lambda s: _path_after_pipeline(s.path),
-    ):
-        counts = {}
-        for label in labels:
-            counts[label] = counts.get(label, 0) + 1
-        if not any(count > 1 for count in counts.values()):
-            break
-        labels = [f"{s.pipeline_name} ({discriminator(s)})" if counts[label] > 1 and discriminator(s) else label for s, label in zip(sources, labels)]
+    def make_label(source, parts) -> str:
+        return f"{source.pipeline_name} ({', '.join(parts)})" if parts else source.pipeline_name
+
+    parts_list = []
+    for s in sources:
+        parts = []
+        modality = getattr(s, "modality", None)
+        if modality:
+            parts.append(modality)
+        if isinstance(s, MetricsSource):
+            parts.append("subject-level")
+        parts_list.append(parts)
+
+    labels = [make_label(s, parts) for s, parts in zip(sources, parts_list)]
+
+    counts = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    if any(count > 1 for count in counts.values()):
+        for i, (s, label) in enumerate(zip(sources, labels)):
+            if counts[label] > 1:
+                parts_list[i] = parts_list[i] + [_path_after_pipeline(s.path)]
+        labels = [make_label(s, parts) for s, parts in zip(sources, parts_list)]
 
     counts = {}
     for label in labels:
@@ -185,22 +198,24 @@ def _load_distribution_source(path, resolved, pipeline_name):
         )
         return None
 
+    # Inferred from the path regardless of pipeline, so even a non-MRIQC tab
+    # label can show its modality - curated groups below still stay MRIQC-only.
+    modality = _infer_modality_from_path(path)
+
     if len(iqm_data) == 1:
         return MetricsSource(
             path=resolved,
             pipeline_name=pipeline_name,
+            modality=modality,
             metrics=_row_to_metrics(iqm_data.iloc[0]),
         )
 
-    modality = None
     distribution_groups = {}
 
-    if is_mriqc_pipeline(pipeline_name):
-        modality = _infer_modality_from_path(path)
-        if modality is not None:
-            distribution_groups = IQM_DISTRIBUTION_GROUPS.get(modality, {})
-            if callable(distribution_groups):
-                distribution_groups = distribution_groups(iqm_data.columns)
+    if is_mriqc_pipeline(pipeline_name) and modality is not None:
+        distribution_groups = IQM_DISTRIBUTION_GROUPS.get(modality, {})
+        if callable(distribution_groups):
+            distribution_groups = distribution_groups(iqm_data.columns)
 
     if distribution_groups:
         valid_groups = _get_valid_iqm_groups(distribution_groups, iqm_data)
@@ -237,6 +252,7 @@ def _load_metrics_source(path, resolved, pipeline_name):
     return MetricsSource(
         path=resolved,
         pipeline_name=pipeline_name,
+        modality=_infer_modality_from_path(path),
         metrics=metrics,
     )
 
@@ -269,6 +285,7 @@ def _render_iqm_metrics_table(metrics: dict, participant_id: str) -> None:
     if not scalar_metrics:
         st.warning("No metrics found in this IQM source.")
         return
+    st.caption(MESSAGES["iqm_metrics_table_experimental"])
     st.write(f"QC metrics for {participant_id}.")
     st.table(pd.DataFrame(sorted(scalar_metrics.items()), columns=["Metric", "Value"]))
 
@@ -657,6 +674,9 @@ def _render_iqm_distributions(
     if isinstance(source, MetricsSource):
         _render_iqm_metrics_table(source.metrics, participant_id)
         return
+
+    if not is_mriqc_pipeline(source.pipeline_name):
+        st.caption(MESSAGES["iqm_generic_distribution_experimental"])
 
     can_compare_reference = is_mriqc_pipeline(source.pipeline_name) and source.modality is not None
 

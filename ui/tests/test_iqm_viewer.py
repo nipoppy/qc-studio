@@ -131,9 +131,9 @@ def test_render_iqm_distributions_dataset_only(iqm_viewer_module, temp_dir, monk
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
 
-    # single source -> tab label is just the pipeline name ("mriqc"), no
-    # disambiguation suffix needed
-    streamlit_stub.segmented_control.return_value = "mriqc"
+    # single source -> tab label is the pipeline name plus its inferred
+    # modality ("mriqc (t1w)")
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w)"
     streamlit_stub.radio.return_value = "Dataset"
 
     module._render_iqm_distributions(
@@ -172,7 +172,7 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
     # (Parquet download + filter), not a REFERENCE_DATA_PATHS TSV; mock it directly.
     monkeypatch.setattr(module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_df))
 
-    streamlit_stub.segmented_control.return_value = "mriqc"
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w)"
     streamlit_stub.radio.return_value = "Dataset + Reference"
 
     module._render_iqm_distributions(
@@ -186,7 +186,7 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
     fig = streamlit_stub.plotly_chart.call_args.args[0]
     assert len(fig.data) == 3
     call_kwargs = streamlit_stub.segmented_control.call_args.kwargs
-    assert call_kwargs["options"] == ["mriqc"]
+    assert call_kwargs["options"] == ["mriqc (t1w)"]
     assert call_kwargs["key"] == "iqm_view_mode"
 
 
@@ -262,7 +262,7 @@ def test__render_iqm_distributions_double_tabs_withsame_pipeline_name(iqm_viewer
     # Both sources are MRIQC with the same inferred modality ("t1w"), so
     # pipeline_name + modality alone would collide; the code must fall back
     # to the filename stem to keep the two tabs independently selectable.
-    streamlit_stub.segmented_control.return_value = "mriqc (group_T1w)"
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w, group_T1w)"
     streamlit_stub.radio.return_value = "Dataset"
 
     module._render_iqm_distributions(
@@ -273,7 +273,7 @@ def test__render_iqm_distributions_double_tabs_withsame_pipeline_name(iqm_viewer
     )
 
     call_kwargs = streamlit_stub.segmented_control.call_args.kwargs
-    assert call_kwargs["options"] == ["mriqc (group_T1w)", "mriqc (group_T1w_2)"]
+    assert call_kwargs["options"] == ["mriqc (t1w, group_T1w)", "mriqc (t1w, group_T1w_2)"]
     assert len(set(call_kwargs["options"])) == len(call_kwargs["options"])
 
     streamlit_stub.plotly_chart.assert_called_once()
@@ -312,7 +312,7 @@ def test__render_iqm_distributions_double_tabs_same_pipeline_same_modality_diffe
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
 
-    streamlit_stub.segmented_control.return_value = "mriqc (23.1.0/group_T1w)"
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w, 23.1.0/group_T1w)"
     streamlit_stub.radio.return_value = "Dataset"
 
     module._render_iqm_distributions(
@@ -323,7 +323,7 @@ def test__render_iqm_distributions_double_tabs_same_pipeline_same_modality_diffe
     )
 
     call_kwargs = streamlit_stub.segmented_control.call_args.kwargs
-    assert call_kwargs["options"] == ["mriqc (23.1.0/group_T1w)", "mriqc (24.0.0/group_T1w)"]
+    assert call_kwargs["options"] == ["mriqc (t1w, 23.1.0/group_T1w)", "mriqc (t1w, 24.0.0/group_T1w)"]
     assert len(set(call_kwargs["options"])) == len(call_kwargs["options"])
 
     streamlit_stub.plotly_chart.assert_called_once()
@@ -386,7 +386,7 @@ def test__render_iqm_distributions_double_tabs_with_different_pipeline_names(iqm
     monkeypatch.setattr(module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_data))
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
-    streamlit_stub.segmented_control.return_value = "mriqc"
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w)"
     streamlit_stub.radio.return_value = "Dataset + Reference"
 
     module._render_iqm_distributions(
@@ -397,7 +397,7 @@ def test__render_iqm_distributions_double_tabs_with_different_pipeline_names(iqm
     )
 
     called_arg = streamlit_stub.segmented_control.call_args.kwargs["options"]
-    assert called_arg == ["mriqc", "customqc"]
+    assert called_arg == ["mriqc (t1w)", "customqc (t1w)"]
 
     assert streamlit_stub.plotly_chart.call_count == 1
     fig = streamlit_stub.plotly_chart.call_args.args[0]
@@ -420,7 +420,7 @@ def test__render_iqm_distributions_single_row_data(iqm_viewer_module, temp_dir):
     # distribution-group resolution ever runs, so this monkeypatch is
     # unused here - left out on purpose, unlike the multi-row tests above.
 
-    streamlit_stub.segmented_control.return_value = "mriqc"
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w, subject-level)"
 
     module._render_iqm_distributions(
         [str(dataset_path)],
@@ -618,6 +618,7 @@ def test__render_iqm_metrics_table_filters_nested_values(iqm_viewer_module):
     module._render_iqm_metrics_table(single_subject_data, "sub-CMH0001")
 
     streamlit_stub.warning.assert_not_called()
+    streamlit_stub.caption.assert_called_once_with(module.MESSAGES["iqm_metrics_table_experimental"])
     streamlit_stub.table.assert_called_once()
     df = streamlit_stub.table.call_args.args[0]
     assert list(df.columns) == ["Metric", "Value"]
@@ -638,6 +639,7 @@ def test__render_iqm_metrics_table_warns_when_only_nested_values(iqm_viewer_modu
     module._render_iqm_metrics_table(single_subject_data, "sub-CMH0001")
 
     streamlit_stub.warning.assert_called_once()
+    streamlit_stub.caption.assert_not_called()
     streamlit_stub.table.assert_not_called()
 
 
@@ -664,9 +666,33 @@ def test__disambiguate_tab_labels_modality_resolves_collision(iqm_viewer_module)
     assert module._disambiguate_tab_labels(sources) == ["mriqc (t1w)", "mriqc (bold)"]
 
 
+def test__disambiguate_tab_labels_metrics_source_gets_subject_level_tag(iqm_viewer_module):
+    """A MetricsSource (per-subject JSON) is labeled with its modality plus
+    a "subject-level" qualifier, so it's distinguishable from a group-level
+    DistributionSource tab sharing the same pipeline/modality."""
+    module, _ = iqm_viewer_module
+
+    sources = [
+        module.DistributionSource(path="derivatives/mriqc/group_dwi.tsv", pipeline_name="mriqc", modality="dwi", iqm_data=None, valid_groups=None),
+        module.MetricsSource(path="derivatives/mriqc/sub-01_dwi.json", pipeline_name="mriqc", modality="dwi", metrics={}),
+    ]
+
+    assert module._disambiguate_tab_labels(sources) == ["mriqc (dwi)", "mriqc (dwi, subject-level)"]
+
+
+def test__disambiguate_tab_labels_metrics_source_no_modality(iqm_viewer_module):
+    module, _ = iqm_viewer_module
+
+    sources = [module.MetricsSource(path="derivatives/customqc/sub-01_metrics.json", pipeline_name="customqc", modality=None, metrics={})]
+
+    assert module._disambiguate_tab_labels(sources) == ["customqc (subject-level)"]
+
+
 def test__disambiguate_tab_labels_no_collision_stays_plain(iqm_viewer_module):
-    """pipeline_name alone is already unique -> labels pass through
-    untouched; modality/path disambiguators are never consulted."""
+    """Modality is always shown when known; a source with no inferable
+    modality (e.g. fmriprep's confounds.tsv, no t1w/bold/dwi in the path)
+    falls back to the bare pipeline name. No collision here, so the
+    path-based disambiguator is never consulted."""
     module, _ = iqm_viewer_module
     Source = module.DistributionSource
 
@@ -675,7 +701,7 @@ def test__disambiguate_tab_labels_no_collision_stays_plain(iqm_viewer_module):
         Source(path="derivatives/fmriprep/desc-confounds.tsv", pipeline_name="fmriprep", modality=None, iqm_data=None, valid_groups=None),
     ]
 
-    assert module._disambiguate_tab_labels(sources) == ["mriqc", "fmriprep"]
+    assert module._disambiguate_tab_labels(sources) == ["mriqc (t1w)", "fmriprep"]
 
 
 def test__add_violin_traces(iqm_viewer_module):
@@ -993,7 +1019,7 @@ def test__render_iqm_distributions_non_mriqc_source_skips_reference_radio(iqm_vi
         }
     ).to_csv(dataset_path, sep="\t", index=False)
 
-    streamlit_stub.segmented_control.return_value = "customqc"
+    streamlit_stub.segmented_control.return_value = "customqc (t1w)"
 
     module._render_iqm_distributions(
         [str(dataset_path)],
@@ -1004,3 +1030,4 @@ def test__render_iqm_distributions_non_mriqc_source_skips_reference_radio(iqm_vi
 
     streamlit_stub.radio.assert_not_called()
     streamlit_stub.plotly_chart.assert_called_once()
+    assert module.MESSAGES["iqm_generic_distribution_experimental"] in [c.args[0] for c in streamlit_stub.caption.call_args_list]

@@ -131,6 +131,8 @@ MESSAGES = {
     "svg_header": "SVG Montage",
     "metrics_header": "QC Metrics",
     "iqm_distribution_header": "IQM Distributions",
+    "iqm_metrics_table_experimental": "🧪 Experimental layout — subject-level metrics table, may change.",
+    "iqm_generic_distribution_experimental": "🧪 Experimental layout — generic per-column view for a non-MRIQC pipeline, may change.",
     "view_mode_label": "View Mode",
     "overlay_colormap_label": "Overlay Colormap",
     "display_settings_header": "Display Settings",
