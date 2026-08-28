@@ -1,6 +1,10 @@
 """Tests for qc_viewer helper utilities."""
 
+import pytest
+
 from components.qc_viewer import _clean_filename
+
+pytestmark = pytest.mark.unit
 
 
 class TestCleanFilename:
@@ -8,12 +12,12 @@ class TestCleanFilename:
 
     def test_extracts_session_task_run_tokens(self):
         """Functional keys should prefer ses/task/run tokens."""
-        filename = "figures_sub-ED01_ses-01_task-rest_run-01_svg"
+        filename = "figures_sub-CMH0001_ses-01_task-rest_run-01_svg"
         assert _clean_filename(filename) == "ses-01_task-rest_run-01"
 
     def test_strips_subject_prefix_for_anatomical_keys(self):
         """Anatomical keys should remove noisy subject-prefixed fragments."""
-        filename = "figures_sub-ED01_figure_sub-ED01_dseg_svg"
+        filename = "figures_sub-CMH0001_figure_sub-CMH0001_dseg_svg"
         assert _clean_filename(filename) == "dseg"
 
     def test_removes_extension_suffix_when_no_structured_tokens(self):

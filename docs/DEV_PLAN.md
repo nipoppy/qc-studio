@@ -1,24 +1,24 @@
 # QC-Studio MVP Scope
 
 ## Design Overview
-![overview](assets/nipoppy-qc-studio_overview.jpg)
-
+![overview](../assets/nipoppy-qc-studio_overview.jpg)
 
 ## Key requirements: datatypes / formats
-- Support visualization of curated data
-    - Raw BIDS (TBD: how to handle relative paths not starting from `derivatives`)
+- Support visualization of stardarized MRI data
+    - Raw BIDS
+
+- Support visualization of processed data from these pipelines (i.e. MRI Derivatives)
+    - fMRIPrep 
+    - Freesurfer
+    - QSIPrep
+
+- Support image-quality-metrics (IQM) distribution plots
     - MRIQC 
 
-- Support visualization of processed data from these pipelines 
-    - fMRIPrep 
-    - Freesurfer / fsqc
-    - QSIPrep
-    - QSIRecon 
-
 ## Key requirements: UI
-- Visualize 3D MRI using niivue
+- Visualize 3D MRI using [NiiVue](https://github.com/niivue/niivue)
 - Display flat image montages 
-- Display IQMs (optional for MVP) 
+- Display interactive distribution plots
 
 ## Constraints 
 - User has full access to data either locally or via ssh 
@@ -30,13 +30,7 @@
 
 ## Tasks
 - Configs
-    - Generate `pipeline_qc.json` (see [sample_qc.json](../pipelines/sample_qc.json))
-
-- UI-orchestrator (see [app.py](../ui/app.py))
-    - Handle argparse ([main.py](../ui/main.py))
-    - Web-app init / global parameters
-    - Calls to data handler
-    - Calls to layout managers
+    - Generate MRI modality / pipeline specific `qc.json` (see for example [fmriprep/qc.json](../pipelines/fmriprep/qc.json))
 
 - UI-data-handler 
     - Write Pydantic json parser (see [models/qc_models.py](../ui/models/qc_models.py))
@@ -53,7 +47,8 @@
     - Niivue streamlit integration →  [niivue_viewer_manager.py](../ui/managers/niivue_viewer_manager.py)
     - Montage panel → [qc_viewer.py](../ui/components/qc_viewer.py)
     - IQM panel (optional for MVP)
-    - Rating panel ([pagination.py](../ui/components/pagination.py))
+    - Rating controls and save/next flow ([qc_viewer.py](../ui/components/qc_viewer.py))
+    - Sidebar cohort navigation ([sidebar_cohort_nav.py](../ui/views/sidebar_cohort_nav.py))
 
 - Write <rater>_qc_scores.tsv (see [utils/export.py](../ui/utils/export.py))
      - Handle overwrite / append  
@@ -65,4 +60,5 @@
 - fmriprep
 - qsiprep
 - qsirecon
+- xcpd
 - [agitation](https://github.com/Neuro-iX/agitation?tab=readme-ov-file)
