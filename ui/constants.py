@@ -11,21 +11,9 @@ DEFAULT_PANELS = {"niivue": True, "montage": True, "iqm": False}
 
 # Panel configuration metadata
 PANEL_CONFIG = {
-    'niivue': {
-        'label': '🧠 3D MRI Viewer (Niivue)',
-        'description': 'Display interactive 3D MRI viewer',
-        'default': True
-    },
-    'montage': {
-        'label': '📊 Montage',
-        'description': 'Display 2D image montage visualization',
-        'default': True
-    },
-    'iqm': {
-        'label': '📈 QC Metrics',
-        'description': 'Display QC metrics panel',
-        'default': False
-    }
+    "niivue": {"label": "🧠 3D MRI Viewer (Niivue)", "description": "Display interactive 3D MRI viewer", "default": True},
+    "montage": {"label": "📊 Montage", "description": "Display 2D image montage visualization", "default": True},
+    "iqm": {"label": "📈 QC Metrics", "description": "Display QC metrics panel", "default": False},
 }
 
 # QC rating options
@@ -159,9 +147,7 @@ ERROR_MESSAGES = {
     "csv_comparison_error": "Could not display comparison: {error}",
     "mri_load_error": "Failed to load base MRI in Niivue viewer: {error}",
     "base_mri_not_found": "Base MRI image not found or could not be loaded.",
-    "base_mri_too_large": (
-        "Volume too large for the 3D viewer ({size_mb:.0f} MB; limit {limit_mb:.0f} MB). " "Use the Montage panel for this task."
-    ),
+    "base_mri_too_large": ("Volume too large for the 3D viewer ({size_mb:.0f} MB; limit {limit_mb:.0f} MB). " "Use the Montage panel for this task."),
     "base_mri_preview_reduced": "Showing first BOLD volume (full 4D file is too large for the browser).",
     "montage_not_found": "Montage not found or could not be loaded.",
     "participant_list_load_error": "Error loading participant list: {error}",

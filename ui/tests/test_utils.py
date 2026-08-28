@@ -158,7 +158,6 @@ class TestLoadMriData:
         assert result == {}
 
 
-
 class TestLoadMontageData:
     """Test load_montage_data function."""
 
