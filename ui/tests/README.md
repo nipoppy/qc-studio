@@ -51,7 +51,7 @@ Tests for utility functions:
   - Load single image
   - Handle non-existent files
 
-- **load_svg_data()**: Load 2D montage image files
+- **load_montage_data()**: Load 2D montage image files
   - Load valid SVG, PNG, and JPG/JPEG files
   - Handle non-existent files
   - Handle read errors

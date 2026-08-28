@@ -7,7 +7,7 @@ EXPERIENCE_LEVELS = ["Beginner (< 1 year experience)", "Intermediate (1-5 year e
 FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Default panel selections
-DEFAULT_PANELS = {"niivue": True, "svg": True, "iqm": False}
+DEFAULT_PANELS = {"niivue": True, "montage": True, "iqm": False}
 
 # Panel configuration metadata
 PANEL_CONFIG = {
@@ -16,7 +16,7 @@ PANEL_CONFIG = {
         'description': 'Display interactive 3D MRI viewer',
         'default': True
     },
-    'svg': {
+    'montage': {
         'label': '📊 Montage',
         'description': 'Display 2D image montage visualization',
         'default': True
@@ -37,7 +37,7 @@ QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]
 
 # Viewer settings
 NIIVUE_HEIGHT = 600
-SVG_HEIGHT = 600
+MONTAGE_HEIGHT = 600
 IQM_HEIGHT = 400
 # Streamlit component messages are capped (~200 MB); keep NIfTI payloads below this.
 NIIVUE_MAX_FILE_BYTES = 150 * 1024 * 1024
@@ -48,8 +48,8 @@ DEFAULT_OVERLAY_OPACITY = 0.5
 
 # Column layout ratios
 NIIVUE_SECONDARY_RATIO = [0.1, 0.3, 0.6]
-# Split for viewer area when Niivue + SVG (+ optional third panel) layouts need two columns
-NIIVUE_SVG_RATIO = [0.55, 0.45]
+# Split for viewer area when Niivue + Montage (+ optional third panel) layouts need two columns
+NIIVUE_MONTAGE_RATIO = [0.55, 0.45]
 EQUAL_RATIO = [0.5, 0.5]
 RATING_IQM_RATIO = [0.4, 0.6]
 RATER_INFO_RATIO = [1, 1, 1]
@@ -136,7 +136,7 @@ MESSAGES = {
     "sidebar_subjects_header": "Subjects",
     "niivue_header": "3D MRI\n(Niivue)",
     "niivue_controls_header": "Niivue Controls",
-    "svg_header": "SVG Montage",
+    "montage_header": "Montage",
     "metrics_header": "QC Metrics",
     "view_mode_label": "View Mode",
     "overlay_colormap_label": "Overlay Colormap",
@@ -160,10 +160,10 @@ ERROR_MESSAGES = {
     "mri_load_error": "Failed to load base MRI in Niivue viewer: {error}",
     "base_mri_not_found": "Base MRI image not found or could not be loaded.",
     "base_mri_too_large": (
-        "Volume too large for the 3D viewer ({size_mb:.0f} MB; limit {limit_mb:.0f} MB). " "Use the SVG montage panel for this task."
+        "Volume too large for the 3D viewer ({size_mb:.0f} MB; limit {limit_mb:.0f} MB). " "Use the Montage panel for this task."
     ),
     "base_mri_preview_reduced": "Showing first BOLD volume (full 4D file is too large for the browser).",
-    "svg_not_found": "SVG montage not found or could not be loaded.",
+    "montage_not_found": "Montage not found or could not be loaded.",
     "participant_list_load_error": "Error loading participant list: {error}",
 }
 

@@ -36,7 +36,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
     Returns a dict with keys:
       - 'base_mri_image_path': Path | None
       - 'overlay_mri_image_path': Path | None
-      - 'svg_montage_path': list[Path] | None
+      - 'montage_path': list[Path] | None
       - 'iqm_path': Path | None
       - 'montage_max_rows': int | None
       - 'montage_max_cols': int | None
@@ -67,7 +67,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
         return {
             "base_mri_image_path": None,
             "overlay_mri_image_path": None,
-            "svg_montage_path": None,
+            "montage_path": None,
             "iqm_path": None,
             "montage_max_rows": None,
             "montage_max_cols": None,
@@ -80,7 +80,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
         return {
             "base_mri_image_path": None,
             "overlay_mri_image_path": None,
-            "svg_montage_path": None,
+            "montage_path": None,
             "iqm_path": None,
             "montage_max_rows": None,
             "montage_max_cols": None,
@@ -94,7 +94,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
     return {
         "base_mri_image_path": qctask.base_mri_image_path,
         "overlay_mri_image_path": qctask.overlay_mri_image_path,
-        "svg_montage_path": qctask.svg_montage_path,
+        "montage_path": qctask.montage_path,
         "iqm_path": qctask.iqm_path,
         "montage_max_rows": qctask.montage_max_rows,
         "montage_max_cols": qctask.montage_max_cols,

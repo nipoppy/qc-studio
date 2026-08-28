@@ -99,7 +99,7 @@ ui/
 - Screen modules: `views.landing_page`, `views.congratulations_page`
 - Components: `components.qc_viewer`
 - Managers: SessionManager, NiivueViewerManager, PanelLayoutManager
-- Utilities: parse_qc_config, load_svg_data, save_qc_results_to_csv
+- Utilities: parse_qc_config, load_montage_data, save_qc_results_to_csv
 
 ---
 
