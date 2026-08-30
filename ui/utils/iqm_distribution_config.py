@@ -1,8 +1,12 @@
-"""IQM distribution group definitions and reference data paths.
+"""IQM distribution group definitions.
 
-Each modality (T1w, BOLD, etc.) maps to a dictionary of named metric groups.
-Each group is a list of column names expected in the MRIQC group-level TSV.
+Each supported modality maps to named metric groups from MRIQC group-level
+tables. DWI includes a dynamic builder because shell-specific metric columns
+depend on the acquisition.
 """
+
+from itertools import product
+from pathlib import Path
 
 DISTRIBUTION_T1W_GROUPS = {
     "EFC": ["efc"],
@@ -88,23 +92,8 @@ DISTRIBUTION_BOLD_GROUPS = {
     ],
 }
 
-# Top-level registry: modality name → metric group dictionary, OR (for dwi)
-# a callable(columns) -> dict. DWI's shell-dependent groups (EFC_SHELLS,
-# FBER_SHELLS, SNR_CC) can't be a static dict since their column names depend
-# on how many diffusion shells a given dataset acquired - build_dwi_groups
-# resolves them from the actual group_dwi.tsv columns. See build_dwi_groups
-# below, and its registration a few lines down (defined after this dict
-# since build_dwi_groups isn't declared yet at this point in the file).
-IQM_DISTRIBUTION_GROUPS = {
-    "t1w": DISTRIBUTION_T1W_GROUPS,
-    "bold": DISTRIBUTION_BOLD_GROUPS,
-}
-
-from itertools import product
-
-# --- Static DWI groups (columns identical across datasets) ---
-# Note: the per-shell groups (EFC_SHELLS, FBER_SHELLS, SNR_CC) are NOT here —
-# their columns depend on the number of shells; build them with build_dwi_groups().
+# DWI groups with fixed columns. Shell-dependent groups are added by
+# build_dwi_groups() after inspecting the loaded group_dwi.tsv columns.
 DISTRIBUTION_DWI_GROUPS = {
     "BDIFFS": ["bdiffs_max", "bdiffs_mean", "bdiffs_median", "bdiffs_min"],
     "FA": ["fa_degenerate", "fa_nans"],
@@ -166,7 +155,7 @@ def build_dwi_groups(columns, keep_only_present=True):
         "SNR_CC": ["snr_cc_shell0"] + [f"snr_cc_shell{s}_{t}" for s, t in product(shells, ("best", "worst"))],
     }
 
-    # MRIQC's panel order
+    # MRIQC panel order.
     ordered = [
         "BDIFFS",
         "EFC_SHELLS",
@@ -197,27 +186,15 @@ def build_dwi_groups(columns, keep_only_present=True):
     return groups
 
 
-# Registered here (not alongside t1w/bold above) since build_dwi_groups must
-# be defined first. Callers must call this with the loaded group_dwi.tsv's
-# columns before use - see IQM_DISTRIBUTION_GROUPS's docstring comment above.
-IQM_DISTRIBUTION_GROUPS["dwi"] = build_dwi_groups
-
-from pathlib import Path
+IQM_DISTRIBUTION_GROUPS = {
+    "t1w": DISTRIBUTION_T1W_GROUPS,
+    "bold": DISTRIBUTION_BOLD_GROUPS,
+    "dwi": build_dwi_groups,
+}
 
 
 def infer_pipeline_from_iqm_path(path: Path) -> str:
-    """Infer the pipeline name from an IQM path.
-    derivatives/<pipeline>/... -> <pipeline>; falls back to the file stem if no pipeline is found.
-    Parameters
-    ----------
-    path : Path
-        Path to an IQM TSV or JSON file.
-
-    Returns
-    -------
-    str
-        The inferred pipeline name.
-    """
+    """Infer the pipeline name from an IQM path."""
 
     parts = Path(path).parts
     if "derivatives" in parts:

@@ -683,14 +683,8 @@ class TestNormalizeManufacturer:
 class TestNormalizeFieldStrength:
     """Test normalize_field_strength's alias mapping.
 
-    Flagging, not fixing: the function has a `#fix this` comment and a
-    dead commented-out numeric-passthrough block (lines ~601-609) - as a
-    result, a bare numeric field strength (e.g. the raw int/float 3 that
-    MagneticFieldStrength commonly is in real BIDS sidecars, not the
-    string "3.0"/"3T") isn't in FIELD_STRENGTH_ALIASES and silently
-    returns None instead of "3". Locking in current behavior below so
-    this doesn't regress further silently, but this looks like a real gap
-    worth a look.
+    Numeric scanner field strengths are tracked as a follow-up cleanup. The
+    current behavior is locked in here so it does not change silently.
     """
 
     def test_maps_known_aliases(self):

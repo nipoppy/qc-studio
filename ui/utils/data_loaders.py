@@ -1,7 +1,7 @@
-"""Data loading utilities for QC Studio.
+"""Data loading utilities for QC-Studio.
 
-This module provides functions for loading MRI data, SVG montages, and IQM metrics
-from files and directories.
+This module loads MRI files, SVG montages, scanner metadata, IQM metrics, and
+reference IQM tables from dataset and pipeline outputs.
 """
 
 import json
@@ -184,7 +184,6 @@ def load_mri_data(
     base_mri_path = _resolve_under_dataset(base_root, path_dict.get("base_mri_image_path"))
     overlay_mri_path = _resolve_under_dataset(base_root, path_dict.get("overlay_mri_image_path"))
 
-    # print(f"Loading MRI data from dataset_dir: {dataset_dir} with paths: base_mri={base_mri_path}, overlay_mri={overlay_mri_path}")
     file_bytes_dict = {}
 
     if base_mri_path is not None and base_mri_path.is_file():
@@ -305,8 +304,7 @@ def _load_svg_entry(full_path: Path, unique_id: str):
 
         return filename, data_content, pil_img
 
-    except Exception as e:
-        print(f"Failed to load SVG file {full_path}: {e}")
+    except Exception:
         return None
 
 
@@ -318,8 +316,7 @@ def _load_raster_entry(full_path: Path, unique_id: str, raster_type: str):
         data_content = {"type": raster_type, "content": pil_img}
         return filename, data_content, pil_img
 
-    except ValueError as e:
-        print(f"Failed to load image file {full_path}: {e}")
+    except ValueError:
         return None
 
 
@@ -345,8 +342,7 @@ def _add_montage_if_available(
         result_dict = {"montage": {"type": "png", "content": montage_img}}
         result_dict.update(image_data_dict)
         return result_dict
-    except Exception as e:
-        print(f"Failed to create montage: {e}")
+    except Exception:
         # Return individual images if montage creation fails
         return image_data_dict
 
@@ -529,17 +525,7 @@ MODALITY_SIDECAR_HINTS = {
 
 
 def _infer_bids_folder_from_path(path: Union[Path, str]) -> Optional[str]:
-    """Infer a BIDS modality folder ('anat', 'func', 'dwi') from a path/filename.
-
-    Checks the directory segment, filename suffix regex, and a bare filename
-    substring (in that order of specificity) - shared by both
-    _load_scanner_metadata (BIDS sidecar lookup) and iqm_viewer.py's MRIQC
-    group-registry selection, which each apply their own default/vocabulary
-    on top since their failure-mode needs differ (a wrong guess here is
-    low-stakes for a sidecar search, but would apply the wrong curated MRIQC
-    columns to unrelated data for the IQM viewer). Returns None on no match -
-    callers that want a best-guess default apply it themselves.
-    """
+    """Infer a BIDS modality folder from a path or filename."""
     if not path:
         return None
 
@@ -561,15 +547,7 @@ def _find_bids_metadata_sidecar(
     session_id: str = None,
     modality: str = "anat",
 ) -> Optional[Path]:
-    """Find a likely metadata sidecar for a participant, checking raw BIDS first, then derivatives.
-
-    ``modality`` selects which BIDS folder/suffix to search (anat/T1w,
-    func/bold, dwi/dwi); unrecognized values fall back to anat/T1w. Every
-    search pattern is scoped to ``participant_id`` (required) so this never
-    returns a *different* participant's sidecar as a guess - if nothing
-    matches, it returns ``None`` so callers fall back to "Unknown" instead
-    of silently mislabeling the subject's scanner metadata.
-    """
+    """Find a likely scanner-metadata sidecar for a participant."""
     if not dataset_root or not participant_id:
         return None
 
@@ -605,10 +583,7 @@ def _find_bids_metadata_sidecar(
         bids_root = dataset_root
     search_roots = [(bids_root, "")]
 
-    # Datasets that only ship pipeline outputs (no raw bids/ folder) still
-    # carry scanner metadata in derivative JSON sidecars (e.g. MRIQC), under
-    # an unknown pipeline subdirectory - "**/" skips over that layer while
-    # still anchoring on participant_id so it can't match another subject.
+    # Fall back to derivative sidecars when raw BIDS metadata is unavailable.
     derivatives_root = dataset_root / "derivatives"
     if derivatives_root.is_dir():
         search_roots.append((derivatives_root, "**/"))
@@ -628,14 +603,8 @@ def _load_scanner_metadata(
 ) -> dict:
     """Load scanner metadata from the JSON sidecar of a BIDS image file.
 
-    ``modality`` ("anat"/"func"/"dwi", or their common aliases) selects which
-    sidecar to look for when the direct sidecar next to ``image_path`` isn't
-    found; when omitted, it's inferred from ``image_path`` itself.
-
-    ``image_path`` is commonly a dataset-relative path (e.g. from qc.json,
-    like ``"bids/sub-01/..."``); join it onto ``dataset_dir`` first so
-    dataset-root/participant/session inference below sees the real root
-    instead of resolving to the current working directory.
+    If the direct sidecar is unavailable, look for a participant/session sidecar
+    under raw BIDS or derivatives and fall back to "Unknown" values.
     """
     if dataset_dir and image_path:
         image_path = Path(dataset_dir) / image_path
@@ -664,7 +633,7 @@ def _load_scanner_metadata(
     with open(json_path, "r") as f:
         metadata = json.load(f)
 
-    # MRIQC sidecars nest the original BIDS  metadata under "bids_meta" instead of at the top level for individual subjects.
+    # MRIQC sidecars may nest original BIDS metadata under "bids_meta".
     bids_meta = metadata.get("bids_meta") or {}
 
     return {
@@ -759,7 +728,8 @@ def normalize_manufacturer(value: object) -> str:
     return MANUFACTURER_ALIASES.get(normalized, normalized)
 
 
-# fix this
+# fix this: extend normalization for numeric/string field strengths such as
+# "1.5T", "3", "3.0T", and "7T".
 def normalize_field_strength(value: object) -> Optional[str]:
     normalized = str(value or "").strip().lower()
 
@@ -768,16 +738,6 @@ def normalize_field_strength(value: object) -> Optional[str]:
 
     if normalized in FIELD_STRENGTH_ALIASES:
         return FIELD_STRENGTH_ALIASES[normalized]
-
-    # try:
-    # 	numeric_value = float(normalized)
-    # except (TypeError, ValueError):
-    # 	return normalized or None
-
-    # # if numeric_value.is_integer():
-    # # 	return f"{int(numeric_value)}T"
-
-    # # return f"{numeric_value:g}T"
 
 
 @st.cache_data(show_spinner="Loading reference data...", ttl=CACHE_TTL_SECONDS)
@@ -816,10 +776,6 @@ def _load_reference_iqm_filtered(
     different raw spellings that mean the same thing (e.g. "", "N/A", and
     "Unknown", or "GE" and "General Electric") share one cache entry.
     """
-    print(
-        f"Loading reference IQM data for modality={modality}, manufacturer={manufacturer_subject_norm}, field_strength={field_strength_subject_norm}"
-    )
-
     data = _load_reference_parquet(modality)
 
     if manufacturer_subject_norm != "unknown" and "Manufacturer" in data.columns:

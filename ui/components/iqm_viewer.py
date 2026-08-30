@@ -1,19 +1,13 @@
-"""IQM distribution viewer component for QC-Studio UI.
+"""IQM viewer component for QC-Studio.
 
-Displays grouped Image Quality Metric (IQM) distributions as interactive
-Plotly box plots with the current subject highlighted. Supports
-dataset-only and dataset-vs-reference comparison modes, with modality
-(T1w / BOLD) and metric group selection.
+Renders configured Image Quality Metric (IQM) sources alongside the QC review
+view. Group-level TSV/CSV sources are shown as violin plots with the current
+subject highlighted, and participant-level JSON or single-row sources are shown
+as metrics tables.
 
-Data sources
-------------
-- **Dataset group TSV** - path specified in the QC config JSON under the
-  ``iqm_distribution`` key (e.g. ``derivatives/mriqc/group_T1w.tsv``).
-- **Reference population TSV** - path defined in
-  ``iqm_distribution_config.REFERENCE_DATA_PATHS``.
-- **Current subject** - identified by ``participant_id`` (e.g.
-  ``sub-ED01``) matched against the ``bids_name`` column in the dataset
-  TSV.  A subject may have multiple rows (multiple runs).
+IQM sources are read from the QC config's ``iqm_path`` entry. MRIQC group files
+use modality-specific metric groups for T1w, BOLD, and DWI data; other
+pipelines fall back to one plot per numeric metric.
 """
 
 import re
@@ -98,11 +92,7 @@ def _infer_modality_from_path(path: str) -> Optional[str]:
 
 
 def _path_after_pipeline(path) -> str:
-    """Path segments after derivatives/<pipeline>/, extension stripped -
-    e.g. "23.1.0/group_T1w" for derivatives/mriqc/23.1.0/group_T1w.tsv.
-    Distinguishes sibling sources that share both pipeline_name and
-    modality but differ by a pipeline-version subdirectory. Falls back to
-    the filename stem if there's no derivatives segment to anchor on."""
+    """Return source-identifying path segments after ``derivatives/<pipeline>/``."""
     parts = Path(path).parts
     if "derivatives" in parts:
         idx = parts.index("derivatives")
@@ -113,19 +103,7 @@ def _path_after_pipeline(path) -> str:
 
 
 def _disambiguate_tab_labels(sources) -> list:
-    """Build a display label per source, in source order.
-
-    Always shows modality (when known) and, for a per-subject MetricsSource,
-    a "subject-level" qualifier, so a reviewer can tell tabs apart (and tell
-    a group-level distribution tab from a per-subject metrics tab) without
-    opening them. If those qualifiers still leave two labels identical -
-    same pipeline_name and modality, e.g. two MRIQC pipeline-version folders
-    emitting the same group_T1w.tsv - falls back to the path segments after
-    derivatives/<pipeline>/, then numbers anything still colliding as a
-    last resort. segmented_control breaks silently on duplicate option
-    values (only the first is selectable), so uniqueness here is a hard
-    requirement, not just cosmetic.
-    """
+    """Build unique tab labels for all configured IQM sources."""
 
     def make_label(source, parts) -> str:
         return f"{source.pipeline_name} ({', '.join(parts)})" if parts else source.pipeline_name
@@ -169,8 +147,11 @@ def _disambiguate_tab_labels(sources) -> list:
 
 
 def _generic_groups_from_columns(iqm_data) -> dict:
-    # need to expand this based on the pipeline and modality, but for now just return all numeric columns as a single group
-    """Return a generic IQM group for any modality with all numeric columns."""
+    """Return a stable fallback grouping for non-curated IQM sources.
+
+    Until a pipeline-specific grouping is available, each numeric metric is
+    rendered as its own group so the source remains inspectable.
+    """
     metric_columns = [col for col in iqm_data.columns if (pd.api.types.is_numeric_dtype(iqm_data[col]) and col.lower() not in NON_METRIC_COLUMNS)]
 
     return {col: [col] for col in metric_columns}
@@ -198,8 +179,7 @@ def _load_distribution_source(path, resolved, pipeline_name):
         )
         return None
 
-    # Inferred from the path regardless of pipeline, so even a non-MRIQC tab
-    # label can show its modality - curated groups below still stay MRIQC-only.
+    # Infer modality for tab labels; curated metric groups remain MRIQC-only.
     modality = _infer_modality_from_path(path)
 
     if len(iqm_data) == 1:
@@ -221,7 +201,7 @@ def _load_distribution_source(path, resolved, pipeline_name):
         valid_groups = _get_valid_iqm_groups(distribution_groups, iqm_data)
 
     else:
-        valid_groups = _generic_groups_from_columns(iqm_data)  # already guaranteed valid.
+        valid_groups = _generic_groups_from_columns(iqm_data)
 
     if not valid_groups:
         st.warning(
@@ -258,9 +238,7 @@ def _load_metrics_source(path, resolved, pipeline_name):
 
 
 def _load_iqm_sources(iqm_paths, qc_config_path=None, dataset_dir=None) -> list:
-    """Resolve and load every configured IQM source. Skips (with a UI warning)
-    any path that fails to load, so one bad source doesn't take down the
-    other tabs."""
+    """Resolve configured IQM sources, skipping failed sources with UI warnings."""
     sources = []
     for path in iqm_paths:
         resolved = resolve_iqm_data_path(path, qc_config_path, dataset_dir)
@@ -277,10 +255,13 @@ def _load_iqm_sources(iqm_paths, qc_config_path=None, dataset_dir=None) -> list:
     return sources
 
 
-# for now I have decided to return a table if the user put participant level json metrics, and a distribution plot if the user put group level tsv metrics.
-# this behaviour might change in the future, but for now it is a simple way to handle both types of metrics.
 def _render_iqm_metrics_table(metrics: dict, participant_id: str) -> None:
-    """Render a single JSON/single-row metrics source as a plain key/value table."""
+    """Render participant-level metrics using the default table view.
+
+    Group-level TSV/CSV files support distribution plots. Single-subject JSON
+    files and single-row tables use this table view until richer per-subject
+    metric displays are defined.
+    """
     scalar_metrics = {k: v for k, v in metrics.items() if not isinstance(v, (dict, list))}
     if not scalar_metrics:
         st.warning("No metrics found in this IQM source.")
@@ -291,12 +272,7 @@ def _render_iqm_metrics_table(metrics: dict, participant_id: str) -> None:
 
 
 def _extract_run_identifier(base_mri_image_path, participant_id: str, session_id: str = None) -> Optional[str]:
-    """Pull whatever BIDS entities identify a specific run/task out of the
-    current QC task's base_mri_image_path filename, once participant_id and
-    session_id are stripped out - e.g. "task-rest_run-1_bold" from
-    ..._task-rest_run-1_bold.nii.gz. Used to scope the subject-overlay
-    markers to the exact acquisition being reviewed elsewhere on the page,
-    instead of every run this subject/session has in the group table."""
+    """Extract run/task BIDS entities from the current QC image path."""
     if not base_mri_image_path:
         return None
 
@@ -328,12 +304,12 @@ def _extract_subject_data(data: pd.DataFrame, participant_id: str, columns: list
 
         session_mask = participant_mask & data["bids_name"].str.contains(session_id)
 
-        # Some MRIQC files encode runs without session tags; in that case,fall back to participant-only rows so subject markers remain visible.
+        # Some MRIQC files omit session tags; fall back to participant rows when needed.
         if session_mask.any():
             mask = session_mask
 
     if run_identifier:
-        # Narrow further to the specific run/task being reviewed, but only if that actually matches something
+        # Match the current run/task when possible, without hiding all subject rows.
         run_mask = mask & data["bids_name"].str.contains(run_identifier, regex=False)
         if run_mask.any():
             mask = run_mask
@@ -358,14 +334,7 @@ REFERENCE_OUTLIER_PERCENTILES = (0.01, 0.99)
 def _clip_reference_outliers(
     data: pd.DataFrame, columns, low: float = REFERENCE_OUTLIER_PERCENTILES[0], high: float = REFERENCE_OUTLIER_PERCENTILES[1]
 ) -> pd.DataFrame:
-    """Cap each column's values to its [low, high] percentile range.
-
-    A handful of corrupted/degenerate rows in a large reference population
-    can otherwise stretch the shared y-axis so far that the actual
-    comparison becomes unreadable (e.g. fber ranging 0-561536 with a median
-    of 1.15). Caps values rather than dropping rows, so sample count and
-    the bulk shape stay intact - only the rendered extremity is pulled in.
-    """
+    """Clip reference values to percentile bounds so plots keep readable axes."""
     clipped = data.copy()
     for col in columns:
         if col not in clipped.columns:
@@ -384,13 +353,7 @@ def _add_violin_traces(
     side: str = "both",
     points: Union[bool, str] = False,
 ) -> None:
-    """Add one violin trace per metric column to the figure.
-
-    side="both" draws a full violin (dataset-only mode). side="negative"/
-    "positive" draws just the left/right half - call twice with the same
-    metric columns (once per side) and violinmode="overlay" to get a split
-    violin comparing dataset (left) against reference (right).
-    """
+    """Add one violin trace per metric column."""
     first_shown = True
     cols = data.columns
 
@@ -483,12 +446,10 @@ def _build_iqm_distribution_figure(
 ) -> Optional[go.Figure]:
     """Construct the Plotly figure for the IQM distribution panel."""
 
-    # ____________Filter data ___________
     if not metric_columns:
         st.error("None of the required columns for this group are present in the data.")
         return None
 
-    # ___________load data for plotting___________
     iqm_data_for_group = _coerce_numeric_columns(iqm_data, metric_columns)
     participant_columns = _extract_subject_data(
         iqm_data_for_group,
@@ -509,7 +470,6 @@ def _build_iqm_distribution_figure(
         if reference_plot_data is None or reference_plot_data.dropna(how="all").empty:
             group_display_mode = DISPLAY_MODE_OPTIONS[0]
 
-    # ____________Render distribution plot___________
     fig = go.Figure()
 
     if group_display_mode == DISPLAY_MODE_OPTIONS[0]:
@@ -533,7 +493,6 @@ def _build_iqm_distribution_figure(
             points=False,
         )
         _add_subject_overlay(fig, participant_columns, participant_id, offsetgroup="Dataset", label_suffix=" (dataset)")
-        # Keep sampling for performance, but show reference points for parity with dataset view.
         _add_violin_traces(
             fig,
             reference_plot_data,
@@ -637,9 +596,8 @@ def _render_iqm_distributions(
 
     sources = _load_iqm_sources(iqm_paths, qc_config_path, dataset_dir)
     if not sources:
-        return  # per-source errors/warnings already surfaced above
+        return
 
-    # ____________Display mode selection___________
     tab_options = _disambiguate_tab_labels(sources)
 
     remembered_tab = SessionManager.get_iqm_view_selection()
@@ -661,7 +619,6 @@ def _render_iqm_distributions(
     if selected_label is None:
         selected_label = remembered_tab
 
-    # find the selected source
     source = next((s for s, label in zip(sources, tab_options) if label == selected_label), None)
 
     source_modality = getattr(source, "modality", None)
@@ -728,12 +685,14 @@ def _render_iqm_distributions(
 def _display_iqm_panel(
     qc_config: dict, qc_config_path: str, participant_id: str, session_id: str, dataset_dir: str = None, qc_task: str = None
 ) -> None:
-    """Display the IQM distribution panel.
+    """Display the configured IQM panel for the current participant/session.
 
     Args:
         qc_config: QC configuration object
         qc_config_path: Path to the QC configuration file
         participant_id: ID of the participant whose data to display
+        session_id: ID of the session whose data to display
+        dataset_dir: Optional dataset root used to resolve relative paths
         qc_task: The QC task for which to display IQM distributions
     """
 
