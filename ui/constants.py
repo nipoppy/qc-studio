@@ -70,6 +70,10 @@ SESSION_KEYS = {
     "montage_max_cols": "montage_max_cols",
     # Set once per Streamlit session after reading qc.json (avoid re-applying on every rerun)
     "montage_defaults_applied_qc_task": "montage_defaults_applied_qc_task",
+    # IQM viewer widget selections, mirrored outside the widgets' own keys so
+    # they survive the sidebar's mid-script st.rerun()/st.switch_page() calls.
+    "iqm_view_selection": "iqm_view_selection",
+    "iqm_display_mode_selection": "iqm_display_mode_selection",
 }
 
 # File upload settings
@@ -126,6 +130,9 @@ MESSAGES = {
     "niivue_controls_header": "Niivue Controls",
     "svg_header": "SVG Montage",
     "metrics_header": "QC Metrics",
+    "iqm_distribution_header": "IQM Distributions",
+    "iqm_metrics_table_experimental": "🧪 Experimental layout — subject-level metrics table, may change.",
+    "iqm_generic_distribution_experimental": "🧪 Experimental layout — generic per-column view for a non-MRIQC pipeline, may change.",
     "view_mode_label": "View Mode",
     "overlay_colormap_label": "Overlay Colormap",
     "display_settings_header": "Display Settings",
@@ -153,6 +160,10 @@ ERROR_MESSAGES = {
     "base_mri_preview_reduced": "Showing first BOLD volume (full 4D file is too large for the browser).",
     "svg_not_found": "SVG montage not found or could not be loaded.",
     "participant_list_load_error": "Error loading participant list: {error}",
+    "reference_data_load_error": "Error loading reference data: {error}",
+    "iqm_no_sources_configured": "No IQM distribution sources are configured for this task.",
+    "iqm_data_load_error": "Failed to load IQM data for {modality}: {error}",
+    "iqm_no_valid_groups": "None of the defined IQM groups have valid columns in the data.",
 }
 
 # Success messages

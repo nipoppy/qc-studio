@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -11,7 +11,19 @@ from utils.config import parse_qc_config
 from utils.data_loaders import (
     load_mri_data,
     load_svg_data,
-    load_iqm_data,
+    _resolve_metadata_path,
+    _infer_bids_ids_from_path,
+    _infer_dataset_root_from_path,
+    _infer_bids_folder_from_path,
+    _find_bids_metadata_sidecar,
+    load_scanner_metadata,
+    resolve_iqm_data_path,
+    load_iqm_distribution_table,
+    load_iqm_metrics_subject_level,
+    normalize_manufacturer,
+    normalize_field_strength,
+    download_reference_parquet,
+    load_reference_iqm_for_subject,
 )
 from utils.export import save_qc_results_to_csv
 
@@ -21,9 +33,25 @@ pytestmark = pytest.mark.integration
 class TestParseQcConfig:
     """Test parse_qc_config function."""
 
-    def test_parse_valid_qc_config(self, sample_qc_config):
+    substitution_values = {
+        "participant_id": "sub-ED01",
+        "session_id": "ses-01",
+    }
+
+    def test_parse_valid_qc_config(self, temp_dir):
         """Test parsing a valid QC config file."""
-        result = parse_qc_config(str(sample_qc_config), "anat_wf_qc")
+        qc_config = {
+            "anat_wf_qc": {
+                "base_mri_image_path": str(temp_dir / "base.nii.gz"),
+                "overlay_mri_image_path": str(temp_dir / "overlay.nii.gz"),
+                "svg_montage_path": [str(temp_dir / "montage.svg")],
+                "iqm_path": str(temp_dir / "iqm.json"),
+            }
+        }
+        config_path = temp_dir / "qc_config.json"
+        config_path.write_text(json.dumps(qc_config))
+
+        result = parse_qc_config(str(config_path), "anat_wf_qc", self.substitution_values)
 
         assert result is not None
         assert "base_mri_image_path" in result
@@ -354,47 +382,112 @@ class TestLoadSvgData:
         assert result[filename]["type"] == "svg"
 
 
-class TestLoadIqmData:
-    """Test load_iqm_data function."""
+class TestScannerMetadataHelpers:
+    """Test scanner metadata helper functions in data_loaders."""
 
-    def test_load_valid_iqm_json(self, temp_dir):
-        """Test loading valid IQM JSON file."""
-        iqm_data = {"metric1": 0.95, "metric2": 0.87}
-        iqm_file = temp_dir / "iqm.json"
-        iqm_file.write_text(json.dumps(iqm_data))
+    def test_resolve_metadata_path_for_nii_gz(self, temp_dir):
+        """Test sidecar path resolution for .nii.gz images."""
+        image_path = temp_dir / "sub-01_T1w.nii.gz"
+        expected = temp_dir / "sub-01_T1w.json"
 
-        path_dict = {"iqm_path": iqm_file}
+        result = _resolve_metadata_path(image_path)
 
-        result = load_iqm_data(path_dict)
+        assert result == expected
 
-        assert result == iqm_data
+    def test_resolve_metadata_path_for_nii(self, temp_dir):
+        """Test sidecar path resolution for .nii images."""
+        image_path = temp_dir / "sub-01_T1w.nii"
+        expected = temp_dir / "sub-01_T1w.json"
 
-    def test_load_iqm_nonexistent_file(self, temp_dir):
-        """Test loading non-existent IQM file."""
-        path_dict = {"iqm_path": temp_dir / "nonexistent.json"}
+        result = _resolve_metadata_path(str(image_path))
 
-        result = load_iqm_data(path_dict)
+        assert result == expected
 
-        assert result is None
+    def test_resolve_metadata_path_with_none(self):
+        """Test sidecar path resolution with empty path."""
+        assert _resolve_metadata_path(None) is None
 
-    def test_load_iqm_malformed_json(self, temp_dir):
-        """Test loading malformed IQM JSON file."""
-        iqm_file = temp_dir / "bad_iqm.json"
-        iqm_file.write_text("{ invalid json }")
+    def test_resolve_metadata_path_with_unsupported_extension(self, temp_dir):
+        """Unsupported image extensions should not produce sidecar paths."""
+        image_path = temp_dir / "sub-01_T1w.mgz"
+        assert _resolve_metadata_path(image_path) is None
 
-        path_dict = {"iqm_path": iqm_file}
+    def test_infer_bids_ids_from_path(self):
+        """Infer participant/session IDs from standard BIDS-like paths."""
+        participant_id, session_id = _infer_bids_ids_from_path("derivatives/fmriprep/sub-01/ses-02/anat/sub-01_ses-02_T1w.nii.gz")
+        assert participant_id == "sub-01"
+        assert session_id == "ses-02"
 
-        result = load_iqm_data(path_dict)
+    def test_infer_dataset_root_from_derivatives_path(self):
+        """Infer dataset root from derivatives path."""
+        root = _infer_dataset_root_from_path("/tmp/project/derivatives/fmriprep/sub-01/ses-01/anat/sub-01_ses-01_T1w.nii.gz")
+        assert str(root).endswith("/tmp/project")
 
-        assert result is None
+    def test_find_bids_metadata_sidecar_prefers_participant_session(self, temp_dir):
+        """Find participant/session-specific sidecar under bids directory."""
+        sidecar = temp_dir / "bids" / "sub-01" / "ses-01" / "anat" / "sub-01_ses-01_T1w.json"
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(json.dumps({"Manufacturer": "Siemens"}))
 
-    def test_load_iqm_with_none_path(self):
-        """Test loading IQM with None path."""
-        path_dict = {"iqm_path": None}
+        result = _find_bids_metadata_sidecar(temp_dir, participant_id="sub-01", session_id="ses-01")
+        assert result == sidecar
 
-        result = load_iqm_data(path_dict)
+    def test_load_scanner_metadata_reads_sidecar(self, temp_dir):
+        """Test loading scanner metadata from a valid sidecar."""
+        image_path = temp_dir / "sub-01_T1w.nii.gz"
+        image_path.write_text("dummy")
+        sidecar_path = temp_dir / "sub-01_T1w.json"
+        sidecar_path.write_text(
+            json.dumps(
+                {
+                    "Manufacturer": "Siemens",
+                    "MagneticFieldStrength": 3,
+                }
+            )
+        )
 
-        assert result is None
+        result = load_scanner_metadata(image_path)
+
+        assert result["Manufacturer"] == "Siemens"
+        assert result["MagneticFieldStrength"] == 3
+
+    def test_load_scanner_metadata_defaults_when_keys_missing(self, temp_dir):
+        """Test loading scanner metadata defaults missing keys to Unknown."""
+        image_path = temp_dir / "sub-01_T1w.nii.gz"
+        image_path.write_text("dummy")
+        sidecar_path = temp_dir / "sub-01_T1w.json"
+        sidecar_path.write_text(json.dumps({}))
+
+        result = load_scanner_metadata(image_path)
+
+        assert result["Manufacturer"] == "Unknown"
+        assert result["MagneticFieldStrength"] == "Unknown"
+
+    def test_load_scanner_metadata_falls_back_to_bids_sidecar(self, temp_dir):
+        """If derivative sidecar is missing, use raw BIDS sidecar lookup."""
+        image_path = temp_dir / "derivatives" / "fmriprep" / "sub-01" / "ses-01" / "anat" / "sub-01_ses-01_T1w.nii.gz"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("dummy")
+
+        bids_sidecar = temp_dir / "bids" / "sub-01" / "ses-01" / "anat" / "sub-01_ses-01_T1w.json"
+        bids_sidecar.parent.mkdir(parents=True, exist_ok=True)
+        bids_sidecar.write_text(json.dumps({"Manufacturer": "GE", "MagneticFieldStrength": 1.5}))
+
+        result = load_scanner_metadata(image_path, participant_id="sub-01", session_id="ses-01")
+
+        assert result["Manufacturer"] == "GE"
+        assert result["MagneticFieldStrength"] == 1.5
+
+    def test_load_scanner_metadata_returns_unknown_when_no_sidecar(self, temp_dir):
+        """When no sidecar is available anywhere, return Unknown values."""
+        image_path = temp_dir / "derivatives" / "fmriprep" / "sub-99" / "anat" / "sub-99_T1w.nii.gz"
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("dummy")
+
+        result = load_scanner_metadata(image_path, participant_id="sub-99")
+
+        assert result["Manufacturer"] == "Unknown"
+        assert result["MagneticFieldStrength"] == "Unknown"
 
 
 class TestSaveQcResultsToCsv:
@@ -465,3 +558,226 @@ class TestSaveQcResultsToCsv:
         ]
         assert list(df["session_id"]) == ["ses-01", "ses-01", "ses-02", "ses-01"]
         assert list(df["qc_task"]) == ["anat_wf_qc", "b_task", "a_task", "z_task"]
+
+
+class TestInferBidsFolderFromPath:
+    """Test _infer_bids_folder_from_path - shared by load_scanner_metadata
+    (BIDS sidecar lookup) and mirrored by iqm_viewer.py's own
+    _infer_modality_from_path (already tested against the same cases in
+    test_iqm_viewer.py::test_infer_bids_from_path, different return
+    vocabulary: anat/func/dwi here vs t1w/bold/dwi there)."""
+
+    def test_infers_modality_folder_from_directory_and_filename(self):
+        cases = [
+            ("bids/sub-01/ses-01/anat/sub-01_ses-01_T1w.nii.gz", "anat"),
+            ("bids/sub-01/ses-01/func/sub-01_ses-01_task-rest_bold.nii.gz", "func"),
+            ("bids/sub-01/ses-01/dwi/sub-01_ses-01_dwi.nii.gz", "dwi"),
+            ("derivatives/mriqc/group_T1w.tsv", "anat"),
+            ("derivatives/mriqc/group_bold.tsv", "func"),
+            ("derivatives/mriqc/group_dwi.tsv", "dwi"),
+            ("derivatives/fsqc/2.1.4/output/metrics.csv", None),
+            (None, None),
+            ("", None),
+        ]
+        for path, expected in cases:
+            assert _infer_bids_folder_from_path(path) == expected, f"failed for {path!r}"
+
+
+class TestResolveIqmDataPath:
+    """Test resolve_iqm_data_path's candidate-directory resolution."""
+
+    def test_absolute_existing_path_returned_as_is(self, temp_dir):
+        f = temp_dir / "group_T1w.tsv"
+        f.write_text("data")
+
+        assert resolve_iqm_data_path(str(f)) == f
+
+    def test_resolves_relative_to_dataset_dir(self, temp_dir):
+        f = temp_dir / "derivatives" / "mriqc" / "group_T1w.tsv"
+        f.parent.mkdir(parents=True)
+        f.write_text("data")
+
+        result = resolve_iqm_data_path("derivatives/mriqc/group_T1w.tsv", dataset_dir=str(temp_dir))
+
+        assert result == f
+
+    def test_resolves_relative_to_qc_config_path_parent(self, temp_dir):
+        f = temp_dir / "group_T1w.tsv"
+        f.write_text("data")
+        qc_config_path = temp_dir / "qc.json"
+
+        result = resolve_iqm_data_path("group_T1w.tsv", qc_config_path=str(qc_config_path))
+
+        assert result == f
+
+    def test_falls_back_to_original_path_when_no_candidate_exists(self):
+        result = resolve_iqm_data_path("nonexistent_dir/group_T1w.tsv")
+
+        assert result == Path("nonexistent_dir/group_T1w.tsv")
+
+
+class TestLoadIqmDistributionTable:
+    """Test load_iqm_distribution_table's extension-based separator dispatch."""
+
+    def test_loads_tsv_with_tab_separator(self, temp_dir):
+        f = temp_dir / "group_T1w.tsv"
+        f.write_text("bids_name\tefc\nsub-01_T1w\t0.1\n")
+
+        df = load_iqm_distribution_table(f)
+
+        assert list(df.columns) == ["bids_name", "efc"]
+        assert df.iloc[0]["efc"] == 0.1
+
+    def test_loads_csv_with_comma_separator(self, temp_dir):
+        f = temp_dir / "metrics.csv"
+        f.write_text("bids_name,efc\nsub-01_T1w,0.1\n")
+
+        df = load_iqm_distribution_table(f)
+
+        assert list(df.columns) == ["bids_name", "efc"]
+        assert df.iloc[0]["efc"] == 0.1
+
+    def test_raises_on_missing_file(self, temp_dir):
+        with pytest.raises(Exception):
+            load_iqm_distribution_table(temp_dir / "nonexistent.tsv")
+
+
+class TestLoadIqmMetricsSubjectLevel:
+    """Test load_iqm_metrics_subject_level's JSON reading."""
+
+    def test_reads_json_metrics(self, temp_dir):
+        f = temp_dir / "sub-01_T1w.json"
+        f.write_text(json.dumps({"efc": 0.1, "cjv": 0.5}))
+
+        result = load_iqm_metrics_subject_level(f)
+
+        assert result == {"efc": 0.1, "cjv": 0.5}
+
+    def test_raises_on_missing_file(self, temp_dir):
+        with pytest.raises(FileNotFoundError):
+            load_iqm_metrics_subject_level(temp_dir / "nonexistent.json")
+
+    def test_raises_on_malformed_json(self, temp_dir):
+        f = temp_dir / "bad.json"
+        f.write_text("{ not valid json")
+
+        with pytest.raises(json.JSONDecodeError):
+            load_iqm_metrics_subject_level(f)
+
+
+class TestNormalizeManufacturer:
+    """Test normalize_manufacturer's alias mapping."""
+
+    def test_maps_known_aliases(self):
+        assert normalize_manufacturer("Siemens Healthineers") == "siemens"
+        assert normalize_manufacturer("GE Medical Systems") == "ge"
+        assert normalize_manufacturer("Philips Healthcare") == "philips"
+
+    def test_unknown_labels_normalize_to_unknown(self):
+        for value in ["", "Unknown", "N/A", "null", "none", None]:
+            assert normalize_manufacturer(value) == "unknown", f"failed for {value!r}"
+
+    def test_unrecognized_value_passes_through_lowercased(self):
+        assert normalize_manufacturer("Canon") == "canon"
+
+
+class TestNormalizeFieldStrength:
+    """Test normalize_field_strength's alias and numeric normalization."""
+
+    def test_maps_known_aliases(self):
+        assert normalize_field_strength("3.0") == "3"
+        assert normalize_field_strength("3T") == "3"
+        assert normalize_field_strength("3.0T") == "3"
+        assert normalize_field_strength("1.0") == "1"
+        assert normalize_field_strength("1.5T") == "1.5"
+        assert normalize_field_strength("7T") == "7"
+
+    def test_unknown_labels_normalize_to_none(self):
+        for value in ["", "Unknown", "N/A", None]:
+            assert normalize_field_strength(value) is None, f"failed for {value!r}"
+
+    def test_numeric_values_normalize_to_strings(self):
+        assert normalize_field_strength(3) == "3"
+        assert normalize_field_strength(3.0) == "3"
+        assert normalize_field_strength(1.5) == "1.5"
+        assert normalize_field_strength("3") == "3"
+
+
+class TestDownloadReferenceParquet:
+    """Test lazy filesystem cache creation for reference Parquet downloads."""
+
+    def test_missing_url_does_not_create_cache_dir(self, temp_dir, monkeypatch):
+        cache_dir = temp_dir / "reference_cache"
+        monkeypatch.setattr("utils.data_loaders.REFERENCE_CACHE_DIR", cache_dir)
+
+        with pytest.raises(RuntimeError):
+            download_reference_parquet("t1w", url_parent="")
+
+        assert not cache_dir.exists()
+
+    def test_download_creates_cache_dir_when_writing(self, temp_dir, monkeypatch):
+        cache_dir = temp_dir / "reference_cache"
+        monkeypatch.setattr("utils.data_loaders.REFERENCE_CACHE_DIR", cache_dir)
+
+        with patch("utils.data_loaders._download_reference_parquet_bytes", return_value=b"parquet"):
+            result = download_reference_parquet("t1w", url_parent="https://example.test/reference")
+
+        assert Path(result) == cache_dir / "t1w.parquet"
+        assert Path(result).read_bytes() == b"parquet"
+
+
+class TestLoadReferenceIqmForSubject:
+    """Test load_reference_iqm_for_subject's manufacturer/field-strength
+    filtering and row-sampling, with _load_reference_parquet mocked out
+    (no real Parquet download/IO). Each test uses a distinct `modality`
+    string so _load_reference_iqm_filtered's @st.cache_data cache key
+    never collides across tests."""
+
+    def test_filters_by_manufacturer_and_field_strength(self):
+        reference_df = pd.DataFrame(
+            {
+                "Manufacturer": ["Siemens", "GE", "Siemens"],
+                "MagneticFieldStrength": ["3.0", 3, 1.0],
+                "efc": [0.1, 0.2, 0.3],
+            }
+        )
+        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+            result = load_reference_iqm_for_subject(
+                modality="t1w_test_manufacturer_and_field_strength",
+                manufacturer="Siemens Healthineers",
+                field_strength="3.0",
+            )
+
+        assert len(result) == 1
+        assert result.iloc[0]["efc"] == 0.1
+
+    def test_unknown_manufacturer_skips_manufacturer_filter(self):
+        reference_df = pd.DataFrame(
+            {
+                "Manufacturer": ["Siemens", "GE"],
+                "efc": [0.1, 0.2],
+            }
+        )
+        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+            result = load_reference_iqm_for_subject(
+                modality="t1w_test_unknown_manufacturer",
+                manufacturer=None,
+            )
+
+        assert len(result) == 2
+
+    def test_samples_down_to_max_rows(self):
+        reference_df = pd.DataFrame(
+            {
+                "Manufacturer": ["Siemens"] * 100,
+                "efc": range(100),
+            }
+        )
+        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+            result = load_reference_iqm_for_subject(
+                modality="t1w_test_row_sampling",
+                manufacturer="Siemens",
+                max_rows=10,
+            )
+
+        assert len(result) == 10

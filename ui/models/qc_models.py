@@ -60,7 +60,9 @@ class QCTask(BaseModel):
     svg_montage_path: Annotated[Optional[List[Path]], Field(description="List of paths to SVG montages for visual QC")] = None
 
     # Path for IQMs or other QC files (e.g. CSV, JSON)
-    iqm_path: Annotated[Optional[Path], Field(description="Path to an IQM or other QC SVG/file")] = None
+    iqm_path: Annotated[
+        Optional[List[Path]], Field(description="List of paths to IQM sources (TSV/CSV distribution tables or JSON metrics), one per pipeline source")
+    ] = None
 
     # Optional grid constraints for multi-image SVG/raster montage (see utils.data_loaders.load_svg_data)
     montage_max_rows: Annotated[
@@ -85,6 +87,16 @@ class QCTask(BaseModel):
     @field_validator("svg_montage_path", mode="before")
     @classmethod
     def _coerce_svg_montage_path(cls, v):
+        """Accept a single path/string from JSON or a list of paths."""
+        if v is None:
+            return None
+        if isinstance(v, (list, tuple)):
+            return [str(Path(x)) for x in v]
+        return [str(Path(v))]
+
+    @field_validator("iqm_path", mode="before")
+    @classmethod
+    def _coerce_iqm_path(cls, v):
         """Accept a single path/string from JSON or a list of paths."""
         if v is None:
             return None

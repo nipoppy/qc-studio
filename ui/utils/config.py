@@ -37,7 +37,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
       - 'base_mri_image_path': Path | None
       - 'overlay_mri_image_path': Path | None
       - 'svg_montage_path': list[Path] | None
-      - 'iqm_path': Path | None
+      - 'iqm_path': list[Path] | None
       - 'montage_max_rows': int | None
       - 'montage_max_cols': int | None
 
@@ -47,7 +47,6 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
     """
 
     qc_json_path = Path(qc_json) if qc_json else None
-    # print(f"Parsing QC config: {qc_json_path}, task: {qc_task}")
 
     try:
         # Pydantic v2 deprecates `parse_file`; read file and validate JSON string.
