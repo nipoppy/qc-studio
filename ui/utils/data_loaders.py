@@ -45,11 +45,20 @@ MANUFACTURER_ALIASES = {
 }
 
 FIELD_STRENGTH_ALIASES = {
+    "1": "1",
     "1.0": "1",
     "1t": "1",
+    "1.0t": "1",
+    "1.5": "1.5",
+    "1.5t": "1.5",
+    "3": "3",
     "3.0": "3",
-    "3T": "3",
     "3t": "3",
+    "3.0t": "3",
+    "7": "7",
+    "7.0": "7",
+    "7t": "7",
+    "7.0t": "7",
 }
 
 from constants import NIIVUE_MAX_FILE_BYTES
@@ -598,7 +607,7 @@ def _find_bids_metadata_sidecar(
     return None
 
 
-def _load_scanner_metadata(
+def load_scanner_metadata(
     image_path: Union[Path, str], participant_id: str = None, session_id: str = None, modality: str = None, dataset_dir: Union[Path, str] = None
 ) -> dict:
     """Load scanner metadata from the JSON sidecar of a BIDS image file.
@@ -728,8 +737,6 @@ def normalize_manufacturer(value: object) -> str:
     return MANUFACTURER_ALIASES.get(normalized, normalized)
 
 
-# fix this: extend normalization for numeric/string field strengths such as
-# "1.5T", "3", "3.0T", and "7T".
 def normalize_field_strength(value: object) -> Optional[str]:
     normalized = str(value or "").strip().lower()
 
@@ -738,6 +745,16 @@ def normalize_field_strength(value: object) -> Optional[str]:
 
     if normalized in FIELD_STRENGTH_ALIASES:
         return FIELD_STRENGTH_ALIASES[normalized]
+
+    if normalized.endswith("t"):
+        normalized = normalized[:-1].strip()
+
+    try:
+        numeric_value = float(normalized)
+    except (TypeError, ValueError):
+        return normalized or None
+
+    return f"{numeric_value:g}"
 
 
 @st.cache_data(show_spinner="Loading reference data...", ttl=CACHE_TTL_SECONDS)
@@ -778,6 +795,7 @@ def _load_reference_iqm_filtered(
     """
     data = _load_reference_parquet(modality)
 
+    # TODO: Add a dedicated reference-data cleaning step before filtering.
     if manufacturer_subject_norm != "unknown" and "Manufacturer" in data.columns:
         manufacturer_norm = data["Manufacturer"].map(normalize_manufacturer)
         data = data[manufacturer_norm == manufacturer_subject_norm]
@@ -793,7 +811,7 @@ def _load_reference_iqm_filtered(
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_iqm_distribution_table(resolved_path) -> pd.DataFrame:
+def load_iqm_distribution_table(resolved_path) -> pd.DataFrame:
     """Load a TSV/CSV distribution table and return a DataFrame. Raises on failure -
     the caller decides how to surface that (st.cache_data doesn't cache a raised
     exception, so a transient/fixable failure gets retried on the next rerun
@@ -803,6 +821,6 @@ def _load_iqm_distribution_table(resolved_path) -> pd.DataFrame:
     return pd.read_csv(resolved_path, sep="," if suffix == ".csv" else "\t")
 
 
-def _load_iqm_metrics_subject_level(resolved_path) -> dict:
+def load_iqm_metrics_subject_level(resolved_path) -> dict:
     """Read a single per-subject IQM metrics file. Raises on failure."""
     return json.loads(Path(resolved_path).read_text(encoding="utf-8"))

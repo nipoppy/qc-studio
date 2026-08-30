@@ -199,7 +199,7 @@ def test_display_iqm_panel_calls_loader_and_renderer(iqm_viewer_module, monkeypa
     extract_run_identifier = MagicMock(return_value="run-1_T1w")
     render = MagicMock()
 
-    monkeypatch.setattr(module, "_load_scanner_metadata", load_scanner_metadata)
+    monkeypatch.setattr(module, "load_scanner_metadata", load_scanner_metadata)
     monkeypatch.setattr(module, "_extract_run_identifier", extract_run_identifier)
     monkeypatch.setattr(module, "_render_iqm_distributions", render)
 

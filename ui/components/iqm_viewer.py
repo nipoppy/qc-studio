@@ -21,10 +21,10 @@ from typing import Optional, Union
 import plotly.graph_objects as go
 
 from utils.data_loaders import (
-    _load_scanner_metadata,
     resolve_iqm_data_path,
-    _load_iqm_distribution_table,
-    _load_iqm_metrics_subject_level,
+    load_scanner_metadata,
+    load_iqm_distribution_table,
+    load_iqm_metrics_subject_level,
     load_reference_iqm_for_subject,
 )
 from constants import MESSAGES, ERROR_MESSAGES
@@ -165,7 +165,7 @@ def _row_to_metrics(row) -> dict:
 def _load_distribution_source(path, resolved, pipeline_name):
     """Load a TSV/CSV distribution source and return a DistributionSource or MetricsSource object."""
     try:
-        iqm_data = _load_iqm_distribution_table(resolved)
+        iqm_data = load_iqm_distribution_table(resolved)
     except Exception as e:
         st.error(ERROR_MESSAGES["iqm_data_load_error"].format(modality=pipeline_name, error=e))
         return None
@@ -224,7 +224,7 @@ def _load_distribution_source(path, resolved, pipeline_name):
 def _load_metrics_source(path, resolved, pipeline_name):
     """JSON branch: a single per-subject metrics dict, rendered as one tab of a plain table."""
     try:
-        metrics = _load_iqm_metrics_subject_level(resolved)
+        metrics = load_iqm_metrics_subject_level(resolved)
     except Exception as e:
         st.error(ERROR_MESSAGES["iqm_data_load_error"].format(modality=pipeline_name, error=e))
         return None
@@ -698,7 +698,7 @@ def _display_iqm_panel(
 
     iqm_config = qc_config.get("iqm_path", {})
 
-    scanner_metadata = _load_scanner_metadata(
+    scanner_metadata = load_scanner_metadata(
         qc_config.get("base_mri_image_path"),
         participant_id=participant_id,
         session_id=session_id,

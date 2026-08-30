@@ -16,10 +16,10 @@ from utils.data_loaders import (
     _infer_dataset_root_from_path,
     _infer_bids_folder_from_path,
     _find_bids_metadata_sidecar,
-    _load_scanner_metadata,
+    load_scanner_metadata,
     resolve_iqm_data_path,
-    _load_iqm_distribution_table,
-    _load_iqm_metrics_subject_level,
+    load_iqm_distribution_table,
+    load_iqm_metrics_subject_level,
     normalize_manufacturer,
     normalize_field_strength,
     load_reference_iqm_for_subject,
@@ -445,7 +445,7 @@ class TestScannerMetadataHelpers:
             )
         )
 
-        result = _load_scanner_metadata(image_path)
+        result = load_scanner_metadata(image_path)
 
         assert result["Manufacturer"] == "Siemens"
         assert result["MagneticFieldStrength"] == 3
@@ -457,7 +457,7 @@ class TestScannerMetadataHelpers:
         sidecar_path = temp_dir / "sub-01_T1w.json"
         sidecar_path.write_text(json.dumps({}))
 
-        result = _load_scanner_metadata(image_path)
+        result = load_scanner_metadata(image_path)
 
         assert result["Manufacturer"] == "Unknown"
         assert result["MagneticFieldStrength"] == "Unknown"
@@ -472,7 +472,7 @@ class TestScannerMetadataHelpers:
         bids_sidecar.parent.mkdir(parents=True, exist_ok=True)
         bids_sidecar.write_text(json.dumps({"Manufacturer": "GE", "MagneticFieldStrength": 1.5}))
 
-        result = _load_scanner_metadata(image_path, participant_id="sub-01", session_id="ses-01")
+        result = load_scanner_metadata(image_path, participant_id="sub-01", session_id="ses-01")
 
         assert result["Manufacturer"] == "GE"
         assert result["MagneticFieldStrength"] == 1.5
@@ -483,7 +483,7 @@ class TestScannerMetadataHelpers:
         image_path.parent.mkdir(parents=True, exist_ok=True)
         image_path.write_text("dummy")
 
-        result = _load_scanner_metadata(image_path, participant_id="sub-99")
+        result = load_scanner_metadata(image_path, participant_id="sub-99")
 
         assert result["Manufacturer"] == "Unknown"
         assert result["MagneticFieldStrength"] == "Unknown"
@@ -560,7 +560,7 @@ class TestSaveQcResultsToCsv:
 
 
 class TestInferBidsFolderFromPath:
-    """Test _infer_bids_folder_from_path - shared by _load_scanner_metadata
+    """Test _infer_bids_folder_from_path - shared by load_scanner_metadata
     (BIDS sidecar lookup) and mirrored by iqm_viewer.py's own
     _infer_modality_from_path (already tested against the same cases in
     test_iqm_viewer.py::test_infer_bids_from_path, different return
@@ -616,13 +616,13 @@ class TestResolveIqmDataPath:
 
 
 class TestLoadIqmDistributionTable:
-    """Test _load_iqm_distribution_table's extension-based separator dispatch."""
+    """Test load_iqm_distribution_table's extension-based separator dispatch."""
 
     def test_loads_tsv_with_tab_separator(self, temp_dir):
         f = temp_dir / "group_T1w.tsv"
         f.write_text("bids_name\tefc\nsub-01_T1w\t0.1\n")
 
-        df = _load_iqm_distribution_table(f)
+        df = load_iqm_distribution_table(f)
 
         assert list(df.columns) == ["bids_name", "efc"]
         assert df.iloc[0]["efc"] == 0.1
@@ -631,37 +631,37 @@ class TestLoadIqmDistributionTable:
         f = temp_dir / "metrics.csv"
         f.write_text("bids_name,efc\nsub-01_T1w,0.1\n")
 
-        df = _load_iqm_distribution_table(f)
+        df = load_iqm_distribution_table(f)
 
         assert list(df.columns) == ["bids_name", "efc"]
         assert df.iloc[0]["efc"] == 0.1
 
     def test_raises_on_missing_file(self, temp_dir):
         with pytest.raises(Exception):
-            _load_iqm_distribution_table(temp_dir / "nonexistent.tsv")
+            load_iqm_distribution_table(temp_dir / "nonexistent.tsv")
 
 
 class TestLoadIqmMetricsSubjectLevel:
-    """Test _load_iqm_metrics_subject_level's JSON reading."""
+    """Test load_iqm_metrics_subject_level's JSON reading."""
 
     def test_reads_json_metrics(self, temp_dir):
         f = temp_dir / "sub-01_T1w.json"
         f.write_text(json.dumps({"efc": 0.1, "cjv": 0.5}))
 
-        result = _load_iqm_metrics_subject_level(f)
+        result = load_iqm_metrics_subject_level(f)
 
         assert result == {"efc": 0.1, "cjv": 0.5}
 
     def test_raises_on_missing_file(self, temp_dir):
         with pytest.raises(FileNotFoundError):
-            _load_iqm_metrics_subject_level(temp_dir / "nonexistent.json")
+            load_iqm_metrics_subject_level(temp_dir / "nonexistent.json")
 
     def test_raises_on_malformed_json(self, temp_dir):
         f = temp_dir / "bad.json"
         f.write_text("{ not valid json")
 
         with pytest.raises(json.JSONDecodeError):
-            _load_iqm_metrics_subject_level(f)
+            load_iqm_metrics_subject_level(f)
 
 
 class TestNormalizeManufacturer:
@@ -681,24 +681,25 @@ class TestNormalizeManufacturer:
 
 
 class TestNormalizeFieldStrength:
-    """Test normalize_field_strength's alias mapping.
-
-    Numeric scanner field strengths are tracked as a follow-up cleanup. The
-    current behavior is locked in here so it does not change silently.
-    """
+    """Test normalize_field_strength's alias and numeric normalization."""
 
     def test_maps_known_aliases(self):
         assert normalize_field_strength("3.0") == "3"
         assert normalize_field_strength("3T") == "3"
+        assert normalize_field_strength("3.0T") == "3"
         assert normalize_field_strength("1.0") == "1"
+        assert normalize_field_strength("1.5T") == "1.5"
+        assert normalize_field_strength("7T") == "7"
 
     def test_unknown_labels_normalize_to_none(self):
         for value in ["", "Unknown", "N/A", None]:
             assert normalize_field_strength(value) is None, f"failed for {value!r}"
 
-    def test_bare_numeric_value_currently_returns_none(self):
-        assert normalize_field_strength(3) is None
-        assert normalize_field_strength("3") is None
+    def test_numeric_values_normalize_to_strings(self):
+        assert normalize_field_strength(3) == "3"
+        assert normalize_field_strength(3.0) == "3"
+        assert normalize_field_strength(1.5) == "1.5"
+        assert normalize_field_strength("3") == "3"
 
 
 class TestLoadReferenceIqmForSubject:
@@ -709,15 +710,10 @@ class TestLoadReferenceIqmForSubject:
     never collides across tests."""
 
     def test_filters_by_manufacturer_and_field_strength(self):
-        # Field-strength values deliberately use the "3.0"/"1.0" spellings
-        # FIELD_STRENGTH_ALIASES actually recognizes - a bare numeric 3 (as
-        # MagneticFieldStrength commonly appears in real sidecars) hits the
-        # normalize_field_strength gap documented above and silently skips
-        # this filter, which would make this test pass for the wrong reason.
         reference_df = pd.DataFrame(
             {
                 "Manufacturer": ["Siemens", "GE", "Siemens"],
-                "MagneticFieldStrength": ["3.0", "3.0", "1.0"],
+                "MagneticFieldStrength": ["3.0", 3, 1.0],
                 "efc": [0.1, 0.2, 0.3],
             }
         )
