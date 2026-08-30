@@ -24,7 +24,6 @@ load_dotenv()
 URL_PARENT = os.environ.get("REFERENCE_DATA_URL")
 
 REFERENCE_CACHE_DIR = Path(".streamlit/reference_cache")
-REFERENCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_REFERENCE_ROWS = 50_000
 CACHE_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -712,6 +711,12 @@ def _download_reference_parquet_bytes(url: str) -> bytes:
     return response.content
 
 
+def _get_reference_cache_dir() -> Path:
+    """Create and return the reference-data cache directory when needed."""
+    REFERENCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return REFERENCE_CACHE_DIR
+
+
 def download_reference_parquet(modality: str, url_parent: str = URL_PARENT) -> str:
     """Ensure a reference Parquet file exists locally and return its path."""
     cache_file_path = REFERENCE_CACHE_DIR / f"{modality}.parquet"
@@ -723,6 +728,7 @@ def download_reference_parquet(modality: str, url_parent: str = URL_PARENT) -> s
         raise RuntimeError("REFERENCE_DATA_URL is not set. Set it in the environment to enable " "downloading reference IQM data.")
 
     url = url_parent.rstrip("/") + f"/{modality}.parquet"
+    cache_file_path = _get_reference_cache_dir() / f"{modality}.parquet"
     cache_file_path.write_bytes(_download_reference_parquet_bytes(url))
 
     return str(cache_file_path)

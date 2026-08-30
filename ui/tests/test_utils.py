@@ -22,6 +22,7 @@ from utils.data_loaders import (
     load_iqm_metrics_subject_level,
     normalize_manufacturer,
     normalize_field_strength,
+    download_reference_parquet,
     load_reference_iqm_for_subject,
 )
 from utils.export import save_qc_results_to_csv
@@ -700,6 +701,29 @@ class TestNormalizeFieldStrength:
         assert normalize_field_strength(3.0) == "3"
         assert normalize_field_strength(1.5) == "1.5"
         assert normalize_field_strength("3") == "3"
+
+
+class TestDownloadReferenceParquet:
+    """Test lazy filesystem cache creation for reference Parquet downloads."""
+
+    def test_missing_url_does_not_create_cache_dir(self, temp_dir, monkeypatch):
+        cache_dir = temp_dir / "reference_cache"
+        monkeypatch.setattr("utils.data_loaders.REFERENCE_CACHE_DIR", cache_dir)
+
+        with pytest.raises(RuntimeError):
+            download_reference_parquet("t1w", url_parent="")
+
+        assert not cache_dir.exists()
+
+    def test_download_creates_cache_dir_when_writing(self, temp_dir, monkeypatch):
+        cache_dir = temp_dir / "reference_cache"
+        monkeypatch.setattr("utils.data_loaders.REFERENCE_CACHE_DIR", cache_dir)
+
+        with patch("utils.data_loaders._download_reference_parquet_bytes", return_value=b"parquet"):
+            result = download_reference_parquet("t1w", url_parent="https://example.test/reference")
+
+        assert Path(result) == cache_dir / "t1w.parquet"
+        assert Path(result).read_bytes() == b"parquet"
 
 
 class TestLoadReferenceIqmForSubject:
