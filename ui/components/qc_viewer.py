@@ -13,8 +13,12 @@ from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConf
 from managers.session_manager import SessionManager
 from models import QCRecord
 
-# Session key: current QC row for autoplay fragment (set from ``main`` before sidebar).
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
+
+# Extra wait past the configured autoplay duration before advancing, so a rating click
+# made right at the boundary has time to reach the server and self-save via on_change
+# before the poll treats the interval as elapsed.
+AUTOPLAY_ADVANCE_GRACE_SECONDS = 0.3
 
 
 def _clean_filename(filename: str) -> str:
@@ -59,7 +63,7 @@ def try_autoplay_advance_if_due(
         return
     elapsed = time.time() - start_time
     duration = SessionManager.get_autoplay_duration()
-    if elapsed < duration:
+    if elapsed < duration + AUTOPLAY_ADVANCE_GRACE_SECONDS:
         return
     tasks = list(qc_tasks or [])
     if not tasks:
@@ -215,6 +219,7 @@ def display_qc_viewers(
         _display_qc_rating_for_task(
             participant_id=participant_id,
             session_id=session_id,
+            qc_pipeline=qc_pipeline,
             qc_task=tname,
             display_label=display_label,
             notes_height=88 if multi_task else 120,
@@ -360,9 +365,25 @@ def _render_image(image_data: dict, filename: str) -> None:
         st.warning(f"Unsupported image type: {image_type}")
 
 
+def _rating_widget_key(qc_task: str, rver: int) -> str:
+    return f"qc_rating_{qc_task}_{rver}"
+
+
+def _notes_widget_key(qc_task: str, nver: int) -> str:
+    return f"qc_notes_{qc_task}_{nver}"
+
+
+def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
+    """Callback to save rating and notes when changed."""
+    rating = st.session_state.get(_rating_widget_key(qc_task, rver))
+    notes = st.session_state.get(_notes_widget_key(qc_task, nver), "")
+    _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
+
+
 def _display_qc_rating_for_task(
     participant_id: str | None,
     session_id: str | None,
+    qc_pipeline: str | None,
     qc_task: str,
     *,
     display_label: str | None = None,
@@ -386,13 +407,15 @@ def _display_qc_rating_for_task(
         " ",
         options=QC_RATINGS,
         index=QC_RATINGS.index(initial_rating) if initial_rating else None,
-        key=f"qc_rating_{qc_task}_{rver}",
+        key=_rating_widget_key(qc_task, rver),
         label_visibility="collapsed",
+        on_change=_on_rating_change,
+        args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
     )
     st.text_area(
         MESSAGES["qc_notes_prompt"],
         value=initial_notes,
-        key=f"qc_notes_{qc_task}_{nver}",
+        key=_notes_widget_key(qc_task, nver),
         height=notes_height,
     )
 
@@ -401,8 +424,8 @@ def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str,
     rver = SessionManager.get_rating_version()
     nver = SessionManager.get_notes_version()
     for t in qc_tasks:
-        rating = st.session_state.get(f"qc_rating_{t}_{rver}")
-        notes = st.session_state.get(f"qc_notes_{t}_{nver}", "")
+        rating = st.session_state.get(_rating_widget_key(t, rver))
+        notes = st.session_state.get(_notes_widget_key(t, nver), "")
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
 
 
@@ -568,6 +591,11 @@ def _save_qc_record(
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:
     """Save a QC record for the current participant without navigating."""
+    # A stale/rotated widget key (e.g. the autoplay poll reading a key from before the
+    # page advanced) reads back None; ignore it instead of overwriting a saved rating.
+    if rating is None:
+        return
+
     now = datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     record = QCRecord(

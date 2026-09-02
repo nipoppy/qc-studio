@@ -151,6 +151,10 @@ ERROR_MESSAGES = {
     "base_mri_preview_reduced": "Showing first BOLD volume (full 4D file is too large for the browser).",
     "montage_not_found": "Montage not found or could not be loaded.",
     "participant_list_load_error": "Error loading participant list: {error}",
+    "no_qc_tasks_all": (
+        "`--qc_task all` needs a readable **qc.json** whose root is a JSON object with task keys. " "Found no tasks at: `{qc_config_path}`"
+    ),
+    "no_qc_task_resolved": "No QC task resolved (`qc_task={qc_task!r}`). Pass a valid `--qc_task` key from **qc.json**, or `all`.",
 }
 
 # Success messages
