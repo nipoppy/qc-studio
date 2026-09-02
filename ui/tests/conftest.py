@@ -47,13 +47,13 @@ def sample_qc_config(temp_dir):
         "anat_wf_qc": {
             "base_mri_image_path": str(temp_dir / "base.nii.gz"),
             "overlay_mri_image_path": str(temp_dir / "overlay.nii.gz"),
-            "svg_montage_path": str(temp_dir / "montage.svg"),
+            "montage_path": str(temp_dir / "montage.svg"),
             "iqm_path": str(temp_dir / "iqm.json"),
         },
         "func_wf_qc": {
             "base_mri_image_path": str(temp_dir / "func_base.nii.gz"),
             "overlay_mri_image_path": None,
-            "svg_montage_path": str(temp_dir / "func_montage.svg"),
+            "montage_path": str(temp_dir / "func_montage.svg"),
             "iqm_path": None,
         },
     }
@@ -85,18 +85,18 @@ def sample_qc_results_csv(temp_dir):
 
 
 @pytest.fixture
-def sample_svg_content():
-    """Create sample SVG content."""
+def sample_montage_content():
+    """Create sample Montage content."""
     return """<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
         <circle cx="50" cy="50" r="40" fill="blue" />
     </svg>"""
 
 
 @pytest.fixture
-def sample_svg_file(temp_dir, sample_svg_content):
-    """Create a sample SVG file."""
+def sample_montage_file(temp_dir, sample_montage_content):
+    """Create a sample Montage file."""
     file_path = temp_dir / "montage.svg"
-    file_path.write_text(sample_svg_content)
+    file_path.write_text(sample_montage_content)
     return file_path
 
 
@@ -183,7 +183,7 @@ def sample_session_state():
         "rater_fatigue": "Not at all",
         "notes": "",
         "landing_page_complete": False,
-        "selected_panels": {"niivue_col": True, "svg_col": True, "iqm_col": False},
+        "selected_panels": {"niivue_col": True, "montage_col": True, "iqm_col": False},
     }
     return state
 
@@ -206,19 +206,19 @@ def qc_record_sample():
 
 
 @pytest.fixture
-def sample_qc_config_with_files(temp_dir, sample_mri_files, sample_svg_file, sample_iqm_data):
+def sample_qc_config_with_files(temp_dir, sample_mri_files, sample_montage_file, sample_iqm_data):
     """Create a sample QC configuration JSON file with actual file paths."""
     config = {
         "anat_wf_qc": {
             "base_mri_image_path": str(sample_mri_files["base"]),
             "overlay_mri_image_path": str(sample_mri_files["overlay"]),
-            "svg_montage_path": str(sample_svg_file),
+            "montage_path": str(sample_montage_file),
             "iqm_path": str(sample_iqm_data),
         },
         "func_wf_qc": {
             "base_mri_image_path": str(temp_dir / "func_base.nii.gz"),
             "overlay_mri_image_path": None,
-            "svg_montage_path": str(temp_dir / "func_montage.svg"),
+            "montage_path": str(temp_dir / "func_montage.svg"),
             "iqm_path": None,
         },
     }

@@ -1,4 +1,4 @@
-"""QC viewer component for displaying MRI, SVG, and metrics panels."""
+"""QC viewer component for displaying MRI, montage, and metrics panels."""
 
 import math
 import re
@@ -6,8 +6,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
-from constants import SVG_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
-from utils.data_loaders import load_svg_data
+from constants import MONTAGE_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
+from utils.data_loaders import load_montage_data
 from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
@@ -156,7 +156,7 @@ def display_qc_viewers(
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
 ) -> None:
-    """Display QC viewers (Niivue, SVG, IQM) for one or more tasks from ``qc.json``."""
+    """Display QC viewers (Niivue, MONTAGE, IQM) for one or more tasks from ``qc.json``."""
     cohort_eff = qc_cohort
     if cohort_eff is None and participant_ids:
         sid = session_id or "ses-01"
@@ -176,12 +176,12 @@ def display_qc_viewers(
     selected_panels = SessionManager.get_selected_panels()
     selected_panels = {
         "niivue": selected_panels.get("niivue_col", selected_panels.get("niivue", True)),
-        "svg": selected_panels.get("svg_col", selected_panels.get("svg", True)),
+        "montage": selected_panels.get("montage_col", selected_panels.get("montage", True)),
         "iqm": selected_panels.get("iqm_col", selected_panels.get("iqm", False)),
     }
 
     show_niivue = selected_panels.get("niivue", True)
-    show_svg = selected_panels.get("svg", True)
+    show_montage = selected_panels.get("montage", True)
     show_iqm = selected_panels.get("iqm", False)
 
     _render_autoplay_countdown_main_banner()
@@ -197,18 +197,18 @@ def display_qc_viewers(
                 st.divider()
             st.subheader(display_label)
         task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
-        if task_has_niivue and show_svg and show_iqm:
+        if task_has_niivue and show_montage and show_iqm:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
             st.divider()
             _display_iqm_panel()
-        elif task_has_niivue and show_svg:
+        elif task_has_niivue and show_montage:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
         elif task_has_niivue and show_iqm:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
         elif task_has_niivue:
             _display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id, tname)
-        elif show_svg:
-            _display_svg_panel(dataset_dir, qc_config)
+        elif show_montage:
+            _display_montage_panel(dataset_dir, qc_config)
         elif show_iqm:
             _display_iqm_panel()
 
@@ -227,7 +227,7 @@ def _display_niivue_with_secondary_panel(
     """Display 3-column layout: Niivue with hidden controls | Secondary panel.
 
     Niivue controls are hidden in an expander attached to the Niivue viewer column.
-    Used when Niivue is selected with either SVG or IQM panel.
+    Used when Niivue is selected with either montage or IQM panel.
 
     Args:
             dataset_dir: Root dataset directory
@@ -253,10 +253,10 @@ def _display_niivue_with_secondary_panel(
         with st.expander("🎮 Niivue Controls", expanded=False):
             NiivueViewerManager.render_controls_panel(state_suffix=task_suffix)
 
-    # Right column: SVG or IQM panel
+    # Right column: Montage or IQM panel
     with panel_col:
-        if selected_panels.get("svg", False):
-            _display_svg_panel(dataset_dir, qc_config)
+        if selected_panels.get("montage", False):
+            _display_montage_panel(dataset_dir, qc_config)
         else:
             _display_iqm_panel()
 
@@ -302,7 +302,7 @@ def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = Fal
     return st.session_state[state_key]
 
 
-def _display_svg_panel(dataset_dir, qc_config) -> None:
+def _display_montage_panel(dataset_dir, qc_config) -> None:
     """Display SVG/PNG/JPEG montage panel with tabs for multiple images.
 
     If multiple image files are available, renders them as separate tabs.
@@ -316,13 +316,13 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
             dataset_dir: Root dataset directory
             qc_config: QC configuration object
     """
-    st.header(MESSAGES["svg_header"])
+    st.header(MESSAGES["montage_header"])
 
     # Get montage grid settings from session manager
     max_montage_rows = SessionManager.get_montage_max_rows()
     max_montage_cols = SessionManager.get_montage_max_cols()
 
-    image_data = load_svg_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+    image_data = load_montage_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
 
     if image_data:
         # If multiple images, create tabs
@@ -337,7 +337,7 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
             filename, data = list(image_data.items())[0]
             _render_image(data, filename)
     else:
-        st.info(ERROR_MESSAGES["svg_not_found"])
+        st.info(ERROR_MESSAGES["montage_not_found"])
 
 
 def _render_image(image_data: dict, filename: str) -> None:
@@ -352,7 +352,7 @@ def _render_image(image_data: dict, filename: str) -> None:
 
     if image_type == "svg":
         # Render SVG as HTML
-        st.components.v1.html(content, height=SVG_HEIGHT, scrolling=True)
+        st.components.v1.html(content, height=MONTAGE_HEIGHT, scrolling=True)
     elif image_type in ["png", "jpeg"]:
         # Display PNG/JPEG as image
         st.image(content, width="stretch", caption=filename)

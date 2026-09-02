@@ -99,7 +99,7 @@ ui/
 - Screen modules: `views.landing_page`, `views.congratulations_page`
 - Components: `components.qc_viewer`
 - Managers: SessionManager, NiivueViewerManager, PanelLayoutManager
-- Utilities: parse_qc_config, load_svg_data, save_qc_results_to_csv
+- Utilities: parse_qc_config, load_montage_data, save_qc_results_to_csv
 
 ---
 
@@ -119,7 +119,7 @@ Pages represent complete, full-width views shown at different stages of the QC w
 
 **Data Flow**:
 1. User enters rater information
-2. User selects which panels to display (Niivue, SVG, IQM)
+2. User selects which panels to display (Niivue, Montage, IQM)
 3. User optionally uploads CSV of previous QC records
 4. SessionManager stores all state
 5. Continue to QC viewers page

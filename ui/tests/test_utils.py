@@ -10,7 +10,7 @@ import pytest
 from utils.config import parse_qc_config
 from utils.data_loaders import (
     load_mri_data,
-    load_svg_data,
+    load_montage_data,
     load_iqm_data,
 )
 from utils.export import save_qc_results_to_csv
@@ -27,7 +27,7 @@ class TestParseQcConfig:
 
         assert result is not None
         assert "base_mri_image_path" in result
-        assert "svg_montage_path" in result
+        assert "montage_path" in result
         assert result["base_mri_image_path"] is not None
         assert "montage_max_rows" in result
         assert "montage_max_cols" in result
@@ -41,7 +41,7 @@ class TestParseQcConfig:
             json.dumps(
                 {
                     "anat_wf_qc": {
-                        "svg_montage_path": [str(temp_dir / "a.svg"), str(temp_dir / "b.svg")],
+                        "montage_path": [str(temp_dir / "a.svg"), str(temp_dir / "b.svg")],
                         "montage_max_rows": 2,
                         "montage_max_cols": 2,
                     }
@@ -60,7 +60,7 @@ class TestParseQcConfig:
                 {
                     "demo_task": {
                         "display_name": "Friendly label",
-                        "svg_montage_path": str(temp_dir / "a.svg"),
+                        "montage_path": str(temp_dir / "a.svg"),
                     }
                 }
             )
@@ -74,7 +74,7 @@ class TestParseQcConfig:
 
         assert result["base_mri_image_path"] is None
         assert result["overlay_mri_image_path"] is None
-        assert result["svg_montage_path"] is None
+        assert result["montage_path"] is None
         assert result["iqm_path"] is None
         assert result["montage_max_rows"] is None
         assert result["montage_max_cols"] is None
@@ -158,17 +158,17 @@ class TestLoadMriData:
         assert result == {}
 
 
-class TestLoadSvgData:
-    """Test load_svg_data function."""
+class TestLoadMontageData:
+    """Test load_montage_data function."""
 
-    def test_load_valid_svg_single(self, temp_dir, sample_svg_content):
-        """Test loading single valid SVG file."""
-        svg_file = temp_dir / "montage.svg"
-        svg_file.write_text(sample_svg_content)
+    def test_load_valid_montage_single(self, temp_dir, sample_montage_content):
+        """Test loading single valid Montage file."""
+        montage_file = temp_dir / "montage.svg"
+        montage_file.write_text(sample_montage_content)
 
-        path_dict = {"svg_montage_path": svg_file}
+        path_dict = {"montage_path": montage_file}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is not None
         assert isinstance(result, dict)
@@ -177,19 +177,19 @@ class TestLoadSvgData:
         filename = list(result.keys())[0]
         assert result[filename]["type"] == "svg"
         assert "<svg" in result[filename]["content"]
-        assert sample_svg_content in result[filename]["content"]
+        assert sample_montage_content in result[filename]["content"]
 
-    def test_load_multiple_svg_files(self, temp_dir, sample_svg_content):
-        """Test loading multiple SVG files."""
-        svg_file1 = temp_dir / "montage1.svg"
-        svg_file2 = temp_dir / "montage2.svg"
+    def test_load_multiple_montage_files(self, temp_dir, sample_montage_content):
+        """Test loading multiple Montage files."""
+        montage_file1 = temp_dir / "montage1.svg"
+        montage_file2 = temp_dir / "montage2.svg"
 
-        svg_file1.write_text(sample_svg_content)
-        svg_file2.write_text("<svg>second montage</svg>")
+        montage_file1.write_text(sample_montage_content)
+        montage_file2.write_text("<svg>second montage</svg>")
 
-        path_dict = {"svg_montage_path": [svg_file1, svg_file2]}
+        path_dict = {"montage_path": [montage_file1, montage_file2]}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is not None
         assert isinstance(result, dict)
@@ -197,28 +197,28 @@ class TestLoadSvgData:
         if "montage" in result:
             assert result["montage"]["type"] == "png"
 
-        # Check that SVG files are loaded with correct type.
+        # Check that Montage files are loaded with correct type.
         for filename, data in result.items():
             if filename == "montage":
                 continue
             assert data["type"] == "svg"
             assert "<svg" in data["content"]
 
-    def test_load_svg_and_png_mixed(self, temp_dir, sample_svg_content):
+    def test_load_montage_and_png_mixed(self, temp_dir, sample_montage_content):
         """Test loading mixed SVG and PNG files."""
         from PIL import Image
 
-        svg_file = temp_dir / "montage.svg"
-        svg_file.write_text(sample_svg_content)
+        montage_file = temp_dir / "montage.svg"
+        montage_file.write_text(sample_montage_content)
 
         # Create a simple PNG file
         png_file = temp_dir / "image.png"
         img = Image.new("RGB", (100, 100), color="red")
         img.save(png_file)
 
-        path_dict = {"svg_montage_path": [svg_file, png_file]}
+        path_dict = {"montage_path": [montage_file, png_file]}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is not None
         assert isinstance(result, dict)
@@ -240,9 +240,9 @@ class TestLoadSvgData:
         Image.new("RGB", (100, 100), color="red").save(png_file1)
         Image.new("RGB", (100, 100), color="blue").save(png_file2)
 
-        path_dict = {"svg_montage_path": [png_file1, png_file2]}
+        path_dict = {"montage_path": [png_file1, png_file2]}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is not None
         assert isinstance(result, dict)
@@ -259,9 +259,9 @@ class TestLoadSvgData:
         img = Image.new("RGB", (100, 100), color="blue")
         img.save(jpeg_file, "JPEG")
 
-        path_dict = {"svg_montage_path": jpeg_file}
+        path_dict = {"montage_path": jpeg_file}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is not None
         assert isinstance(result, dict)
@@ -272,17 +272,17 @@ class TestLoadSvgData:
         assert data["type"] == "jpeg"
         assert isinstance(data["content"], Image.Image)
 
-    def test_load_svg_partial_failure(self, temp_dir, sample_svg_content):
+    def test_load_montage_partial_failure(self, temp_dir, sample_montage_content):
         """Test loading multiple SVGs when one file doesn't exist."""
-        svg_file1 = temp_dir / "montage1.svg"
-        svg_file1.write_text(sample_svg_content)
+        montage_file1 = temp_dir / "montage1.svg"
+        montage_file1.write_text(sample_montage_content)
 
         # Non-existent file
-        svg_file2 = temp_dir / "nonexistent.svg"
+        montage_file2 = temp_dir / "nonexistent.svg"
 
-        path_dict = {"svg_montage_path": [svg_file1, svg_file2]}
+        path_dict = {"montage_path": [montage_file1, montage_file2]}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         # Should return dict with only the existing file
         assert result is not None
@@ -296,56 +296,56 @@ class TestLoadSvgData:
         txt_file = temp_dir / "file.txt"
         txt_file.write_text("This is not an image")
 
-        path_dict = {"svg_montage_path": txt_file}
+        path_dict = {"montage_path": txt_file}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         # Unsupported files should be skipped, returning None
         assert result is None
 
-    def test_load_svg_nonexistent_file(self, temp_dir):
-        """Test loading non-existent SVG file."""
-        path_dict = {"svg_montage_path": temp_dir / "nonexistent.svg"}
+    def test_load_montage_nonexistent_file(self, temp_dir):
+        """Test loading non-existent Montage file."""
+        path_dict = {"montage_path": temp_dir / "nonexistent.svg"}
 
-        result = load_svg_data(temp_dir, path_dict)
-
-        assert result is None
-
-    def test_load_svg_with_none_path(self):
-        """Test loading SVG with None path."""
-        path_dict = {"svg_montage_path": None}
-
-        result = load_svg_data("", path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is None
 
-    def test_load_svg_unreadable_file(self, temp_dir):
-        """Test loading unreadable SVG file."""
-        svg_file = temp_dir / "montage.svg"
-        svg_file.write_text("valid content")
+    def test_load_montage_with_none_path(self):
+        """Test loading montage with None path."""
+        path_dict = {"montage_path": None}
+
+        result = load_montage_data("", path_dict)
+
+        assert result is None
+
+    def test_load_montage_unreadable_file(self, temp_dir):
+        """Test loading unreadable montage file."""
+        montage_file = temp_dir / "montage.svg"
+        montage_file.write_text("valid content")
 
         with patch("builtins.open", side_effect=IOError("Permission denied")):
-            path_dict = {"svg_montage_path": svg_file}
-            result = load_svg_data(temp_dir, path_dict)
+            path_dict = {"montage_path": montage_file}
+            result = load_montage_data(temp_dir, path_dict)
 
         assert result is None
 
-    def test_load_svg_empty_list(self):
-        """Test loading SVG with empty list."""
-        path_dict = {"svg_montage_path": []}
+    def test_load_montage_empty_list(self):
+        """Test loading montage with empty list."""
+        path_dict = {"montage_path": []}
 
-        result = load_svg_data("", path_dict)
+        result = load_montage_data("", path_dict)
 
         assert result is None
 
-    def test_load_svg_skips_malformed_list_entries(self, temp_dir, sample_svg_content):
+    def test_load_montage_skips_malformed_list_entries(self, temp_dir, sample_montage_content):
         """Malformed list entries should be ignored instead of raising TypeError."""
-        svg_file = temp_dir / "montage.svg"
-        svg_file.write_text(sample_svg_content)
+        montage_file = temp_dir / "montage.svg"
+        montage_file.write_text(sample_montage_content)
 
-        path_dict = {"svg_montage_path": [123, svg_file]}
+        path_dict = {"montage_path": [123, montage_file]}
 
-        result = load_svg_data(temp_dir, path_dict)
+        result = load_montage_data(temp_dir, path_dict)
 
         assert result is not None
         assert isinstance(result, dict)

@@ -53,7 +53,7 @@ def _stub_qc_config_path(tmp_path, task="anat_wf_qc", montage_rows_cols=None):
     task_entry = {
         "base_mri_image_path": str(tmp_path / "base.nii.gz"),
         "overlay_mri_image_path": str(tmp_path / "overlay.nii.gz"),
-        "svg_montage_path": str(tmp_path / "montage.svg"),
+        "montage_path": str(tmp_path / "montage.svg"),
         "iqm_path": str(tmp_path / "iqm.json"),
     }
     if montage_rows_cols is not None:
@@ -282,7 +282,7 @@ class TestLandingPagePanelSelection:
         panels = sample_session_state["selected_panels"]
 
         assert panels["niivue_col"] is True
-        assert panels["svg_col"] is True
+        assert panels["montage_col"] is True
         assert panels["iqm_col"] is False
 
     def test_panel_selection_validation(self, sample_session_state):

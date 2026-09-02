@@ -1,13 +1,13 @@
 # QC-Studio
 
-A web-based quality control (QC) application for neuroimaging data. QC-Studio allows raters to visualize and assess MRI data, SVG montages, and IQM metrics in an interactive Streamlit interface.
+A web-based quality control (QC) application for neuroimaging data. QC-Studio allows raters to visualize and assess MRI data, 2D image montages, and IQM metrics in an interactive Streamlit interface.
 
 [See design overview →](docs/DEV_PLAN.md)
 
 ## 🎯 Goals
 
 - Create an interactive web app to visualize neuroimaging data - raw and processed! 
-- Support multiple image types: 3D MRI (NIfTI), SVG montages, and IQM metrics
+- Support multiple image types: 3D MRI (NIfTI), 2D image montages, and IQM metrics
 - Enable structured quality control ratings through a clean, intuitive interface
 
 ## 📚 Documentation
