@@ -6,6 +6,30 @@ from constants import MESSAGES, SUCCESS_MESSAGES, INFO_MESSAGES, SESSION_KEYS, Q
 from managers.session_manager import SessionManager
 from utils.export import save_qc_results_to_csv
 
+CONGRATS_EXPORT_PATH_KEY = "congrats_export_path"
+CONGRATS_EXPORT_PATH_DEFAULT_KEY = "_congrats_export_path_default"
+
+
+def _default_congrats_export_path(out_dir: str, rater_id: str) -> str:
+    """Default export path shown on the congratulations page."""
+    base_dir = Path(out_dir) if out_dir else Path(".")
+    rid = str(rater_id).strip() or "rater"
+    return str(base_dir / f"{rid}_QC_status.tsv")
+
+
+def _resolve_congrats_export_file_path(out_dir: str, rater_id: str, save_file_path: str | None) -> Path:
+    """Resolve export destination from optional user input.
+
+    If a directory-like path is provided (no suffix), append the default file name.
+    """
+    if save_file_path and str(save_file_path).strip():
+        candidate = Path(str(save_file_path).strip()).expanduser()
+        if candidate.suffix:
+            return candidate
+        rid = str(rater_id).strip() or "rater"
+        return candidate / f"{rid}_QC_status.tsv"
+    return Path(_default_congrats_export_path(out_dir, rater_id))
+
 
 def show_congratulations_page(
     qc_task: str,
@@ -98,12 +122,37 @@ def show_congratulations_page(
     if pending := st.session_state.pop("_pending_export_msg", None):
         kind, msg = pending
         (st.success if kind == "success" else st.info)(msg)
+
+    default_export_path = _default_congrats_export_path(out_dir, rater_id)
+    if CONGRATS_EXPORT_PATH_KEY not in st.session_state:
+        st.session_state[CONGRATS_EXPORT_PATH_KEY] = default_export_path
+        st.session_state[CONGRATS_EXPORT_PATH_DEFAULT_KEY] = default_export_path
+    else:
+        prev_default = st.session_state.get(CONGRATS_EXPORT_PATH_DEFAULT_KEY)
+        current_value = st.session_state.get(CONGRATS_EXPORT_PATH_KEY, "")
+        if prev_default and current_value == prev_default and default_export_path != prev_default:
+            st.session_state[CONGRATS_EXPORT_PATH_KEY] = default_export_path
+        st.session_state[CONGRATS_EXPORT_PATH_DEFAULT_KEY] = default_export_path
+
+    st.caption(f"Default path: {default_export_path}")
+    st.text_input(
+        "QC status file path",
+        key=CONGRATS_EXPORT_PATH_KEY,
+        help="Set a custom file path for exported QC results (for example, /path/to/QC_status.csv).",
+    )
+
     # Action buttons
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         if st.button(MESSAGES["export_results_button"], width="stretch"):
             export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
-            _export_qc_results(rater_id, out_dir, export_rows, drop_duplicates)
+            _export_qc_results(
+                rater_id,
+                out_dir,
+                export_rows,
+                drop_duplicates,
+                save_file_path=st.session_state.get(CONGRATS_EXPORT_PATH_KEY),
+            )
             st.rerun()
     with col2:
         if st.button(MESSAGES["previous_button"], width="stretch"):
@@ -167,7 +216,14 @@ def _display_session_summary(
                 st.write(f"**{qc_status}:** {count}")
 
 
-def _export_qc_results(rater_id: str, out_dir: str, record_list: list, drop_duplicates: bool) -> None:
+def _export_qc_results(
+    rater_id: str,
+    out_dir: str,
+    record_list: list,
+    drop_duplicates: bool,
+    *,
+    save_file_path: str | None = None,
+) -> None:
     """Export QC results to file.
 
     Args:
@@ -176,7 +232,7 @@ def _export_qc_results(rater_id: str, out_dir: str, record_list: list, drop_dupl
             record_list: List of QC records to export
             drop_duplicates: Whether to drop duplicate records
     """
-    out_file = Path(out_dir) / f"{rater_id}_QC_status.tsv"
+    out_file = _resolve_congrats_export_file_path(out_dir, rater_id, save_file_path)
     if record_list:
         out_path, dropped, dropped_details = save_qc_results_to_csv(out_file, record_list, drop_duplicates)
         msg = SUCCESS_MESSAGES["records_exported"].format(path=out_path)

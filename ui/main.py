@@ -153,13 +153,45 @@ def main():
         st.session_state[SESSION_KEYS["current_page"]] = 1
         current_page = 1
 
-    if current_page > total_participants or not qc_cohort:
-        participant_id = None
-        session_id = session_id_for_sidebar
-    else:
-        entry = qc_cohort[current_page - 1]
-        participant_id = entry["participant_id"]
-        session_id = entry["session_id"]
+    def _participant_for_page(page: int):
+        if page > total_participants or not qc_cohort:
+            return None, session_id_for_sidebar
+        entry = qc_cohort[page - 1]
+        return entry["participant_id"], entry["session_id"]
+
+    participant_id, session_id = _participant_for_page(current_page)
+    on_qc_viewer_page = bool(participant_id is not None and qc_cohort and current_page <= total_participants)
+    render_sidebar_cohort_subjects(
+        qc_cohort=qc_cohort,
+        total_participants=total_participants,
+        qc_task=qc_task,
+        qc_tasks=qc_tasks,
+        entrypoint_rel_path=None,
+        prepend_navigation=on_qc_viewer_page,
+        navigation_kwargs=(
+            {
+                "current_page": current_page,
+                "total_participants": total_participants,
+                "participant_id": participant_id,
+                "session_id": session_id,
+                "qc_pipeline": qc_pipeline,
+                "qc_tasks": qc_tasks,
+                "participant_ids": participant_ids,
+                "qc_cohort": qc_cohort,
+                "out_dir": out_dir,
+                "drop_duplicates": drop_duplicates,
+            }
+            if on_qc_viewer_page
+            else None
+        ),
+    )
+
+    # Sidebar filter may have moved the page; use that for the viewer.
+    current_page = SessionManager.get_current_page()
+    if current_page < 1:
+        SessionManager.set_current_page(1)
+        current_page = 1
+    participant_id, session_id = _participant_for_page(current_page)
 
     if participant_id is not None and qc_cohort and current_page <= total_participants:
         st.session_state[AUTOPLAY_RUN_CTX_KEY] = {
@@ -174,31 +206,6 @@ def main():
         }
     else:
         st.session_state.pop(AUTOPLAY_RUN_CTX_KEY, None)
-
-    # Sidebar must be drawn before main content so Navigation + Subjects both appear.
-    on_qc_viewer_page = bool(participant_id is not None and qc_cohort and current_page <= total_participants)
-    render_sidebar_cohort_subjects(
-        qc_cohort=qc_cohort,
-        total_participants=total_participants,
-        qc_task=qc_task,
-        qc_tasks=qc_tasks,
-        entrypoint_rel_path=None,
-        prepend_navigation=on_qc_viewer_page,
-        navigation_kwargs=(
-            {
-                "current_page": SessionManager.get_current_page(),
-                "total_participants": total_participants,
-                "participant_id": participant_id,
-                "session_id": session_id,
-                "qc_pipeline": qc_pipeline,
-                "qc_tasks": qc_tasks,
-                "participant_ids": participant_ids,
-                "qc_cohort": qc_cohort,
-            }
-            if on_qc_viewer_page
-            else None
-        ),
-    )
 
     app(
         dataset_dir=dataset_dir,
