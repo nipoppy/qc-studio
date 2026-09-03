@@ -17,7 +17,6 @@ from constants import (
     OVERLAY_COLORMAPS,
     SUCCESS_MESSAGES,
     INFO_MESSAGES,
-    PENDING_SIDEBAR_RERUN_KEY,
 )
 from utils.data_loaders import load_montage_data
 from utils.export import save_qc_results_to_csv
@@ -30,6 +29,7 @@ AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
 PENDING_QC_SAVE_MSG_KEY = "_pending_qc_save_msg"
 QC_SAVE_PATH_KEY = "qc_save_path"
 QC_SAVE_PATH_DEFAULT_KEY = "_qc_save_path_default"
+PENDING_SIDEBAR_RERUN_KEY = "_pending_sidebar_rerun"
 
 # Extra wait past the configured autoplay duration before advancing, so a rating click
 # made right at the boundary has time to reach the server and self-save via on_change
@@ -471,11 +471,15 @@ def _filtered_adjacent_pages(
     session_id: str,
 ) -> tuple[int | None, int | None]:
     """Previous/next pages that match the subject filter. Empty filter → full cohort order."""
-    from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
+    try:
+        from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
+    except ImportError:
+        prev_page = current_page - 1 if current_page > 1 else None
+        next_page = current_page + 1 if current_page < total_participants else None
+        return prev_page, next_page
 
     entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-    # Fallback for direct calls (e.g., tests) where cohort data is not provided.
-    # In that case, use simple contiguous pagination bounds.
+    # Direct calls (e.g., tests) may omit cohort data; use simple contiguous pagination bounds.
     if not entries:
         prev_page = current_page - 1 if current_page > 1 else None
         next_page = current_page + 1 if current_page < total_participants else None
@@ -666,7 +670,7 @@ def _display_qc_pagination_controls(
         MESSAGES["save_csv_button"],
         width="stretch",
         key="pag_save_csv",
-        help=MESSAGES["save_csv_help"],
+        help=MESSAGES.get("save_csv_help", "Save QC results to a CSV file"),
     ):
         _save_qc_record(
             participant_id=participant_id,
