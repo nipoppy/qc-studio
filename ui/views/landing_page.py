@@ -299,9 +299,9 @@ def _display_csv_upload(
                 # Create comparison display
                 col_comp1, col_comp2 = st.columns(2)
                 with col_comp1:
-                    st.metric("Cohort pages reviewed", pages_reviewed)
+                    st.metric("QC records reviewed", pages_reviewed)
                 with col_comp2:
-                    st.metric("Total cohort pages", total_cohort_pages)
+                    st.metric("Total QC records", total_cohort_pages)
 
                 # Progress percentage
                 progress_pct = (pages_reviewed / total_cohort_pages) * 100 if total_cohort_pages > 0 else 0
@@ -359,11 +359,11 @@ def _display_csv_upload(
                 SessionManager.set_qc_cohort_order(qc_cohort)
                 SessionManager.set_participant_ids(participant_ids_in_cohort_order(qc_cohort))
                 if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
-                    SessionManager.set_current_page(total_cohort_pages + 1)
+                    target_page = total_cohort_pages + 1
                 else:
                     next_page = SessionManager.first_qc_cohort_page_missing_for_tasks(qc_tasks, qc_cohort)
-                    SessionManager.set_current_page(next_page)
-                SessionManager.set_current_page(min(next_page, total_cohort_pages))
+                    target_page = min(next_page, total_cohort_pages)
+                SessionManager.set_current_page(target_page)
                 st.success(SUCCESS_MESSAGES["records_loaded"].format(count=len(loaded_records)))
                 st.info(INFO_MESSAGES["proceed_with_form"])
 

@@ -216,9 +216,69 @@ class TestRecordAllQcTasks:
 
 
 class TestSaveQcRecord:
-    @pytest.mark.skip(reason="Save CSV doesn't persist partial progress to disk — see filed issue #81")
-    def test_save_qc_record_behavior_pending_issue_resolution(self):
-        pass
+    def test_save_qc_record_persists_partial_progress_to_disk(self, autoplay_session_state, tmp_path):
+        """Save QC should flush current ratings and write a partial export file immediately."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=3,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        out_file = tmp_path / "rater1_QC_status.tsv"
+        assert out_file.exists()
+        text = out_file.read_text(encoding="utf-8")
+        assert "sub-CMH0001" in text
+        assert "anat_wf_qc" in text
+        assert "PASS" in text
+
+    def test_save_qc_record_honors_custom_save_file_path(self, autoplay_session_state, tmp_path):
+        """When users provide a custom file path, Save QC should write exactly there."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+        custom_file = tmp_path / "custom" / "QC_status.csv"
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=3,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+            save_file_path=str(custom_file),
+        )
+
+        assert custom_file.exists()
+        text = custom_file.read_text(encoding="utf-8")
+        assert "sub-CMH0001" in text
+        assert "FAIL" in text
+
+    def test_save_qc_record_message_includes_participant_and_record_counts(self, autoplay_session_state, tmp_path):
+        """Save QC success text should include unique participant and record totals."""
+        state, _ = autoplay_session_state
+        _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=3,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        kind, msg = state[qc_viewer_module.PENDING_QC_SAVE_MSG_KEY]
+        assert kind == "success"
+        assert "Saved 2 record(s) across 2 unique participant(s)." in msg
 
 
 class TestRatingPersistenceNearAutoAdvance:
@@ -740,9 +800,30 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 3  # still incomplete (sub-CMH0002 unrated), must not jump ahead
         mock_rerun.assert_called_once()
 
-    @pytest.mark.skip(reason="Save CSV doesn't persist partial progress to disk — see filed issue #81")
-    def test_save_csv_button_calls_save_qc_record(self):
-        pass
+    def test_save_csv_button_calls_save_qc_record(self, autoplay_session_state, monkeypatch, tmp_path):
+        """Clicking Save QC should write current progress to disk without waiting for cohort completion."""
+        state, mock_rerun = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("pag_save_csv"))
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        out_file = tmp_path / "rater1_QC_status.tsv"
+        assert out_file.exists()
+        text = out_file.read_text(encoding="utf-8")
+        assert "sub-CMH0001" in text
+        assert "PASS" in text
+        mock_rerun.assert_called_once()
 
 
 # pure autoplay
