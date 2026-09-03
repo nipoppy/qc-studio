@@ -39,6 +39,7 @@ class SessionManager:
             SESSION_KEYS["selected_panels"]: DEFAULT_PANELS.copy(),
             SESSION_KEYS["montage_max_rows"]: DEFAULT_MONTAGE_MAX_ROWS,
             SESSION_KEYS["montage_max_cols"]: DEFAULT_MONTAGE_MAX_COLS,
+            SESSION_KEYS["sidebar_subject_search"]: "",
             "autoplay_enabled": False,
             "autoplay_start_time": 0.0,
             "autoplay_duration": 5,

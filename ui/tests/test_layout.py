@@ -3,7 +3,7 @@
 import json
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 import pandas as pd
 import pytest
@@ -20,6 +20,11 @@ from constants import (
     DEFAULT_MONTAGE_MAX_ROWS,
     DEFAULT_MONTAGE_MAX_COLS,
     EXPERIENCE_LEVELS,
+    MESSAGES,
+    PENDING_SIDEBAR_RERUN_KEY,
+    SIDEBAR_SEARCH_HOLD_KEY,
+    SIDEBAR_SUBJECT_LIST_HEIGHT,
+    SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY,
 )
 
 pytestmark = pytest.mark.integration
@@ -42,6 +47,7 @@ def _session_state_dict():
         SESSION_KEYS["selected_panels"]: DEFAULT_PANELS.copy(),
         SESSION_KEYS["montage_max_rows"]: DEFAULT_MONTAGE_MAX_ROWS,
         SESSION_KEYS["montage_max_cols"]: DEFAULT_MONTAGE_MAX_COLS,
+        SESSION_KEYS["sidebar_subject_search"]: "",
         "autoplay_enabled": False,
         "autoplay_start_time": 0.0,
         "autoplay_duration": 5,
@@ -142,7 +148,45 @@ class TestShowLandingPage:
                 qc_config_path=_stub_qc_config_path(tmp_path),
             )
 
-        mock_st.subheader.assert_called()
+        markdown_calls = [str(c.args[0]) for c in mock_st.markdown.call_args_list if c.args]
+        assert any("Task:** anat_wf_qc" in text for text in markdown_calls)
+        assert any("Subjects:**" in text for text in markdown_calls)
+        assert any("Cohort pages:**" in text for text in markdown_calls)
+        mock_st.header.assert_any_call("fmriprep")
+        assert not any("QC Pipeline:" in text and "|" in text for text in markdown_calls)
+
+    def test_landing_run_summary_uses_subject_page_task_names(self):
+        from views.landing_page import _landing_run_summary_lines
+
+        line1, line2 = _landing_run_summary_lines(
+            "noddireg",
+            ["Tissue density distributions"],
+            1,
+            2,
+        )
+        assert line1 == "noddireg"
+        assert "Task:** Tissue density distributions" in line2
+        assert "noddireg_density" not in line2
+        assert "Subjects:** 1" in line2 and "Cohort pages:** 2" in line2
+
+        _, all_line = _landing_run_summary_lines(
+            "fmriprep",
+            ["Susceptibility distortion correction (SDC)", "BOLD-T1w coregistration"],
+            1,
+            2,
+            all_tasks=True,
+        )
+        assert "Task:** all tasks (2 tasks)" in all_line
+        assert "Susceptibility distortion correction" not in all_line
+
+    def test_compact_session_label_omits_pipeline_and_task_count(self):
+        from components.qc_viewer import _compact_session_label
+
+        assert _compact_session_label("sub-CMH0001", "ses-01") == "sub-CMH0001 · ses-01"
+        assert _compact_session_label("sub-CMH0001", None) == "sub-CMH0001"
+        label = _compact_session_label("sub-CMH0001", "ses-01")
+        assert "fmriprep" not in label.lower()
+        assert "count" not in label.lower()
 
     @patch("views.landing_page.pd.read_csv")
     def test_landing_page_error_handling(self, mock_read_csv, tmp_path):
@@ -442,3 +486,462 @@ class TestNavigationControls:
         valid_page = min(max(current_page, 1), total_participants)
 
         assert valid_page == total_participants
+
+
+def _sidebar_ctx():
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=ctx)
+    ctx.__exit__ = MagicMock(return_value=False)
+    return ctx
+
+
+class TestSidebarCohortNavOrder:
+    """Playback and page controls stay above a scrollable subject list."""
+
+    def test_controls_render_before_subject_list(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        order = []
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        nav_kwargs = {
+            "current_page": 1,
+            "total_participants": 2,
+            "participant_id": "sub-CMH0001",
+            "session_id": "ses-01",
+            "qc_pipeline": "fmriprep",
+            "qc_tasks": ["sdc_wf_qc"],
+            "participant_ids": ["sub-CMH0001"],
+            "qc_cohort": cohort,
+        }
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.button.return_value = False
+        mock_st.session_state = {}
+        mock_st.caption.side_effect = lambda text, *a, **k: order.append(("caption", text))
+        mock_st.divider.side_effect = lambda: order.append(("divider", None))
+        mock_st.text_input.side_effect = lambda *a, **k: order.append(("search", None)) or "ses-01"
+
+        def header(*args, **kwargs):
+            order.append(("header", None))
+
+        def controls(**kwargs):
+            order.append(("controls", None))
+            assert mock_st.session_state[SESSION_KEYS["sidebar_subject_search"]] == "ses-01"
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+            patch("components.qc_viewer._display_qc_pagination_header", side_effect=header),
+            patch("components.qc_viewer._display_qc_pagination_controls", side_effect=controls),
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 1
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+                prepend_navigation=True,
+                navigation_kwargs=nav_kwargs,
+            )
+
+        names = [name for name, _ in order]
+        assert names[:4] == ["header", "caption", "search", "controls"]
+        mock_st.container.assert_any_call(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True)
+        mock_st.caption.assert_called_with(MESSAGES["sidebar_subjects_header"])
+        mock_st.text_input.assert_called_once_with(
+            MESSAGES["sidebar_subjects_search"],
+            key=SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY,
+            placeholder=MESSAGES["sidebar_subjects_search_placeholder"],
+            label_visibility="collapsed",
+        )
+        assert mock_st.button.call_count == 1
+        assert mock_st.button.call_args.kwargs["key"] == "sidebar_cohort_nav_0"
+
+
+class TestSidebarSubjectSearch:
+    """Subject list can be filtered without changing page indices."""
+
+    def test_matching_entries_keep_original_indices(self):
+        from views.sidebar_cohort_nav import _matching_subject_entries
+
+        entries = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+        ]
+
+        by_subject = _matching_subject_entries(entries, "CMH0002", "ses-01")
+        assert by_subject == [(2, entries[2])]
+
+        by_session = _matching_subject_entries(entries, "ses-02", "ses-01")
+        assert by_session == [(1, entries[1])]
+
+        by_ses01 = _matching_subject_entries(entries, "ses-01", "ses-01")
+        assert by_ses01 == [(0, entries[0]), (2, entries[2])]
+
+        empty_query = _matching_subject_entries(entries, "  ", "ses-01")
+        assert empty_query == list(enumerate(entries))
+
+        none = _matching_subject_entries(entries, "no-such-id", "ses-01")
+        assert none == []
+
+    def test_filtered_button_navigates_to_original_page(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = "ses-02"
+        mock_st.button.return_value = True
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 2
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=3,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        mock_st.button.assert_called_once()
+        assert mock_st.button.call_args.kwargs["key"] == "sidebar_cohort_nav_1"
+        mock_sm.set_current_page.assert_called_with(2)
+        mock_st.rerun.assert_called()
+
+    def test_empty_search_shows_no_match_caption(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = "zzz"
+        mock_st.button.return_value = False
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 1
+            mock_sm.participant_has_decided_qc.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=1,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        mock_st.button.assert_not_called()
+        mock_st.caption.assert_any_call(MESSAGES["sidebar_subjects_search_empty"])
+
+    def test_search_survives_confirm_next_rerun(self):
+        from views.sidebar_cohort_nav import _hold_search_across_nav
+
+        persist = SESSION_KEYS["sidebar_subject_search"]
+        state = {
+            persist: "ses-01",
+            SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY: "",
+            "pag_next": True,
+        }
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = state
+            _hold_search_across_nav()
+
+        assert state[SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY] == "ses-01"
+        assert state[persist] == "ses-01"
+        assert state[SIDEBAR_SEARCH_HOLD_KEY] is True
+
+    def test_next_button_keeps_filter_in_list(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {
+            SESSION_KEYS["sidebar_subject_search"]: "ses-01",
+            "pag_next": True,
+        }
+        mock_st.text_input.return_value = ""
+        mock_st.button.return_value = False
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 1
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        mock_st.button.assert_called_once()
+        assert mock_st.button.call_args.kwargs["key"] == "sidebar_cohort_nav_0"
+
+    def test_followup_rerun_does_not_drop_filter(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {
+            SESSION_KEYS["sidebar_subject_search"]: "ses-01",
+            SIDEBAR_SEARCH_HOLD_KEY: True,
+            SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY: "",
+        }
+        mock_st.text_input.return_value = ""
+        mock_st.button.return_value = False
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 1
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        mock_st.button.assert_called_once()
+        assert mock_st.button.call_args.kwargs["key"] == "sidebar_cohort_nav_0"
+        assert mock_st.session_state[SESSION_KEYS["sidebar_subject_search"]] == "ses-01"
+        assert SIDEBAR_SEARCH_HOLD_KEY not in mock_st.session_state
+
+    def test_list_filters_from_box_value_not_empty_persist(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = "ses-02"
+        mock_st.button.return_value = False
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 2
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        mock_st.button.assert_called_once()
+        assert mock_st.button.call_args.kwargs["key"] == "sidebar_cohort_nav_1"
+        assert mock_st.session_state[SESSION_KEYS["sidebar_subject_search"]] == "ses-02"
+
+    def test_confirm_next_rerun_happens_after_search_box(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        order = []
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {
+            SESSION_KEYS["sidebar_subject_search"]: "ses-02",
+            PENDING_SIDEBAR_RERUN_KEY: True,
+        }
+        mock_st.button.return_value = False
+        mock_st.text_input.side_effect = lambda *a, **k: order.append("search") or "ses-02"
+        mock_st.rerun.side_effect = lambda: order.append("rerun")
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 2
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        assert order == ["search", "rerun"]
+        mock_st.button.assert_called_once()
+        assert mock_st.button.call_args.kwargs["key"] == "sidebar_cohort_nav_1"
+
+    def test_next_visible_page_skips_non_matching_sessions(self):
+        from views.sidebar_cohort_nav import next_visible_subject_page, prev_visible_subject_page
+
+        entries = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-02"},
+        ]
+        assert next_visible_subject_page(entries, "ses-02", "ses-01", 1) == 2
+        assert next_visible_subject_page(entries, "ses-02", "ses-01", 2) == 4
+        assert next_visible_subject_page(entries, "ses-02", "ses-01", 4) is None
+        assert next_visible_subject_page(entries, "ses-01", "ses-01", 1) == 3
+        assert next_visible_subject_page(entries, "ses-01", "ses-01", 3) is None
+        assert prev_visible_subject_page(entries, "ses-02", "ses-01", 4) == 2
+        assert prev_visible_subject_page(entries, "ses-02", "ses-01", 2) is None
+
+    def test_filter_hiding_current_jumps_to_first_match(self):
+        from views.sidebar_cohort_nav import page_if_filter_hides_current, _page_after_filter_change
+
+        entries = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        assert page_if_filter_hides_current(entries, "ses-01", "ses-01", 2) == 1
+        assert page_if_filter_hides_current(entries, "ses-01", "ses-01", 1) is None
+        assert page_if_filter_hides_current(entries, "ses-0", "ses-01", 2) is None
+        assert page_if_filter_hides_current(entries, "", "ses-01", 2) is None
+        assert page_if_filter_hides_current(entries, "zzz", "ses-01", 2) is None
+        assert page_if_filter_hides_current(entries, "ses-01", "ses-01", 3) is None
+
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {}
+            assert _page_after_filter_change(entries, "ses-02", "ses-01", 1) == 2
+            assert mock_st.session_state["_sidebar_search_applied_query"] == "ses-02"
+            assert _page_after_filter_change(entries, "ses-02", "ses-01", 2) is None
+
+    def test_changing_filter_navigates_to_first_visible_subject(self):
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = "ses-01"
+        mock_st.button.return_value = False
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 2
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+            )
+
+        mock_sm.set_current_page.assert_called_once_with(1)
+        mock_st.rerun.assert_called_once()
+
+    def test_clear_subject_search_empties_filter(self):
+        from views.sidebar_cohort_nav import clear_subject_search
+
+        persist = SESSION_KEYS["sidebar_subject_search"]
+        state = {
+            persist: "ses-02",
+            SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY: "ses-02",
+            SIDEBAR_SEARCH_HOLD_KEY: True,
+        }
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = state
+            clear_subject_search()
+        assert state[persist] == ""
+        assert state[SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY] == ""
+        assert SIDEBAR_SEARCH_HOLD_KEY not in state
+
+    def test_get_subject_search_query_uses_persist_not_blank_widget(self):
+        from views.sidebar_cohort_nav import get_subject_search_query
+
+        state = {
+            SESSION_KEYS["sidebar_subject_search"]: "ses-01",
+            SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY: "",
+        }
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = state
+            assert get_subject_search_query() == "ses-01"
+
+    def test_next_prev_stay_inside_session_filter(self):
+        from components.qc_viewer import _filtered_adjacent_pages
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+        ]
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {SESSION_KEYS["sidebar_subject_search"]: "ses-01"}
+            prev_page, next_page = _filtered_adjacent_pages(
+                current_page=1,
+                total_participants=3,
+                participant_ids=None,
+                qc_cohort=cohort,
+                session_id="ses-01",
+            )
+        assert prev_page is None
+        assert next_page == 3
+
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {SESSION_KEYS["sidebar_subject_search"]: "ses-01"}
+            prev_page, next_page = _filtered_adjacent_pages(
+                current_page=1,
+                total_participants=2,
+                participant_ids=None,
+                qc_cohort=cohort[:2],
+                session_id="ses-01",
+            )
+        assert prev_page is None
+        assert next_page is None

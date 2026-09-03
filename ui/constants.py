@@ -44,6 +44,8 @@ RATER_INFO_RATIO = [1, 1, 1]
 
 # Pagination
 DEFAULT_BATCH_SIZE = 1
+# Fixed height (px) for the sidebar subject list so it scrolls in place.
+SIDEBAR_SUBJECT_LIST_HEIGHT = 280
 
 # Montage grid settings
 DEFAULT_MONTAGE_MAX_ROWS = None  # None means auto-calculate
@@ -70,7 +72,17 @@ SESSION_KEYS = {
     "montage_max_cols": "montage_max_cols",
     # Set once per Streamlit session after reading qc.json (avoid re-applying on every rerun)
     "montage_defaults_applied_qc_task": "montage_defaults_applied_qc_task",
+    # Non-widget copy of the sidebar subject filter so Confirm/Next does not clear it
+    "sidebar_subject_search": "sidebar_subject_search",
 }
+
+# Widget key for the subject search box (must differ from the persist key above).
+SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY = "sidebar_subject_search_input"
+
+# Set by sidebar nav buttons so the subject search widget can render before st.rerun().
+PENDING_SIDEBAR_RERUN_KEY = "_pending_sidebar_rerun"
+# Keep the subject filter across Next/Previous and the follow-up rerun they trigger.
+SIDEBAR_SEARCH_HOLD_KEY = "_sidebar_search_hold"
 
 # File upload settings
 UPLOAD_FILE_TYPES = ["csv", "tsv"]
@@ -115,14 +127,18 @@ MESSAGES = {
     "qc_rating_header": "QC Rating",
     "qc_rating_prompt": "Rate this qc-task:",
     "qc_notes_prompt": "Notes (optional):",
-    "save_csv_button": "💾 Save QC results to CSV",
+    "save_csv_button": "💾 Save QC",
+    "save_csv_help": "Save QC results to a CSV file",
     "confirm_next_button": "Confirm ✅️ and Next ▶️",
     "next_button": "Next ▶️",
     "play_button": "▶️ Play",
     "pause_button": "⏸️ Pause",
     "back_landing_button": "🏠 Back to Landing Page",
     "sidebar_subjects_header": "Subjects",
-    "niivue_header": "3D MRI\n(Niivue)",
+    "sidebar_subjects_search": "Search subjects",
+    "sidebar_subjects_search_placeholder": "Filter by subject or session",
+    "sidebar_subjects_search_empty": "No subjects match this search.",
+    "niivue_header": "3D MRI (Niivue)",
     "niivue_controls_header": "Niivue Controls",
     "montage_header": "Montage",
     "metrics_header": "QC Metrics",

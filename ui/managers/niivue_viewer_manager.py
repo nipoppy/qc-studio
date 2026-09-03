@@ -220,7 +220,7 @@ class NiivueViewerManager:
             session_id: Current session ID
             task_suffix: Disambiguates multiple viewers (e.g. qc_task) on one page
         """
-        st.header(MESSAGES["niivue_header"])
+        st.caption(MESSAGES["niivue_header"])
 
         try:
             # Load MRI data
