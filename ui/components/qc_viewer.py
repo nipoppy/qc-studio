@@ -740,12 +740,7 @@ def _save_qc_record(
         out_file = _resolve_qc_save_file_path(out_dir, save_file_path)
         saved_path, dropped, _ = save_qc_results_to_csv(out_file, export_rows, drop_duplicates)
         record_count = len(export_rows)
-        unique_participants = len(
-            {
-                str(r.participant_id if hasattr(r, "participant_id") else r.get("participant_id", ""))
-                for r in export_rows
-            }
-        )
+        unique_participants = len({str(r.participant_id if hasattr(r, "participant_id") else r.get("participant_id", "")) for r in export_rows})
         msg = SUCCESS_MESSAGES["records_saved"].format(path=saved_path)
         msg += f" Saved {record_count} record(s) across {unique_participants} unique participant(s)."
         if dropped:
