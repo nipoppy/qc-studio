@@ -467,11 +467,30 @@ def _filtered_adjacent_pages(
     from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
 
     entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+    # Fallback for direct calls (e.g., tests) where cohort data is not provided.
+    # In that case, use simple contiguous pagination bounds.
+    if not entries:
+        prev_page = current_page - 1 if current_page > 1 else None
+        next_page = current_page + 1 if current_page < total_participants else None
+        return prev_page, next_page
     query = get_subject_search_query()
     return (
         prev_visible_subject_page(entries, query, session_id, current_page),
         next_visible_subject_page(entries, query, session_id, current_page),
     )
+
+
+def _request_navigation_rerun() -> None:
+    """Request an app refresh after navigation/playback actions.
+
+    Streamlit's real ``st.rerun()`` raises internally to stop execution and rerun.
+    In test contexts where rerun is mocked/no-op, fall back to the deferred sidebar key.
+    """
+    rerun = getattr(st, "rerun", None)
+    if callable(rerun):
+        rerun()
+        return
+    st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
 
 
 def _render_previous_page_button(target_page: int) -> None:
@@ -485,7 +504,7 @@ def _render_previous_page_button(target_page: int) -> None:
         SessionManager.set_current_page(target_page)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
+        _request_navigation_rerun()
 
 
 def _render_next_page_button(target_page: int) -> None:
@@ -499,7 +518,7 @@ def _render_next_page_button(target_page: int) -> None:
         SessionManager.set_current_page(target_page)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
+        _request_navigation_rerun()
 
 
 def _display_qc_pagination_header(current_page: int, total_participants: int) -> None:
@@ -524,13 +543,13 @@ def _display_qc_pagination_controls(
         if st.button(MESSAGES["play_button"], width="stretch", key="autoplay_play"):
             SessionManager.set_autoplay_enabled(True)
             SessionManager.set_autoplay_start_time(time.time())
-            st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
+            _request_navigation_rerun()
 
     with autoplay_col2:
         if st.button(MESSAGES["pause_button"], width="stretch", key="autoplay_pause"):
             SessionManager.set_autoplay_enabled(False)
             SessionManager.set_autoplay_start_time(0.0)
-            st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
+            _request_navigation_rerun()
 
     if SessionManager.is_autoplay_enabled():
         if SessionManager.get_autoplay_start_time() > 0:
@@ -580,7 +599,7 @@ def _display_qc_pagination_controls(
                 temp_cohort.append({"participant_id": p, "session_id": session_id})
             if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
                 SessionManager.set_current_page(total_participants + 1)
-        st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
+        _request_navigation_rerun()
 
     st.divider()
 
@@ -664,7 +683,7 @@ def _save_qc_record(
             temp_cohort.append({"participant_id": p, "session_id": session_id})
         if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
             SessionManager.set_current_page(total_participants + 1)
-    st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
+    _request_navigation_rerun()
 
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:
