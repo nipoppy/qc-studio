@@ -6,7 +6,7 @@ from constants import (
     MESSAGES,
     EQUAL_RATIO,
     RATING_IQM_RATIO,
-    NIIVUE_SVG_RATIO,
+    NIIVUE_MONTAGE_RATIO,
 )
 from .session_manager import SessionManager
 
@@ -57,7 +57,7 @@ class PanelLayoutManager:
             return list(EQUAL_RATIO)
         if count == 2:
             return list(EQUAL_RATIO)
-        return list(NIIVUE_SVG_RATIO)
+        return list(NIIVUE_MONTAGE_RATIO)
 
     @staticmethod
     def should_use_side_by_side_layout(selected_panels: dict) -> bool:
@@ -125,7 +125,7 @@ class PanelLayoutManager:
             selected_panels: Dictionary of selected panels
 
         Returns:
-            Formatted string like "Niivue + SVG + IQM"
+            Formatted string like "Niivue + Montage + IQM"
         """
         visible = []
         for panel_name, is_visible in selected_panels.items():

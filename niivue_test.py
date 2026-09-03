@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 from niivue_component import niivue_viewer
+
 # from niivue_component import niivue_component
 
 
@@ -30,27 +31,15 @@ def niivue_viewer_from_path(baseimage_fpath: str, overlay_fpath: str, height: in
         overlay_bytes = f.read()
 
     niivue_viewer(
-        nifti_data=baseimage_bytes,        
+        nifti_data=baseimage_bytes,
         filename=os.path.basename(baseimage_fpath),
         height=height,
         key=key,
-        overlays=[
-        {
-            "data": overlay_bytes,
-            "name": "activation.nii.gz",
-            "colormap": "hot",
-            "opacity": 0.7
-        }
-        ],
+        overlays=[{"data": overlay_bytes, "name": "activation.nii.gz", "colormap": "hot", "opacity": 0.7}],
         view_mode="multiplanar",
         styled=True,
-        settings={
-            "crosshair": True,
-            "radiological": False,
-            "colorbar": True,
-            "interpolation": True
-        }
-        )
+        settings={"crosshair": True, "radiological": False, "colorbar": True, "interpolation": True},
+    )
 
 
 # Sample BIDS anatomical (from `sample_data/bids/`, synced from Desktop shared data)
@@ -62,6 +51,3 @@ try:
 
 except Exception as e:
     st.error(f"Failed to load file: {e}")
-
-
-

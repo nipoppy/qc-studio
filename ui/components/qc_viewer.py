@@ -1,4 +1,4 @@
-"""QC viewer component for displaying MRI, SVG, and metrics panels."""
+"""QC viewer component for displaying MRI, montage, and metrics panels."""
 
 import math
 import re
@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
 from constants import (
-    SVG_HEIGHT,
+    MONTAGE_HEIGHT,
     MESSAGES,
     ERROR_MESSAGES,
     QC_RATINGS,
@@ -16,14 +16,18 @@ from constants import (
     OVERLAY_COLORMAPS,
     PENDING_SIDEBAR_RERUN_KEY,
 )
-from utils.data_loaders import load_svg_data
+from utils.data_loaders import load_montage_data
 from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
 
-# Session key: current QC row for autoplay fragment (set from ``main`` before sidebar).
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
+
+# Extra wait past the configured autoplay duration before advancing, so a rating click
+# made right at the boundary has time to reach the server and self-save via on_change
+# before the poll treats the interval as elapsed.
+AUTOPLAY_ADVANCE_GRACE_SECONDS = 0.3
 
 
 def _compact_session_label(participant_id: str | None, session_id: str | None) -> str:
@@ -76,7 +80,7 @@ def try_autoplay_advance_if_due(
         return
     elapsed = time.time() - start_time
     duration = SessionManager.get_autoplay_duration()
-    if elapsed < duration:
+    if elapsed < duration + AUTOPLAY_ADVANCE_GRACE_SECONDS:
         return
     tasks = list(qc_tasks or [])
     if not tasks:
@@ -173,7 +177,7 @@ def display_qc_viewers(
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
 ) -> None:
-    """Display QC viewers (Niivue, SVG, IQM) for one or more tasks from ``qc.json``."""
+    """Display QC viewers (Niivue, MONTAGE, IQM) for one or more tasks from ``qc.json``."""
     cohort_eff = qc_cohort
     if cohort_eff is None and participant_ids:
         sid = session_id or "ses-01"
@@ -193,12 +197,12 @@ def display_qc_viewers(
     selected_panels = SessionManager.get_selected_panels()
     selected_panels = {
         "niivue": selected_panels.get("niivue_col", selected_panels.get("niivue", True)),
-        "svg": selected_panels.get("svg_col", selected_panels.get("svg", True)),
+        "montage": selected_panels.get("montage_col", selected_panels.get("montage", True)),
         "iqm": selected_panels.get("iqm_col", selected_panels.get("iqm", False)),
     }
 
     show_niivue = selected_panels.get("niivue", True)
-    show_svg = selected_panels.get("svg", True)
+    show_montage = selected_panels.get("montage", True)
     show_iqm = selected_panels.get("iqm", False)
 
     _render_autoplay_countdown_main_banner()
@@ -212,24 +216,25 @@ def display_qc_viewers(
             st.divider()
         st.subheader(display_label)
         task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
-        if task_has_niivue and show_svg and show_iqm:
+        if task_has_niivue and show_montage and show_iqm:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
             st.divider()
             _display_iqm_panel()
-        elif task_has_niivue and show_svg:
+        elif task_has_niivue and show_montage:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
         elif task_has_niivue and show_iqm:
             _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
         elif task_has_niivue:
             _display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id, tname)
-        elif show_svg:
-            _display_svg_panel(dataset_dir, qc_config)
+        elif show_montage:
+            _display_montage_panel(dataset_dir, qc_config)
         elif show_iqm:
             _display_iqm_panel()
 
         _display_qc_rating_for_task(
             participant_id=participant_id,
             session_id=session_id,
+            qc_pipeline=qc_pipeline,
             qc_task=tname,
             display_label=display_label,
             notes_height=88 if multi_task else 120,
@@ -242,7 +247,7 @@ def _display_niivue_with_secondary_panel(
     """Display 3-column layout: Niivue with hidden controls | Secondary panel.
 
     Niivue controls are hidden in an expander attached to the Niivue viewer column.
-    Used when Niivue is selected with either SVG or IQM panel.
+    Used when Niivue is selected with either montage or IQM panel.
 
     Args:
             dataset_dir: Root dataset directory
@@ -268,10 +273,10 @@ def _display_niivue_with_secondary_panel(
         with st.expander("🎮 Niivue Controls", expanded=False):
             NiivueViewerManager.render_controls_panel(state_suffix=task_suffix)
 
-    # Right column: SVG or IQM panel
+    # Right column: Montage or IQM panel
     with panel_col:
-        if selected_panels.get("svg", False):
-            _display_svg_panel(dataset_dir, qc_config)
+        if selected_panels.get("montage", False):
+            _display_montage_panel(dataset_dir, qc_config)
         else:
             _display_iqm_panel()
 
@@ -317,7 +322,7 @@ def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = Fal
     return st.session_state[state_key]
 
 
-def _display_svg_panel(dataset_dir, qc_config) -> None:
+def _display_montage_panel(dataset_dir, qc_config) -> None:
     """Display SVG/PNG/JPEG montage panel with tabs for multiple images.
 
     If multiple image files are available, renders them as separate tabs.
@@ -331,13 +336,13 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
             dataset_dir: Root dataset directory
             qc_config: QC configuration object
     """
-    st.caption(MESSAGES["svg_header"])
+    st.header(MESSAGES["montage_header"])
 
     # Get montage grid settings from session manager
     max_montage_rows = SessionManager.get_montage_max_rows()
     max_montage_cols = SessionManager.get_montage_max_cols()
 
-    image_data = load_svg_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+    image_data = load_montage_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
 
     if image_data:
         # If multiple images, create tabs
@@ -352,7 +357,7 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
             filename, data = list(image_data.items())[0]
             _render_image(data, filename)
     else:
-        st.info(ERROR_MESSAGES["svg_not_found"])
+        st.info(ERROR_MESSAGES["montage_not_found"])
 
 
 def _render_image(image_data: dict, filename: str) -> None:
@@ -367,7 +372,7 @@ def _render_image(image_data: dict, filename: str) -> None:
 
     if image_type == "svg":
         # Render SVG as HTML
-        st.components.v1.html(content, height=SVG_HEIGHT, scrolling=True)
+        st.components.v1.html(content, height=MONTAGE_HEIGHT, scrolling=True)
     elif image_type in ["png", "jpeg"]:
         # Display PNG/JPEG as image
         st.image(content, width="stretch", caption=filename)
@@ -375,9 +380,25 @@ def _render_image(image_data: dict, filename: str) -> None:
         st.warning(f"Unsupported image type: {image_type}")
 
 
+def _rating_widget_key(qc_task: str, rver: int) -> str:
+    return f"qc_rating_{qc_task}_{rver}"
+
+
+def _notes_widget_key(qc_task: str, nver: int) -> str:
+    return f"qc_notes_{qc_task}_{nver}"
+
+
+def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
+    """Callback to save rating and notes when changed."""
+    rating = st.session_state.get(_rating_widget_key(qc_task, rver))
+    notes = st.session_state.get(_notes_widget_key(qc_task, nver), "")
+    _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
+
+
 def _display_qc_rating_for_task(
     participant_id: str | None,
     session_id: str | None,
+    qc_pipeline: str | None,
     qc_task: str,
     *,
     display_label: str | None = None,
@@ -401,13 +422,15 @@ def _display_qc_rating_for_task(
         " ",
         options=QC_RATINGS,
         index=QC_RATINGS.index(initial_rating) if initial_rating else None,
-        key=f"qc_rating_{qc_task}_{rver}",
+        key=_rating_widget_key(qc_task, rver),
         label_visibility="collapsed",
+        on_change=_on_rating_change,
+        args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
     )
     st.text_area(
         MESSAGES["qc_notes_prompt"],
         value=initial_notes,
-        key=f"qc_notes_{qc_task}_{nver}",
+        key=_notes_widget_key(qc_task, nver),
         height=notes_height,
     )
 
@@ -416,8 +439,8 @@ def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str,
     rver = SessionManager.get_rating_version()
     nver = SessionManager.get_notes_version()
     for t in qc_tasks:
-        rating = st.session_state.get(f"qc_rating_{t}_{rver}")
-        notes = st.session_state.get(f"qc_notes_{t}_{nver}", "")
+        rating = st.session_state.get(_rating_widget_key(t, rver))
+        notes = st.session_state.get(_notes_widget_key(t, nver), "")
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
 
 
@@ -646,6 +669,11 @@ def _save_qc_record(
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:
     """Save a QC record for the current participant without navigating."""
+    # A stale/rotated widget key (e.g. the autoplay poll reading a key from before the
+    # page advanced) reads back None; ignore it instead of overwriting a saved rating.
+    if rating is None:
+        return
+
     now = datetime.now()
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     record = QCRecord(

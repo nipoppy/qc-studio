@@ -119,14 +119,14 @@ class TestQCTask:
         """Test creating QCTask with all path fields."""
         base_path = temp_dir / "base.nii.gz"
         overlay_path = temp_dir / "overlay.nii.gz"
-        svg_path = temp_dir / "montage.svg"
+        montage_path = temp_dir / "montage.svg"
         iqm_path = temp_dir / "iqm.json"
 
-        task = QCTask(base_mri_image_path=base_path, overlay_mri_image_path=overlay_path, svg_montage_path=svg_path, iqm_path=iqm_path)
+        task = QCTask(base_mri_image_path=base_path, overlay_mri_image_path=overlay_path, montage_path=montage_path, iqm_path=iqm_path)
 
         assert task.base_mri_image_path == base_path
         assert task.overlay_mri_image_path == overlay_path
-        assert task.svg_montage_path == [svg_path]
+        assert task.montage_path == [montage_path]
         assert task.iqm_path == iqm_path
 
     def test_create_qc_task_with_minimal_fields(self):
@@ -135,7 +135,7 @@ class TestQCTask:
 
         assert task.base_mri_image_path is None
         assert task.overlay_mri_image_path is None
-        assert task.svg_montage_path is None
+        assert task.montage_path is None
         assert task.iqm_path is None
         assert task.montage_max_rows is None
         assert task.montage_max_cols is None
@@ -160,7 +160,7 @@ class TestQCTask:
 
     def test_qc_task_montage_layout_fields(self, temp_dir):
         task = QCTask(
-            svg_montage_path=str(temp_dir / "a.svg"),
+            montage_path=str(temp_dir / "a.svg"),
             montage_max_rows=2,
             montage_max_cols=3,
         )
@@ -170,7 +170,7 @@ class TestQCTask:
     def test_qc_task_montage_layout_invalid_rejected(self, temp_dir):
         with pytest.raises(ValidationError):
             QCTask(
-                svg_montage_path=str(temp_dir / "a.svg"),
+                montage_path=str(temp_dir / "a.svg"),
                 montage_max_rows=99,
             )
 

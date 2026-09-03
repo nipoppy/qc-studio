@@ -56,13 +56,13 @@ class QCTask(BaseModel):
     base_mri_image_path: Annotated[Optional[Path], Field(description="Path to base MRI image")] = None
     overlay_mri_image_path: Annotated[Optional[Path], Field(description="Path to overlay MRI image (mask etc.)")] = None
 
-    # List of paths for svg montages
-    svg_montage_path: Annotated[Optional[List[Path]], Field(description="List of paths to SVG montages for visual QC")] = None
+    # List of paths for montages
+    montage_path: Annotated[Optional[List[Path]], Field(description="List of paths to 2D montage images for visual QC (SVG, PNG, JPG/JPEG)")] = None
 
     # Path for IQMs or other QC files (e.g. CSV, JSON)
-    iqm_path: Annotated[Optional[Path], Field(description="Path to an IQM or other QC SVG/file")] = None
+    iqm_path: Annotated[Optional[Path], Field(description="Path to an IQM or other QC images/file")] = None
 
-    # Optional grid constraints for multi-image SVG/raster montage (see utils.data_loaders.load_svg_data)
+    # Optional grid constraints for multi-image SVG/raster montage (see utils.data_loaders.load_montage_data)
     montage_max_rows: Annotated[
         Optional[int],
         Field(
@@ -82,9 +82,9 @@ class QCTask(BaseModel):
         ),
     ] = None
 
-    @field_validator("svg_montage_path", mode="before")
+    @field_validator("montage_path", mode="before")
     @classmethod
-    def _coerce_svg_montage_path(cls, v):
+    def _coerce_montage_path(cls, v):
         """Accept a single path/string from JSON or a list of paths."""
         if v is None:
             return None
@@ -103,7 +103,7 @@ class QCConfig(RootModel[Dict[str, QCTask]]):
         "anat_wf_qc": {
             "base_mri_image_path": "...",
             "overlay_mri_image_path": "...",
-            "svg_montage_path": "...",
+            "montage_path": "...",
             "iqm_path": "...",
             "montage_max_rows": 2,
             "montage_max_cols": 2
