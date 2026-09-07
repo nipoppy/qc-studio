@@ -5,6 +5,12 @@ from argparse import ArgumentParser
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+
+# Reference-data host (REFERENCE_DATA_URL) is read from the environment or a
+# .env file; load it before anything else needs it.
+load_dotenv()
+
 from app import app, resolve_qc_tasks
 from components.qc_viewer import AUTOPLAY_RUN_CTX_KEY
 from managers.session_manager import SessionManager

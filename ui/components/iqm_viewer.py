@@ -23,10 +23,10 @@ import plotly.graph_objects as go
 from utils.data_loaders import (
     resolve_iqm_data_path,
     load_scanner_metadata,
-    load_iqm_distribution_table,
+    load_iqm_distribution_table as _load_iqm_distribution_table_uncached,
     load_iqm_metrics_subject_level,
-    load_reference_iqm_for_subject,
 )
+from utils.reference_data import load_reference_iqm_for_subject, MAX_REFERENCE_ROWS
 from constants import MESSAGES, ERROR_MESSAGES
 from managers.session_manager import SessionManager
 from utils.iqm_distribution_config import (
@@ -46,7 +46,6 @@ REFERENCE_STYLE = dict(
     fillcolor="rgba(214, 39, 40, 0.25)",
 )
 SUBJECT_MARKER_STYLE = dict(size=8, symbol="diamond", color="rgba(255, 127, 14, 0.9)", line=dict(color="rgba(255, 127, 14, 1.0)", width=2))
-MAX_REFERENCE_ROWS = 50000
 
 CONTAINER_HEIGHT = 520
 NUM_OVERVIEW_COLUMNS = 2
@@ -54,6 +53,11 @@ NUM_OVERVIEW_COLUMNS = 2
 NON_METRIC_COLUMNS = {"bids_name", "subject", "subject_id", "participant_id"}
 
 DISPLAY_MODE_OPTIONS = ["Dataset", "Dataset + Reference"]
+
+# Reference-data comparison is hidden until issue #82 (unfiltered downloaded
+# reference data can be visually misleading) is addressed. Flip to True once
+# that cleaning/filtering step lands.
+REFERENCE_COMPARISON_ENABLED = False
 
 
 @dataclass(frozen=True)
@@ -162,10 +166,16 @@ def _row_to_metrics(row) -> dict:
     return {col: value for col, value in row.items() if str(col).lower() not in NON_METRIC_COLUMNS and not str(col).startswith("Unnamed:")}
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_iqm_distribution_table_cached(resolved_path):
+    """Cached wrapper around ``data_loaders.load_iqm_distribution_table``."""
+    return _load_iqm_distribution_table_uncached(resolved_path)
+
+
 def _load_distribution_source(path, resolved, pipeline_name):
     """Load a TSV/CSV distribution source and return a DistributionSource or MetricsSource object."""
     try:
-        iqm_data = load_iqm_distribution_table(resolved)
+        iqm_data = _load_iqm_distribution_table_cached(resolved)
     except Exception as e:
         st.error(ERROR_MESSAGES["iqm_data_load_error"].format(modality=pipeline_name, error=e))
         return None
@@ -635,7 +645,7 @@ def _render_iqm_distributions(
     if not is_mriqc_pipeline(source.pipeline_name):
         st.caption(MESSAGES["iqm_generic_distribution_experimental"])
 
-    can_compare_reference = is_mriqc_pipeline(source.pipeline_name) and source.modality is not None
+    can_compare_reference = REFERENCE_COMPARISON_ENABLED and is_mriqc_pipeline(source.pipeline_name) and source.modality is not None
 
     mode = DISPLAY_MODE_OPTIONS[0]
     reference_data = None

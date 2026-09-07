@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
 from constants import SVG_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
-from utils.data_loaders import load_svg_data
+from utils.data_loaders import load_svg_data as _load_svg_data_uncached
 from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
@@ -344,6 +344,12 @@ def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = Fal
     return st.session_state[state_key]
 
 
+@st.cache_data(show_spinner=False, max_entries=128)
+def _load_svg_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols):
+    """Cached wrapper around ``data_loaders.load_svg_data``."""
+    return _load_svg_data_uncached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+
+
 def _display_svg_panel(dataset_dir, qc_config) -> None:
     """Display SVG/PNG/JPEG montage panel with tabs for multiple images.
 
@@ -364,7 +370,7 @@ def _display_svg_panel(dataset_dir, qc_config) -> None:
     max_montage_rows = SessionManager.get_montage_max_rows()
     max_montage_cols = SessionManager.get_montage_max_cols()
 
-    image_data = load_svg_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+    image_data = _load_svg_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
 
     if image_data:
         # If multiple images, create tabs

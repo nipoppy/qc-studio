@@ -148,6 +148,36 @@ def test_render_iqm_distributions_dataset_only(iqm_viewer_module, temp_dir, monk
     assert len(fig.data) == 2
 
 
+def test_render_iqm_distributions_hides_reference_toggle_by_default(iqm_viewer_module, temp_dir, monkeypatch):
+    """REFERENCE_COMPARISON_ENABLED defaults to False (hidden pending #82): the
+    Display mode radio should never render, and only the dataset trace shows."""
+    module, streamlit_stub = iqm_viewer_module
+
+    dataset_path = temp_dir / "derivatives" / "mriqc" / "group_T1w.tsv"
+    dataset_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "bids_name": ["sub-01_ses-01_T1w", "sub-02_ses-01_T1w"],
+            "efc": [0.11, 0.22],
+        }
+    ).to_csv(dataset_path, sep="\t", index=False)
+
+    monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
+    streamlit_stub.segmented_control.return_value = "mriqc (t1w)"
+
+    module._render_iqm_distributions(
+        [str(dataset_path)],
+        {"Manufacturer": "Siemens"},
+        "sub-01",
+        None,
+    )
+
+    streamlit_stub.radio.assert_not_called()
+    fig = streamlit_stub.plotly_chart.call_args.args[0]
+    # Dataset-only mode: one violin + one subject-highlight marker trace, no reference trace.
+    assert len(fig.data) == 2
+
+
 def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_module, temp_dir, monkeypatch):
     module, streamlit_stub = iqm_viewer_module
 
@@ -161,6 +191,9 @@ def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_modu
     ).to_csv(dataset_path, sep="\t", index=False)
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
+    # Comparison mode is hidden behind this flag pending #82; the rendering
+    # logic itself still needs to work once it's re-enabled.
+    monkeypatch.setattr(module, "REFERENCE_COMPARISON_ENABLED", True)
 
     reference_df = pd.DataFrame(
         {
@@ -386,6 +419,9 @@ def test__render_iqm_distributions_double_tabs_with_different_pipeline_names(iqm
     monkeypatch.setattr(module, "load_reference_iqm_for_subject", MagicMock(return_value=reference_data))
 
     monkeypatch.setitem(module.IQM_DISTRIBUTION_GROUPS, "t1w", {"EFC": ["efc"]})
+    # Comparison mode is hidden behind this flag pending #82; the rendering
+    # logic itself still needs to work once it's re-enabled.
+    monkeypatch.setattr(module, "REFERENCE_COMPARISON_ENABLED", True)
     streamlit_stub.segmented_control.return_value = "mriqc (t1w)"
     streamlit_stub.radio.return_value = "Dataset + Reference"
 

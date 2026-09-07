@@ -20,6 +20,8 @@ from utils.data_loaders import (
     resolve_iqm_data_path,
     load_iqm_distribution_table,
     load_iqm_metrics_subject_level,
+)
+from utils.reference_data import (
     normalize_manufacturer,
     normalize_field_strength,
     download_reference_parquet,
@@ -708,7 +710,7 @@ class TestDownloadReferenceParquet:
 
     def test_missing_url_does_not_create_cache_dir(self, temp_dir, monkeypatch):
         cache_dir = temp_dir / "reference_cache"
-        monkeypatch.setattr("utils.data_loaders.REFERENCE_CACHE_DIR", cache_dir)
+        monkeypatch.setattr("utils.reference_data.REFERENCE_CACHE_DIR", cache_dir)
 
         with pytest.raises(RuntimeError):
             download_reference_parquet("t1w", url_parent="")
@@ -717,9 +719,9 @@ class TestDownloadReferenceParquet:
 
     def test_download_creates_cache_dir_when_writing(self, temp_dir, monkeypatch):
         cache_dir = temp_dir / "reference_cache"
-        monkeypatch.setattr("utils.data_loaders.REFERENCE_CACHE_DIR", cache_dir)
+        monkeypatch.setattr("utils.reference_data.REFERENCE_CACHE_DIR", cache_dir)
 
-        with patch("utils.data_loaders._download_reference_parquet_bytes", return_value=b"parquet"):
+        with patch("utils.reference_data._download_reference_parquet_bytes", return_value=b"parquet"):
             result = download_reference_parquet("t1w", url_parent="https://example.test/reference")
 
         assert Path(result) == cache_dir / "t1w.parquet"
@@ -741,7 +743,7 @@ class TestLoadReferenceIqmForSubject:
                 "efc": [0.1, 0.2, 0.3],
             }
         )
-        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+        with patch("utils.reference_data._load_reference_parquet", return_value=reference_df):
             result = load_reference_iqm_for_subject(
                 modality="t1w_test_manufacturer_and_field_strength",
                 manufacturer="Siemens Healthineers",
@@ -758,7 +760,7 @@ class TestLoadReferenceIqmForSubject:
                 "efc": [0.1, 0.2],
             }
         )
-        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+        with patch("utils.reference_data._load_reference_parquet", return_value=reference_df):
             result = load_reference_iqm_for_subject(
                 modality="t1w_test_unknown_manufacturer",
                 manufacturer=None,
@@ -773,7 +775,7 @@ class TestLoadReferenceIqmForSubject:
                 "efc": range(100),
             }
         )
-        with patch("utils.data_loaders._load_reference_parquet", return_value=reference_df):
+        with patch("utils.reference_data._load_reference_parquet", return_value=reference_df):
             result = load_reference_iqm_for_subject(
                 modality="t1w_test_row_sampling",
                 manufacturer="Siemens",
