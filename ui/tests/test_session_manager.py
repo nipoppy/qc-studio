@@ -102,7 +102,7 @@ class TestPanelMethods:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        new_panels = {"niivue": True, "svg": False, "iqm": True}
+        new_panels = {"niivue": True, "montage": False, "iqm": True}
         SessionManager.set_panel_selection(new_panels)
 
         result = SessionManager.get_selected_panels()
@@ -113,11 +113,11 @@ class TestPanelMethods:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        panels = {"niivue": True, "svg": False, "iqm": True}
+        panels = {"niivue": True, "montage": False, "iqm": True}
         SessionManager.set_panel_selection(panels)
 
         assert SessionManager.is_panel_selected("niivue") is True
-        assert SessionManager.is_panel_selected("svg") is False
+        assert SessionManager.is_panel_selected("montage") is False
         assert SessionManager.is_panel_selected("iqm") is True
 
     def test_get_panel_count(self, mock_session_state):
@@ -125,7 +125,7 @@ class TestPanelMethods:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        panels = {"niivue": True, "svg": False, "iqm": True}
+        panels = {"niivue": True, "montage": False, "iqm": True}
         SessionManager.set_panel_selection(panels)
 
         assert SessionManager.get_panel_count() == 2
@@ -135,7 +135,7 @@ class TestPanelMethods:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        panels = {"niivue": False, "svg": False, "iqm": False}
+        panels = {"niivue": False, "montage": False, "iqm": False}
         SessionManager.set_panel_selection(panels)
 
         assert SessionManager.get_panel_count() == 0
@@ -320,7 +320,7 @@ class TestSessionManagerIntegration:
         SessionManager.set_rater_fatigue("A bit tired ☕")
 
         # Panel selection
-        panels = {"niivue": True, "svg": True, "iqm": False}
+        panels = {"niivue": True, "montage": True, "iqm": False}
         SessionManager.set_panel_selection(panels)
 
         # Complete landing page

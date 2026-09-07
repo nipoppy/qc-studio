@@ -1,4 +1,5 @@
 import streamlit as st
+from constants import ERROR_MESSAGES
 from utils.config import build_substitution_values, list_qc_tasks_from_json
 from managers.session_manager import SessionManager
 from views.landing_page import show_landing_page
@@ -48,8 +49,11 @@ def app(
 
     qc_cohort_eff = qc_cohort if qc_cohort is not None else _legacy_qc_cohort(participant_ids, session_id)
     qc_tasks_eff = qc_tasks if qc_tasks is not None else resolve_qc_tasks(qc_task, qc_config_path)
-    if str(qc_task).strip().lower() == "all" and not qc_tasks_eff:
-        st.error("`--qc_task all` needs a readable **qc.json** whose root is a JSON object with task keys. " f"Found no tasks at: `{qc_config_path}`")
+    if not qc_tasks_eff:
+        if str(qc_task).strip().lower() == "all":
+            st.error(ERROR_MESSAGES["no_qc_tasks_all"].format(qc_config_path=qc_config_path))
+        else:
+            st.error(ERROR_MESSAGES["no_qc_task_resolved"].format(qc_task=qc_task))
         st.stop()
 
     if not SessionManager.is_landing_page_complete():

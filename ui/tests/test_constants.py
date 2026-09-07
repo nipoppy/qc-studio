@@ -7,7 +7,7 @@ from constants import (
     PANEL_CONFIG,
     QC_RATINGS,
     NIIVUE_HEIGHT,
-    SVG_HEIGHT,
+    MONTAGE_HEIGHT,
     IQM_HEIGHT,
     VIEW_MODES,
     OVERLAY_COLORMAPS,
@@ -98,11 +98,11 @@ class TestHeightConstants:
     def test_heights_are_positive_integers(self):
         """Test that height constants are positive integers."""
         assert isinstance(NIIVUE_HEIGHT, int)
-        assert isinstance(SVG_HEIGHT, int)
+        assert isinstance(MONTAGE_HEIGHT, int)
         assert isinstance(IQM_HEIGHT, int)
 
         assert NIIVUE_HEIGHT > 0
-        assert SVG_HEIGHT > 0
+        assert MONTAGE_HEIGHT > 0
         assert IQM_HEIGHT > 0
 
 

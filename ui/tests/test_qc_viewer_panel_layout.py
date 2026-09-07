@@ -19,7 +19,7 @@ def patched_layout(monkeypatch):
     """Stub every collaborator display_qc_viewers calls into, so only the
     branch-selection logic itself is under test."""
     monkeypatch.setattr(qc_viewer, "parse_qc_config", lambda *a, **k: {"display_name": "Task", "base_mri_image_path": None})
-    monkeypatch.setattr(qc_viewer, "_display_svg_panel", MagicMock())
+    monkeypatch.setattr(qc_viewer, "_display_montage_panel", MagicMock())
     monkeypatch.setattr(qc_viewer, "display_iqm_distribution_panel", MagicMock())
     monkeypatch.setattr(qc_viewer, "_display_niivue_with_secondary_panel", MagicMock())
     monkeypatch.setattr(qc_viewer, "_display_niivue_full_width", MagicMock())
@@ -43,35 +43,35 @@ def _call(selected_panels):
         )
 
 
-def test_svg_and_iqm_both_render_when_no_niivue_image(patched_layout):
+def test_montage_and_iqm_both_render_when_no_niivue_image(patched_layout):
     """A task with no base_mri_image_path (so task_has_niivue is False) and
-    both SVG and IQM panels selected should render both, not just SVG.
+    both Montage and IQM panels selected should render both, not just Montage.
 
     Regression test: the elif-chain used to only have single-panel branches
-    for the no-niivue case, so SVG (checked by default) always won and IQM
+    for the no-niivue case, so Montage (checked by default) always won and IQM
     silently never rendered even when its checkbox was also checked."""
-    _call({"niivue": False, "svg": True, "iqm": True})
+    _call({"niivue": False, "montage": True, "iqm": True})
 
-    patched_layout._display_svg_panel.assert_called_once()
+    patched_layout._display_montage_panel.assert_called_once()
     patched_layout.display_iqm_distribution_panel.assert_called_once()
 
 
-def test_svg_only_renders_svg_when_no_niivue_image(patched_layout):
-    _call({"niivue": False, "svg": True, "iqm": False})
+def test_montage_only_renders_montage_when_no_niivue_image(patched_layout):
+    _call({"niivue": False, "montage": True, "iqm": False})
 
-    patched_layout._display_svg_panel.assert_called_once()
+    patched_layout._display_montage_panel.assert_called_once()
     patched_layout.display_iqm_distribution_panel.assert_not_called()
 
 
 def test_iqm_only_renders_iqm_when_no_niivue_image(patched_layout):
-    _call({"niivue": False, "svg": False, "iqm": True})
+    _call({"niivue": False, "montage": False, "iqm": True})
 
-    patched_layout._display_svg_panel.assert_not_called()
+    patched_layout._display_montage_panel.assert_not_called()
     patched_layout.display_iqm_distribution_panel.assert_called_once()
 
 
 def test_neither_renders_when_no_niivue_image_and_nothing_selected(patched_layout):
-    _call({"niivue": False, "svg": False, "iqm": False})
+    _call({"niivue": False, "montage": False, "iqm": False})
 
-    patched_layout._display_svg_panel.assert_not_called()
+    patched_layout._display_montage_panel.assert_not_called()
     patched_layout.display_iqm_distribution_panel.assert_not_called()

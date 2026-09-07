@@ -12,7 +12,7 @@ class TestPanelLayoutRatios:
 
     def test_get_panel_layout_ratios_all_panels(self):
         """Test layout ratios when all panels are selected."""
-        selected_panels = {"niivue": True, "svg": True, "iqm": True}
+        selected_panels = {"niivue": True, "montage": True, "iqm": True}
         ratios = PanelLayoutManager.get_panel_layout_ratios(selected_panels)
 
         # Should return appropriate ratios
@@ -20,9 +20,9 @@ class TestPanelLayoutRatios:
         assert len(ratios) == 2
         assert ratios[0] > 0 and ratios[1] > 0
 
-    def test_get_panel_layout_ratios_niivue_svg(self):
-        """Test layout ratios with niivue and svg - should be side-by-side (equal)."""
-        selected_panels = {"niivue": True, "svg": True, "iqm": False}
+    def test_get_panel_layout_ratios_niivue_montage(self):
+        """Test layout ratios with niivue and montage - should be side-by-side (equal)."""
+        selected_panels = {"niivue": True, "montage": True, "iqm": False}
         ratios = PanelLayoutManager.get_panel_layout_ratios(selected_panels)
 
         # 2 panels should use EQUAL_RATIO for side-by-side layout
@@ -30,7 +30,7 @@ class TestPanelLayoutRatios:
 
     def test_get_panel_layout_ratios_niivue_iqm_two_panels(self):
         """Test layout ratios for Niivue + IQM (2 panels) returns equal ratio."""
-        selected_panels = {"niivue": True, "svg": False, "iqm": True}
+        selected_panels = {"niivue": True, "montage": False, "iqm": True}
         ratios = PanelLayoutManager.get_panel_layout_ratios(selected_panels)
 
         # 2 panels should use EQUAL_RATIO
@@ -38,7 +38,7 @@ class TestPanelLayoutRatios:
 
     def test_get_panel_layout_ratios_only_iqm(self):
         """Test layout ratios with only IQM panel."""
-        selected_panels = {"niivue": False, "svg": False, "iqm": True}
+        selected_panels = {"niivue": False, "montage": False, "iqm": True}
         ratios = PanelLayoutManager.get_panel_layout_ratios(selected_panels)
 
         assert isinstance(ratios, list)
@@ -46,7 +46,7 @@ class TestPanelLayoutRatios:
 
     def test_get_panel_layout_ratios_niivue_only(self):
         """Test layout ratios with only niivue."""
-        selected_panels = {"niivue": True, "svg": False, "iqm": False}
+        selected_panels = {"niivue": True, "montage": False, "iqm": False}
         ratios = PanelLayoutManager.get_panel_layout_ratios(selected_panels)
 
         assert isinstance(ratios, list)
@@ -57,10 +57,10 @@ class TestShouldShowPanel:
 
     def test_should_show_panel_selected(self):
         """Test that selected panels should be shown."""
-        selected_panels = {"niivue": True, "svg": False}
+        selected_panels = {"niivue": True, "montage": False}
 
         assert PanelLayoutManager.should_show_panel("niivue", selected_panels) is True
-        assert PanelLayoutManager.should_show_panel("svg", selected_panels) is False
+        assert PanelLayoutManager.should_show_panel("montage", selected_panels) is False
 
     def test_should_show_panel_default_false(self):
         """Test that missing panels default to False."""
@@ -74,21 +74,21 @@ class TestGetActivePanelCount:
 
     def test_get_active_panel_count_all_selected(self):
         """Test counting when all panels are selected."""
-        selected_panels = {"niivue": True, "svg": True, "iqm": True}
+        selected_panels = {"niivue": True, "montage": True, "iqm": True}
         count = PanelLayoutManager.get_active_panel_count(selected_panels)
 
         assert count == 3
 
     def test_get_active_panel_count_partial(self):
         """Test counting when some panels are selected."""
-        selected_panels = {"niivue": True, "svg": False, "iqm": True}
+        selected_panels = {"niivue": True, "montage": False, "iqm": True}
         count = PanelLayoutManager.get_active_panel_count(selected_panels)
 
         assert count == 2
 
     def test_get_active_panel_count_none_selected(self):
         """Test counting when no panels are selected."""
-        selected_panels = {"niivue": False, "svg": False, "iqm": False}
+        selected_panels = {"niivue": False, "montage": False, "iqm": False}
         count = PanelLayoutManager.get_active_panel_count(selected_panels)
 
         assert count == 0
@@ -99,7 +99,7 @@ class TestGetPanelVisibilitySummary:
 
     def test_get_panel_visibility_summary_all(self):
         """Test summary when all panels are visible."""
-        selected_panels = {"niivue": True, "svg": True, "iqm": True}
+        selected_panels = {"niivue": True, "montage": True, "iqm": True}
         summary = PanelLayoutManager.get_panel_visibility_summary(selected_panels)
 
         assert "Niivue" in summary or "3D MRI" in summary or "niivue" in summary.lower()
@@ -108,7 +108,7 @@ class TestGetPanelVisibilitySummary:
 
     def test_get_panel_visibility_summary_partial(self):
         """Test summary when some panels are visible."""
-        selected_panels = {"niivue": True, "svg": False, "iqm": True}
+        selected_panels = {"niivue": True, "montage": False, "iqm": True}
         summary = PanelLayoutManager.get_panel_visibility_summary(selected_panels)
 
         # Should contain plus signs indicating multiple panels
@@ -117,7 +117,7 @@ class TestGetPanelVisibilitySummary:
 
     def test_get_panel_visibility_summary_none(self):
         """Test summary when no panels are visible."""
-        selected_panels = {"niivue": False, "svg": False, "iqm": False}
+        selected_panels = {"niivue": False, "montage": False, "iqm": False}
         summary = PanelLayoutManager.get_panel_visibility_summary(selected_panels)
 
         assert summary == "No panels selected"
@@ -128,7 +128,7 @@ class TestPanelVisibility:
 
     def test_panel_config_keys_exist(self):
         """Test that PANEL_CONFIG has expected keys."""
-        expected_keys = ["niivue", "svg", "iqm"]
+        expected_keys = ["niivue", "montage", "iqm"]
         for key in expected_keys:
             assert key in PANEL_CONFIG
 
@@ -142,14 +142,14 @@ class TestPanelVisibility:
     def test_panel_config_default_values(self):
         """Test default panel visibility values."""
         assert PANEL_CONFIG["niivue"]["default"] is True
-        assert PANEL_CONFIG["svg"]["default"] is True
+        assert PANEL_CONFIG["montage"]["default"] is True
         assert PANEL_CONFIG["iqm"]["default"] is False
 
 
 class TestLayoutConstants:
     """Tests for layout ratio constants."""
 
-    def test_niivue_svg_ratio_valid(self):
+    def test_niivue_montage_ratio_valid(self):
         """Test NIIVUE_SECONDARY_RATIO is valid."""
         assert len(NIIVUE_SECONDARY_RATIO) == 3
         # all values should be positive
@@ -178,32 +178,32 @@ class TestSideBySideLayout:
 
     def test_should_use_side_by_side_with_two_panels(self):
         """Test that 2 panels return True for side-by-side layout."""
-        selected_panels = {"niivue": True, "svg": True, "iqm": False}
+        selected_panels = {"niivue": True, "montage": True, "iqm": False}
         assert PanelLayoutManager.should_use_side_by_side_layout(selected_panels) is True
 
     def test_should_use_side_by_side_niivue_iqm(self):
         """Test Niivue + IQM = side-by-side."""
-        selected_panels = {"niivue": True, "svg": False, "iqm": True}
+        selected_panels = {"niivue": True, "montage": False, "iqm": True}
         assert PanelLayoutManager.should_use_side_by_side_layout(selected_panels) is True
 
-    def test_should_use_side_by_side_svg_iqm(self):
-        """Test SVG + IQM = side-by-side."""
-        selected_panels = {"niivue": False, "svg": True, "iqm": True}
+    def test_should_use_side_by_side_montage_iqm(self):
+        """Test Montage + IQM = side-by-side."""
+        selected_panels = {"niivue": False, "montage": True, "iqm": True}
         assert PanelLayoutManager.should_use_side_by_side_layout(selected_panels) is True
 
     def test_should_not_use_side_by_side_one_panel(self):
         """Test that 1 panel returns False."""
-        selected_panels = {"niivue": True, "svg": False, "iqm": False}
+        selected_panels = {"niivue": True, "montage": False, "iqm": False}
         assert PanelLayoutManager.should_use_side_by_side_layout(selected_panels) is False
 
     def test_should_not_use_side_by_side_three_panels(self):
         """Test that 3 panels returns False."""
-        selected_panels = {"niivue": True, "svg": True, "iqm": True}
+        selected_panels = {"niivue": True, "montage": True, "iqm": True}
         assert PanelLayoutManager.should_use_side_by_side_layout(selected_panels) is False
 
     def test_should_not_use_side_by_side_no_panels(self):
         """Test that 0 panels returns False."""
-        selected_panels = {"niivue": False, "svg": False, "iqm": False}
+        selected_panels = {"niivue": False, "montage": False, "iqm": False}
         assert PanelLayoutManager.should_use_side_by_side_layout(selected_panels) is False
 
 

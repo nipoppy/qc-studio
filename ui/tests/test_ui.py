@@ -6,17 +6,21 @@ from unittest.mock import patch, MagicMock
 import pandas as pd
 import pytest
 
-# Import after mocking Streamlit
 import sys
-from unittest.mock import MagicMock
-
-# Mock streamlit before importing ui
-sys.modules["streamlit"] = MagicMock()
-sys.modules["layout"] = MagicMock()
 
 
 class TestParseArgs:
     """Test argument parsing functionality."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_streamlit_for_main_import(self, monkeypatch):
+        """``main.py`` imports streamlit/layout at module level; stub them out for the
+        duration of each test here only, via monkeypatch, so the swap can't leak into
+        other test files' collection or execution (unlike a bare module-level assignment).
+        """
+        monkeypatch.setitem(sys.modules, "streamlit", MagicMock())
+        monkeypatch.setitem(sys.modules, "layout", MagicMock())
+        monkeypatch.delitem(sys.modules, "main", raising=False)
 
     def test_parse_args_with_required_arguments(self):
         """Test parsing with all required arguments."""

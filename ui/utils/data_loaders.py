@@ -1,6 +1,6 @@
 """Data loading utilities for QC-Studio.
 
-This module loads MRI files, SVG montages, scanner metadata, IQM metrics, and
+This module loads MRI files, montages, scanner metadata, IQM metrics, and
 reference IQM tables from dataset and pipeline outputs.
 """
 
@@ -155,15 +155,32 @@ def load_mri_data(
     return file_bytes_dict
 
 
-def _normalize_svg_paths(svg_paths_value):
+def load_iqm_data(path_dict: dict) -> Optional[dict]:
+    """Load IQM metrics from a JSON file referenced by ``path_dict['iqm_path']``.
+
+    Returns ``None`` if the path is missing, the file does not exist, or JSON is invalid.
+    """
+    iqm_ref = path_dict.get("iqm_path")
+    if not iqm_ref:
+        return None
+    iqm_path = Path(iqm_ref)
+    if not iqm_path.is_file():
+        return None
+    try:
+        return json.loads(iqm_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _normalize_montage_paths(montage_paths_value):
     """Normalize montage paths to a list of Path objects."""
 
-    if isinstance(svg_paths_value, (str, Path)):
-        return [Path(svg_paths_value)]
+    if isinstance(montage_paths_value, (str, Path)):
+        return [Path(montage_paths_value)]
 
-    if isinstance(svg_paths_value, list):
+    if isinstance(montage_paths_value, list):
         normalized_paths = []
-        for p in svg_paths_value:
+        for p in montage_paths_value:
             if p is None:
                 continue
             try:
@@ -176,15 +193,15 @@ def _normalize_svg_paths(svg_paths_value):
     return None
 
 
-def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
     """Normalize montage paths from a QC config and return display data.
 
-    Delegates file reads and montage creation to ``_build_svg_display_data``.
-    Uncached; see ``qc_viewer._load_svg_data_cached``.
+    Delegates file reads and montage creation to ``_build_montage_display_data``.
+    Uncached; see ``qc_viewer._load_montage_data_cached``.
 
     Args:
             dataset_dir: Base directory path for resolving relative paths.
-            path_dict: Dictionary containing 'svg_montage_path' key with:
+            path_dict: Dictionary containing 'montage_path' key with:
                     - None (no montage)
                     - Single Path/str object
                     - List of Path/str objects
@@ -192,25 +209,25 @@ def load_svg_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_monta
             max_montage_cols: Maximum columns for grid montage.
 
     Returns:
-            Display data from ``_build_svg_display_data``, or None if no
+            Display data from ``_build_montage_display_data``, or None if no
             montage paths are configured.
     """
-    svg_paths_value = path_dict.get("svg_montage_path")
-    if not svg_paths_value:
+    montage_paths_value = path_dict.get("montage_path")
+    if not montage_paths_value:
         return None
 
     # Normalize to list of paths
-    svg_paths_value = _normalize_svg_paths(svg_paths_value)
+    montage_paths_value = _normalize_montage_paths(montage_paths_value)
 
-    if not svg_paths_value:
+    if not montage_paths_value:
         return None
 
     base_root = Path(dataset_dir) if dataset_dir else Path()
-    resolved_paths = _expand_dataset_paths(base_root, svg_paths_value)
+    resolved_paths = _expand_dataset_paths(base_root, montage_paths_value)
     if not resolved_paths:
         return None
 
-    return _build_svg_display_data(
+    return _build_montage_display_data(
         tuple(str(path) for path in resolved_paths),
         max_montage_rows,
         max_montage_cols,
@@ -243,15 +260,15 @@ def _create_unique_id_from_path(file_path: Path) -> str:
         return file_path.stem
 
 
-def _load_svg_entry(full_path: Path, unique_id: str):
+def _load_montage_entry(full_path: Path, unique_id: str):
     try:
         with open(full_path, encoding="utf-8") as f:
-            svg_content = f.read()
+            montage_content = f.read()
 
         filename = f"{unique_id}_svg"
         data_content = {
             "type": "svg",
-            "content": svg_content,
+            "content": montage_content,
         }
 
         # Convert SVG to image for montage (optional - if conversion fails, SVG is still available as string)
@@ -263,7 +280,8 @@ def _load_svg_entry(full_path: Path, unique_id: str):
 
         return filename, data_content, pil_img
 
-    except Exception:
+    except Exception as e:
+        print(f"Failed to load Montage file {full_path}: {e}")
         return None
 
 
@@ -306,11 +324,11 @@ def _add_montage_if_available(
         return image_data_dict
 
 
-def _build_svg_display_data(svg_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
-    """Load montage image files and build display data. Uncached; see ``load_svg_data``.
+def _build_montage_display_data(montage_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+    """Load montage image files and build display data. Uncached; see ``load_montage_data``.
 
     Args:
-            svg_paths: Tuple of SVG/PNG/JPEG paths to load.
+            montage_paths: Tuple of SVG/PNG/JPEG paths to load.
             max_montage_rows: Maximum rows for grid montage.
             max_montage_cols: Maximum columns for grid montage.
 
@@ -329,8 +347,8 @@ def _build_svg_display_data(svg_paths: tuple, max_montage_rows=None, max_montage
     image_data_dict = {}
     images_for_montage = []  # Collect PIL Images for montage creation
 
-    for svg_path in svg_paths:
-        full_path = Path(svg_path)
+    for montage_path in montage_paths:
+        full_path = Path(montage_path)
         if not full_path.is_file():
             continue
         file_ext = full_path.suffix.lower()
@@ -341,7 +359,7 @@ def _build_svg_display_data(svg_paths: tuple, max_montage_rows=None, max_montage
 
         if file_ext == ".svg":
             # Return SVG as string content (use open() so tests can mock builtins.open)
-            loaded_entry = _load_svg_entry(full_path, unique_id)
+            loaded_entry = _load_montage_entry(full_path, unique_id)
             if loaded_entry is None:
                 continue
             filename, data_content, pil_img = loaded_entry
@@ -375,7 +393,7 @@ def _load_image_from_file(file_path, dpi=96):
 
     Args:
             file_path: Path to image file (SVG, PNG, JPG, JPEG)
-            dpi: DPI for SVG rendering (default: 96)
+            dpi: DPI for Montage rendering (default: 96)
 
     Returns:
             PIL.Image: Image object in RGB mode
