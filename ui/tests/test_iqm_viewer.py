@@ -178,6 +178,25 @@ def test_render_iqm_distributions_hides_reference_toggle_by_default(iqm_viewer_m
     assert len(fig.data) == 2
 
 
+def test_load_reference_iqm_for_subject_normalizes_before_caching(iqm_viewer_module, monkeypatch):
+    """ "GE"/"General Electric" must reach filter_reference_iqm with the same
+    normalized manufacturer, so they share one cache entry."""
+    module, _ = iqm_viewer_module
+
+    calls = []
+
+    def fake_filter(modality, manufacturer_norm, field_strength_norm, max_rows):
+        calls.append((modality, manufacturer_norm, field_strength_norm, max_rows))
+        return pd.DataFrame({"efc": [0.1]})
+
+    monkeypatch.setattr(module, "filter_reference_iqm", fake_filter)
+
+    module.load_reference_iqm_for_subject(modality="t1w", manufacturer="GE", field_strength="3T")
+    module.load_reference_iqm_for_subject(modality="t1w", manufacturer="General Electric", field_strength="3.0T")
+
+    assert calls[0] == calls[1] == ("t1w", "ge", "3", 50_000)
+
+
 def test_render_iqm_distributions_comparison_mode_uses_reference(iqm_viewer_module, temp_dir, monkeypatch):
     module, streamlit_stub = iqm_viewer_module
 

@@ -25,7 +25,7 @@ from utils.reference_data import (
     normalize_manufacturer,
     normalize_field_strength,
     download_reference_parquet,
-    load_reference_iqm_for_subject,
+    filter_reference_iqm,
 )
 from utils.export import save_qc_results_to_csv
 
@@ -728,12 +728,12 @@ class TestDownloadReferenceParquet:
         assert Path(result).read_bytes() == b"parquet"
 
 
-class TestLoadReferenceIqmForSubject:
-    """Test load_reference_iqm_for_subject's manufacturer/field-strength
-    filtering and row-sampling, with _load_reference_parquet mocked out
-    (no real Parquet download/IO). Each test uses a distinct `modality`
-    string so _load_reference_iqm_filtered's @st.cache_data cache key
-    never collides across tests."""
+class TestFilterReferenceIqm:
+    """Test filter_reference_iqm's manufacturer/field-strength filtering and
+    row-sampling, with _load_reference_parquet mocked out (no real Parquet
+    download/IO). Takes already-normalized values directly - the
+    normalize-then-cache orchestration lives in
+    iqm_viewer.load_reference_iqm_for_subject, tested separately."""
 
     def test_filters_by_manufacturer_and_field_strength(self):
         reference_df = pd.DataFrame(
@@ -744,10 +744,11 @@ class TestLoadReferenceIqmForSubject:
             }
         )
         with patch("utils.reference_data._load_reference_parquet", return_value=reference_df):
-            result = load_reference_iqm_for_subject(
-                modality="t1w_test_manufacturer_and_field_strength",
-                manufacturer="Siemens Healthineers",
-                field_strength="3.0",
+            result = filter_reference_iqm(
+                modality="t1w",
+                manufacturer_norm="siemens",
+                field_strength_norm="3",
+                max_rows=50_000,
             )
 
         assert len(result) == 1
@@ -761,9 +762,11 @@ class TestLoadReferenceIqmForSubject:
             }
         )
         with patch("utils.reference_data._load_reference_parquet", return_value=reference_df):
-            result = load_reference_iqm_for_subject(
-                modality="t1w_test_unknown_manufacturer",
-                manufacturer=None,
+            result = filter_reference_iqm(
+                modality="t1w",
+                manufacturer_norm="unknown",
+                field_strength_norm=None,
+                max_rows=50_000,
             )
 
         assert len(result) == 2
@@ -776,9 +779,10 @@ class TestLoadReferenceIqmForSubject:
             }
         )
         with patch("utils.reference_data._load_reference_parquet", return_value=reference_df):
-            result = load_reference_iqm_for_subject(
-                modality="t1w_test_row_sampling",
-                manufacturer="Siemens",
+            result = filter_reference_iqm(
+                modality="t1w",
+                manufacturer_norm="siemens",
+                field_strength_norm=None,
                 max_rows=10,
             )
 

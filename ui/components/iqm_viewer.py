@@ -26,7 +26,13 @@ from utils.data_loaders import (
     load_iqm_distribution_table as _load_iqm_distribution_table_uncached,
     load_iqm_metrics_subject_level,
 )
-from utils.reference_data import load_reference_iqm_for_subject, MAX_REFERENCE_ROWS
+from utils.reference_data import (
+    normalize_manufacturer,
+    normalize_field_strength,
+    filter_reference_iqm,
+    MAX_REFERENCE_ROWS,
+    CACHE_TTL_SECONDS,
+)
 from constants import MESSAGES, ERROR_MESSAGES
 from managers.session_manager import SessionManager
 from utils.iqm_distribution_config import (
@@ -170,6 +176,19 @@ def _row_to_metrics(row) -> dict:
 def _load_iqm_distribution_table_cached(resolved_path):
     """Cached wrapper around ``data_loaders.load_iqm_distribution_table``."""
     return _load_iqm_distribution_table_uncached(resolved_path)
+
+
+@st.cache_data(show_spinner="Loading reference data...", ttl=CACHE_TTL_SECONDS)
+def _load_reference_iqm_cached(modality, manufacturer_norm, field_strength_norm, max_rows):
+    """Cached wrapper around ``reference_data.filter_reference_iqm``."""
+    return filter_reference_iqm(modality, manufacturer_norm, field_strength_norm, max_rows)
+
+
+def load_reference_iqm_for_subject(modality, manufacturer, field_strength=None, max_rows=MAX_REFERENCE_ROWS):
+    """Normalize a subject's scanner metadata, then load the cached, filtered reference table."""
+    manufacturer_norm = normalize_manufacturer(manufacturer)
+    field_strength_norm = normalize_field_strength(field_strength)
+    return _load_reference_iqm_cached(modality, manufacturer_norm, field_strength_norm, max_rows)
 
 
 def _load_distribution_source(path, resolved, pipeline_name):

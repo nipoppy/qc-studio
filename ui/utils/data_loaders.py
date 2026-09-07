@@ -633,6 +633,11 @@ def load_iqm_distribution_table(resolved_path) -> pd.DataFrame:
     return pd.read_csv(resolved_path, sep="," if suffix == ".csv" else "\t")
 
 
+def load_parquet_table(resolved_path) -> pd.DataFrame:
+    """Read a local Parquet file into a DataFrame. Raises on failure."""
+    return pd.read_parquet(resolved_path, engine="pyarrow")
+
+
 def load_iqm_metrics_subject_level(resolved_path) -> dict:
     """Read a single per-subject IQM metrics file. Raises on failure."""
     return json.loads(Path(resolved_path).read_text(encoding="utf-8"))
