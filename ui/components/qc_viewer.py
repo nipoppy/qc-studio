@@ -101,17 +101,12 @@ def try_autoplay_advance_if_due(
         SessionManager.set_autoplay_start_time(time.time())
     else:
         _record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
-        if qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort):
+        if not _has_active_subject_filter() and (
+            qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort)
+            or not qc_cohort and participant_ids and session_id and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants))
+        ):
             SessionManager.set_current_page(total_participants + 1)
-        elif not qc_cohort and participant_ids and session_id:
-            temp_cohort = []
-            for pid in participant_ids:
-                p = str(pid).strip()
-                if not p.startswith("sub-"):
-                    p = f"sub-{p}"
-                temp_cohort.append({"participant_id": p, "session_id": session_id})
-            if SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, temp_cohort):
-                SessionManager.set_current_page(total_participants + 1)
         SessionManager.set_autoplay_enabled(False)
         SessionManager.set_autoplay_start_time(0.0)
     request_navigation_rerun(st)
@@ -466,6 +461,43 @@ def _cohort_entries_for_filter(
     return [{"participant_id": str(pid), "session_id": session_id} for pid in list(participant_ids or [])][:limit]
 
 
+def _cohort_entries_for_active_filter(
+    qc_cohort: list | None,
+    participant_ids: list | None,
+    session_id: str,
+    total_participants: int,
+) -> list:
+    """Return the currently visible cohort subset under the active sidebar filter, if any."""
+    from views.sidebar_cohort_nav import _matching_subject_entries, get_subject_search_query
+
+    entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+    query = get_subject_search_query()
+    if not query:
+        return entries
+    return [entry for _, entry in _matching_subject_entries(entries, query, session_id)]
+
+
+def _has_active_subject_filter() -> bool:
+    """True when a sidebar subject filter is currently active."""
+    from views.sidebar_cohort_nav import get_subject_search_query
+
+    return bool(get_subject_search_query())
+
+
+def _filtered_cohort_complete_for_tasks(
+    qc_tasks: list,
+    qc_cohort: list | None,
+    participant_ids: list | None,
+    session_id: str,
+    total_participants: int,
+) -> bool:
+    """True when the visible subset under the active filter is finished for all tasks."""
+    active_entries = _cohort_entries_for_active_filter(qc_cohort, participant_ids, session_id, total_participants)
+    if not active_entries:
+        return False
+    return SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, active_entries)
+
+
 def _filtered_adjacent_pages(
     current_page: int,
     total_participants: int,
@@ -585,17 +617,12 @@ def _display_qc_pagination_controls(
             SessionManager.set_autoplay_start_time(time.time())
         elif next_page is not None:
             SessionManager.set_current_page(next_page)
-        elif qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
+        elif not _has_active_subject_filter() and (
+            qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+            or not qc_cohort and participant_ids and session_id and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants))
+        ):
             SessionManager.set_current_page(total_participants + 1)
-        elif not qc_cohort and participant_ids and session_id:
-            temp_cohort = []
-            for pid in participant_ids:
-                p = str(pid).strip()
-                if not p.startswith("sub-"):
-                    p = f"sub-{p}"
-                temp_cohort.append({"participant_id": p, "session_id": session_id})
-            if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
-                SessionManager.set_current_page(total_participants + 1)
         request_navigation_rerun(st)
 
     st.divider()
@@ -669,6 +696,10 @@ def _save_qc_record(
     qc_cohort: list | None = None,
 ) -> None:
     _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+    if _has_active_subject_filter():
+        st.info("✅ QC results saved for the active filtered view.")
+        request_navigation_rerun(st)
+        return
     if qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
         SessionManager.set_current_page(total_participants + 1)
     elif not qc_cohort and participant_ids and session_id:

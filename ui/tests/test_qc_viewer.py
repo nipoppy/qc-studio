@@ -707,7 +707,68 @@ class TestDisplayQcPagination:
         assert saved.final_qc == "PASS"
         assert state["current_page"] == 4  # Page should advance
         mock_rerun.assert_called_once()
+    def test_confirm_and_next_button_keeps_filtered_view_active_when_subset_is_complete(self, autoplay_session_state, monkeypatch):
+        """A filtered view should remain in-place at the end of the visible list instead of jumping to the congratulations page."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 4
+        state["autoplay_enabled"] = False
+        state["sidebar_subject_search"] = "ses-02"
+        state["rating_version"] = 2
+        state[_rating_widget_key("anat_wf_qc", 2)] = "PASS"
 
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0004", "session_id": "ses-02"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0002", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        confirm_next_button_key = "pag_confirm"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=4,
+            total_participants=4,
+            participant_id="sub-CMH0004",
+            session_id="ses-02",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            qc_cohort=qc_cohort,
+        )
+
+        assert state["current_page"] == 4
+        mock_rerun.assert_called_once()
+
+    def test_save_qc_record_keeps_filtered_view_active_and_shows_info(self, autoplay_session_state, monkeypatch):
+        """Save should persist the current filtered view without navigating to the congratulations page."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 4
+        state["sidebar_subject_search"] = "ses-02"
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0004", "session_id": "ses-02"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0002", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0004", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0004",
+            session_id="ses-02",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=4,
+            qc_cohort=qc_cohort,
+        )
+
+        assert state["current_page"] == 4
+        st.info.assert_called_once_with("✅ QC results saved for the active filtered view.")
+        mock_rerun.assert_called_once()
     def test_confirm_and_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
         """On the last page with an incomplete cohort, Confirm should save ratings but not advance."""
         state, mock_rerun = autoplay_session_state
