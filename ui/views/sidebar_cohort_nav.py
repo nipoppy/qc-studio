@@ -13,6 +13,7 @@ from constants import (
     SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY,
 )
 from managers.session_manager import SessionManager
+from utils.navigation import request_navigation_rerun
 
 _MAX_PID_DISPLAY_LEN = 28
 _SUBJECT_SEARCH_WIDGET_KEY = SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY
@@ -286,4 +287,4 @@ def _render_subject_list(
                 if entrypoint_rel_path:
                     st.switch_page(entrypoint_rel_path)
                 else:
-                    st.rerun()
+                    request_navigation_rerun(st)

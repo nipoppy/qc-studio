@@ -157,6 +157,68 @@ class TestTryAutoplayAdvanceIfDue:
         assert state["autoplay_start_time"] == 0.0
         mock_rerun.assert_called_once()
 
+    def test_advances_to_next_visible_page_when_sidebar_filter_is_active(self, autoplay_session_state):
+        """Autoplay should respect the active subject/session filter instead of jumping to hidden pages."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 2
+        state["sidebar_subject_search"] = "ses-02"
+        state["autoplay_duration"] = 5
+        state["autoplay_start_time"] = time.time() - (5 + AUTOPLAY_ADVANCE_GRACE_SECONDS + 1)
+        state["qc_rating_anat_wf_qc_0"] = "PASS"
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0004", "session_id": "ses-02"},
+        ]
+
+        try_autoplay_advance_if_due(
+            participant_id="sub-CMH0002",
+            session_id="ses-02",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=4,
+            qc_cohort=cohort,
+        )
+
+        assert state["current_page"] == 4
+        assert state["autoplay_enabled"] is True
+        assert state["autoplay_start_time"] > 0
+        mock_rerun.assert_called_once()
+
+    def test_stops_autoplay_when_no_visible_match_remains_after_filter(self, autoplay_session_state):
+        """If the sidebar filter leaves no later visible subject, autoplay should pause instead of advancing to a hidden page."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 4
+        state["sidebar_subject_search"] = "ses-02"
+        state["autoplay_duration"] = 5
+        state["autoplay_start_time"] = time.time() - (5 + AUTOPLAY_ADVANCE_GRACE_SECONDS + 1)
+        state["qc_rating_anat_wf_qc_0"] = "PASS"
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0004", "session_id": "ses-02"},
+        ]
+
+        try_autoplay_advance_if_due(
+            participant_id="sub-CMH0004",
+            session_id="ses-02",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=4,
+            qc_cohort=cohort,
+        )
+
+        assert state["current_page"] == 4
+        assert state["autoplay_enabled"] is False
+        assert state["autoplay_start_time"] == 0.0
+        mock_rerun.assert_called_once()
+
 
 class TestOnRatingChange:
     def test_saves_with_empty_notes_when_notes_widget_key_was_never_set(self, autoplay_session_state):
