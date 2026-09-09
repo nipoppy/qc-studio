@@ -102,9 +102,15 @@ def try_autoplay_advance_if_due(
     else:
         _record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
         if not _has_active_subject_filter() and (
-            qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort)
-            or not qc_cohort and participant_ids and session_id and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-            and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants))
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort)
+            or not qc_cohort
+            and participant_ids
+            and session_id
+            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
+                tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            )
         ):
             SessionManager.set_current_page(total_participants + 1)
         SessionManager.set_autoplay_enabled(False)
@@ -618,9 +624,15 @@ def _display_qc_pagination_controls(
         elif next_page is not None:
             SessionManager.set_current_page(next_page)
         elif not _has_active_subject_filter() and (
-            qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
-            or not qc_cohort and participant_ids and session_id and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants))
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+            or not qc_cohort
+            and participant_ids
+            and session_id
+            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
+                qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            )
         ):
             SessionManager.set_current_page(total_participants + 1)
         request_navigation_rerun(st)

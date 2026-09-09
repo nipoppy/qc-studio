@@ -707,6 +707,7 @@ class TestDisplayQcPagination:
         assert saved.final_qc == "PASS"
         assert state["current_page"] == 4  # Page should advance
         mock_rerun.assert_called_once()
+
     def test_confirm_and_next_button_keeps_filtered_view_active_when_subset_is_complete(self, autoplay_session_state, monkeypatch):
         """A filtered view should remain in-place at the end of the visible list instead of jumping to the congratulations page."""
         state, mock_rerun = autoplay_session_state
@@ -769,6 +770,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4
         st.info.assert_called_once_with("✅ QC results saved for the active filtered view.")
         mock_rerun.assert_called_once()
+
     def test_confirm_and_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
         """On the last page with an incomplete cohort, Confirm should save ratings but not advance."""
         state, mock_rerun = autoplay_session_state
