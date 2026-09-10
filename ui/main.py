@@ -18,9 +18,8 @@ from constants import SESSION_KEYS
 from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
 from utils.cohort import (
     build_qc_cohort,
-    normalize_participant_id_bids as _normalize_participant_id,
-    normalize_session_id_bids as _normalize_session_id,
-    parse_session_list as _parse_session_list,
+    normalize_session_id_bids,
+    parse_session_list,
     participant_ids_in_cohort_order,
 )
 
@@ -89,14 +88,14 @@ def get_cli_run_context():
     args = parse_args()
     ui_dir = os.path.dirname(os.path.abspath(__file__))
     qc_config_path = os.path.join(ui_dir, args.qc_json)
-    session_ids = _parse_session_list(args.session_list)
+    session_ids = parse_session_list(args.session_list)
     if session_ids is None:
         from bids import BIDSLayout
 
         layout = BIDSLayout(args.dataset_dir, validate=False)
         bids_sessions = layout.get_sessions()
         if bids_sessions:
-            session_ids = [_normalize_session_id(s) for s in bids_sessions]
+            session_ids = [normalize_session_id_bids(s) for s in bids_sessions]
             print(
                 f"No --session_list given, using sessions found in dataset: {session_ids}",
                 file=sys.stderr,
