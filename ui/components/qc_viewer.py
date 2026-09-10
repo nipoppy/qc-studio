@@ -18,12 +18,13 @@ from constants import (
     SUCCESS_MESSAGES,
     INFO_MESSAGES,
 )
-from utils.data_loaders import load_montage_data
 from utils.export import save_qc_results_to_csv
+from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
+from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
 PENDING_QC_SAVE_MSG_KEY = "_pending_qc_save_msg"
@@ -224,19 +225,45 @@ def display_qc_viewers(
         st.subheader(display_label)
         task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
         if task_has_niivue and show_montage and show_iqm:
-            _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
-            st.divider()
-            _display_iqm_panel()
+            _display_niivue_with_secondary_panel(
+                dataset_dir,
+                selected_panels,
+                qc_config,
+                participant_id,
+                session_id,
+                tname,
+                qc_config_path=qc_config_path,
+            )
         elif task_has_niivue and show_montage:
-            _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
+            _display_niivue_with_secondary_panel(
+                dataset_dir, selected_panels, qc_config, participant_id, session_id, tname, qc_config_path=qc_config_path
+            )
         elif task_has_niivue and show_iqm:
-            _display_niivue_with_secondary_panel(dataset_dir, selected_panels, qc_config, participant_id, session_id, tname)
+            _display_niivue_with_secondary_panel(
+                dataset_dir, selected_panels, qc_config, participant_id, session_id, tname, qc_config_path=qc_config_path
+            )
         elif task_has_niivue:
             _display_niivue_full_width(dataset_dir, qc_config, participant_id, session_id, tname)
+        elif show_montage and show_iqm:
+            _display_montage_panel(dataset_dir, qc_config)
+            st.divider()
+            display_iqm_distribution_panel(
+                qc_config,
+                qc_config_path,
+                participant_id,
+                session_id,
+                dataset_dir,
+            )
         elif show_montage:
             _display_montage_panel(dataset_dir, qc_config)
         elif show_iqm:
-            _display_iqm_panel()
+            display_iqm_distribution_panel(
+                qc_config,
+                qc_config_path,
+                participant_id,
+                session_id,
+                dataset_dir,
+            )
 
         _display_qc_rating_for_task(
             participant_id=participant_id,
@@ -249,7 +276,13 @@ def display_qc_viewers(
 
 
 def _display_niivue_with_secondary_panel(
-    dataset_dir, selected_panels: dict, qc_config, participant_id: str = None, session_id: str = None, task_suffix: str = ""
+    dataset_dir,
+    selected_panels: dict,
+    qc_config,
+    participant_id: str = None,
+    session_id: str = None,
+    task_suffix: str = "",
+    qc_config_path: str = None,
 ) -> None:
     """Display 3-column layout: Niivue with hidden controls | Secondary panel.
 
@@ -257,11 +290,12 @@ def _display_niivue_with_secondary_panel(
     Used when Niivue is selected with either montage or IQM panel.
 
     Args:
-            dataset_dir: Root dataset directory
-            selected_panels: Dictionary of selected panels
-            qc_config: QC configuration object
-            participant_id: Current participant ID
-            session_id: Current session ID
+        dataset_dir: Root dataset directory
+        selected_panels: Dictionary of selected panels
+        qc_config: QC configuration object
+        participant_id: Current participant ID
+        session_id: Current session ID
+        qc_config_path: Path to the QC configuration file (needed to resolve IQM source paths)
     """
     viewer_col, panel_col = st.columns([0.3, 0.7], gap="small")
 
@@ -284,8 +318,16 @@ def _display_niivue_with_secondary_panel(
     with panel_col:
         if selected_panels.get("montage", False):
             _display_montage_panel(dataset_dir, qc_config)
-        else:
-            _display_iqm_panel()
+        if selected_panels.get("iqm", False):
+            if selected_panels.get("montage", False):
+                st.divider()
+            display_iqm_distribution_panel(
+                qc_config,
+                qc_config_path,
+                participant_id,
+                session_id,
+                dataset_dir,
+            )
 
 
 def _display_niivue_full_width(dataset_dir, qc_config, participant_id: str = None, session_id: str = None, task_suffix: str = "") -> None:
@@ -329,6 +371,12 @@ def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = Fal
     return st.session_state[state_key]
 
 
+@st.cache_data(show_spinner=False, max_entries=128)
+def _load_montage_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols):
+    """Cached wrapper around ``data_loaders.load_montage_data``."""
+    return _load_montage_data_uncached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+
+
 def _display_montage_panel(dataset_dir, qc_config) -> None:
     """Display SVG/PNG/JPEG montage panel with tabs for multiple images.
 
@@ -349,7 +397,7 @@ def _display_montage_panel(dataset_dir, qc_config) -> None:
     max_montage_rows = SessionManager.get_montage_max_rows()
     max_montage_cols = SessionManager.get_montage_max_cols()
 
-    image_data = load_montage_data(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+    image_data = _load_montage_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
 
     if image_data:
         # If multiple images, create tabs

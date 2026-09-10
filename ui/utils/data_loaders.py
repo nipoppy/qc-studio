@@ -1,13 +1,16 @@
-"""Data loading utilities for QC Studio.
+"""Data loading utilities for QC-Studio.
 
-This module provides functions for loading MRI data, montages, and IQM metrics
-from files and directories.
+This module loads MRI files, montages, scanner metadata, IQM metrics, and
+reference IQM tables from dataset and pipeline outputs.
 """
 
 import json
 import re
+import pandas as pd
+
 from pathlib import Path
-from typing import Optional, Dict, Union, Tuple
+
+from typing import Optional, Dict, List, Union, Tuple
 
 from constants import NIIVUE_MAX_FILE_BYTES
 
@@ -111,9 +114,6 @@ def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
         file_bytes_dict[f"{prefix}_mri_size_bytes"] = path.stat().st_size
 
 
-import streamlit as st
-
-
 def load_mri_data(
     dataset_dir: Union[str, Path, dict],
     path_dict: Optional[dict] = None,
@@ -144,7 +144,6 @@ def load_mri_data(
     base_mri_path = _resolve_under_dataset(base_root, path_dict.get("base_mri_image_path"))
     overlay_mri_path = _resolve_under_dataset(base_root, path_dict.get("overlay_mri_image_path"))
 
-    # print(f"Loading MRI data from dataset_dir: {dataset_dir} with paths: base_mri={base_mri_path}, overlay_mri={overlay_mri_path}")
     file_bytes_dict = {}
 
     if base_mri_path is not None and base_mri_path.is_file():
@@ -195,11 +194,10 @@ def _normalize_montage_paths(montage_paths_value):
 
 
 def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
-    """Normalize montage paths from a QC config and return cached image data.
+    """Normalize montage paths from a QC config and return display data.
 
-    This public wrapper keeps the config-dictionary API used by callers while
-    delegating expensive file reads, image conversion, and montage creation to
-    ``_load_montage_data_cached``.
+    Delegates file reads and montage creation to ``_build_montage_display_data``.
+    Uncached; see ``qc_viewer._load_montage_data_cached``.
 
     Args:
             dataset_dir: Base directory path for resolving relative paths.
@@ -211,7 +209,7 @@ def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_m
             max_montage_cols: Maximum columns for grid montage.
 
     Returns:
-            Cached display data from ``_load_montage_data_cached``, or None if no
+            Display data from ``_build_montage_display_data``, or None if no
             montage paths are configured.
     """
     montage_paths_value = path_dict.get("montage_path")
@@ -229,7 +227,7 @@ def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_m
     if not resolved_paths:
         return None
 
-    return _load_montage_data_cached(
+    return _build_montage_display_data(
         tuple(str(path) for path in resolved_paths),
         max_montage_rows,
         max_montage_cols,
@@ -295,8 +293,7 @@ def _load_raster_entry(full_path: Path, unique_id: str, raster_type: str):
         data_content = {"type": raster_type, "content": pil_img}
         return filename, data_content, pil_img
 
-    except ValueError as e:
-        print(f"Failed to load image file {full_path}: {e}")
+    except ValueError:
         return None
 
 
@@ -322,19 +319,13 @@ def _add_montage_if_available(
         result_dict = {"montage": {"type": "png", "content": montage_img}}
         result_dict.update(image_data_dict)
         return result_dict
-    except Exception as e:
-        print(f"Failed to create montage: {e}")
+    except Exception:
         # Return individual images if montage creation fails
         return image_data_dict
 
 
-@st.cache_data(show_spinner=False, max_entries=128)
-def _load_montage_data_cached(montage_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
-    """Load montage image files and build display data.
-
-    This cached helper does the expensive work: resolving paths, reading SVG
-    text, loading raster images, converting images for montage creation, and
-    building an optional grid montage.
+def _build_montage_display_data(montage_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+    """Load montage image files and build display data. Uncached; see ``load_montage_data``.
 
     Args:
             montage_paths: Tuple of SVG/PNG/JPEG paths to load.
@@ -443,3 +434,228 @@ def _load_image_from_file(file_path, dpi=96):
         img = img.convert("RGB")
 
     return img
+
+
+def _resolve_metadata_path(image_path: Union[Path, str]) -> Path:
+    """Returning the JSON sidecar path for a BIDS image file."""
+    if not image_path:
+        return None
+    image_path = Path(image_path)
+    image_name = image_path.name
+    if image_name.endswith(".nii.gz"):
+        json_name = image_name.replace(".nii.gz", ".json")
+    elif image_name.endswith(".nii"):
+        json_name = image_name.replace(".nii", ".json")
+    else:
+        return None
+
+    return image_path.parent / json_name
+
+
+def _infer_bids_ids_from_path(image_path: Union[Path, str]) -> tuple:
+    """Infer BIDS participant/session IDs from a file path string."""
+    if not image_path:
+        return None, None
+
+    path_str = str(image_path)
+    participant_match = re.search(r"(sub-[A-Za-z0-9]+)", path_str)
+    session_match = re.search(r"(ses-[A-Za-z0-9]+)", path_str)
+
+    participant_id = participant_match.group(1) if participant_match else None
+    session_id = session_match.group(1) if session_match else None
+    return participant_id, session_id
+
+
+def _infer_dataset_root_from_path(image_path: Union[Path, str]) -> Optional[Path]:
+    """Infer dataset root from a path containing BIDS-like folders."""
+    if not image_path:
+        return None
+
+    path_obj = Path(image_path)
+    parts = path_obj.parts
+
+    if "derivatives" in parts:
+        idx = parts.index("derivatives")
+        return Path(*parts[:idx]) if idx > 0 else Path(".")
+
+    if "bids" in parts:
+        idx = parts.index("bids")
+        return Path(*parts[:idx]) if idx > 0 else Path(".")
+
+    return None
+
+
+# Folder + filename-suffix to search for, per BIDS modality.
+MODALITY_SIDECAR_HINTS = {
+    "anat": ("anat", "T1w"),
+    "t1w": ("anat", "T1w"),
+    "func": ("func", "bold"),
+    "bold": ("func", "bold"),
+    "dwi": ("dwi", "dwi"),
+    "diffusion": ("dwi", "dwi"),
+}
+
+
+def _infer_bids_folder_from_path(path: Union[Path, str]) -> Optional[str]:
+    """Infer a BIDS modality folder from a path or filename."""
+    if not path:
+        return None
+
+    path_str = str(path).lower()
+    name = Path(path).name.lower()
+
+    if "/func/" in path_str or re.search(r"_(bold|sbref)\.", path_str) or "bold" in name:
+        return "func"
+    if "/dwi/" in path_str or re.search(r"_dwi\.", path_str) or "dwi" in name:
+        return "dwi"
+    if "/anat/" in path_str or "t1w" in name:
+        return "anat"
+    return None
+
+
+def _find_bids_metadata_sidecar(
+    dataset_root: Union[Path, str],
+    participant_id: str = None,
+    session_id: str = None,
+    modality: str = "anat",
+) -> Optional[Path]:
+    """Find a likely scanner-metadata sidecar for a participant."""
+    if not dataset_root or not participant_id:
+        return None
+
+    dataset_root = Path(dataset_root)
+    folder, suffix = MODALITY_SIDECAR_HINTS.get(str(modality).lower(), ("anat", "T1w"))
+
+    if not participant_id.startswith("sub-"):
+        participant_id = f"sub-{participant_id}"
+    if session_id and not session_id.startswith("ses-"):
+        session_id = f"ses-{session_id}"
+
+    def _patterns_for(prefix: str) -> list:
+        patterns = []
+        if session_id:
+            patterns.extend(
+                [
+                    f"{prefix}{participant_id}/{session_id}/{folder}/*{suffix}*.json",
+                    f"{prefix}{participant_id}/{session_id}/{folder}/*.json",
+                    f"{prefix}{participant_id}/{session_id}/**/*{suffix}*.json",
+                ]
+            )
+        patterns.extend(
+            [
+                f"{prefix}{participant_id}/**/*{suffix}*.json",
+                f"{prefix}{participant_id}/**/{folder}/*.json",
+            ]
+        )
+        return patterns
+
+    # Raw BIDS sidecars are the authoritative source when present.
+    bids_root = dataset_root / "bids"
+    if not bids_root.is_dir():
+        bids_root = dataset_root
+    search_roots = [(bids_root, "")]
+
+    # Fall back to derivative sidecars when raw BIDS metadata is unavailable.
+    derivatives_root = dataset_root / "derivatives"
+    if derivatives_root.is_dir():
+        search_roots.append((derivatives_root, "**/"))
+
+    for root, prefix in search_roots:
+        for pattern in _patterns_for(prefix):
+            matches = sorted(root.glob(pattern))
+            for match in matches:
+                if match.is_file():
+                    return match
+
+    return None
+
+
+def load_scanner_metadata(
+    image_path: Union[Path, str], participant_id: str = None, session_id: str = None, modality: str = None, dataset_dir: Union[Path, str] = None
+) -> dict:
+    """Load scanner metadata from the JSON sidecar of a BIDS image file.
+
+    If the direct sidecar is unavailable, look for a participant/session sidecar
+    under raw BIDS or derivatives and fall back to "Unknown" values.
+    """
+    if dataset_dir and image_path:
+        image_path = Path(dataset_dir) / image_path
+
+    json_path = _resolve_metadata_path(image_path)
+    dataset_root = _infer_dataset_root_from_path(image_path)
+
+    # Prefer IDs inferred from image path when explicit IDs are not provided.
+    inferred_participant, inferred_session = _infer_bids_ids_from_path(image_path)
+    participant_id = participant_id or inferred_participant
+    session_id = session_id or inferred_session
+    modality = modality or _infer_bids_folder_from_path(image_path) or "anat"
+
+    if not json_path or not Path(json_path).is_file():
+        json_path = _find_bids_metadata_sidecar(dataset_root, participant_id, session_id, modality=modality)
+
+    # Metadata sidecar may be absent for derivative images. Fall back to
+    # unknown values instead of failing the whole IQM panel.
+    if not json_path or not Path(json_path).is_file():
+        return {
+            "Manufacturer": "Unknown",
+            "MagneticFieldStrength": "Unknown",
+            "ProtocolName": "Unknown",
+        }
+
+    with open(json_path, "r") as f:
+        metadata = json.load(f)
+
+    # MRIQC sidecars may nest original BIDS metadata under "bids_meta".
+    bids_meta = metadata.get("bids_meta") or {}
+
+    return {
+        "Manufacturer": metadata.get("Manufacturer") or bids_meta.get("Manufacturer", "Unknown"),
+        "MagneticFieldStrength": metadata.get("MagneticFieldStrength") or bids_meta.get("MagneticFieldStrength", "Unknown"),
+        "ProtocolName": metadata.get("ProtocolName") or bids_meta.get("ProtocolName", "Unknown"),
+    }
+
+
+def resolve_iqm_data_path(
+    modality_path: str,
+    qc_config_path: str = None,
+    dataset_dir: str = None,
+) -> Path:
+    """Resolve an IQM dataset TSV path across common runtime contexts."""
+    path = Path(modality_path)
+
+    if path.is_absolute() and path.is_file():
+        return path
+
+    candidates = [Path.cwd() / path]
+
+    if dataset_dir:
+        candidates.append(Path(dataset_dir) / path)
+
+    if qc_config_path:
+        candidates.append(Path(qc_config_path).parent / path)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    # Return original path so callers can surface it in error messages.
+    return path
+
+
+def load_iqm_distribution_table(resolved_path) -> pd.DataFrame:
+    """Load a TSV/CSV distribution table and return a DataFrame. Raises on failure -
+    the caller decides how to surface that. Uncached; see
+    ``iqm_viewer._load_iqm_distribution_table_cached``."""
+
+    suffix = resolved_path.suffix.lower()
+    return pd.read_csv(resolved_path, sep="," if suffix == ".csv" else "\t")
+
+
+def load_parquet_table(resolved_path) -> pd.DataFrame:
+    """Read a local Parquet file into a DataFrame. Raises on failure."""
+    return pd.read_parquet(resolved_path, engine="pyarrow")
+
+
+def load_iqm_metrics_subject_level(resolved_path) -> dict:
+    """Read a single per-subject IQM metrics file. Raises on failure."""
+    return json.loads(Path(resolved_path).read_text(encoding="utf-8"))

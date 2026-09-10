@@ -8,13 +8,7 @@ from constants import (
     DEFAULT_MONTAGE_MAX_COLS,
     QC_RATINGS,
 )
-
-
-def _bare_bids_id(val: str, prefix: str) -> str:
-    val = str(val)
-    if val.startswith(prefix):
-        val = val[len(prefix) :]
-    return val.lstrip("0") or "0"
+from utils.cohort import bare_bids_id as _bare_bids_id
 
 
 class SessionManager:
@@ -42,6 +36,8 @@ class SessionManager:
             "autoplay_enabled": False,
             "autoplay_start_time": 0.0,
             "autoplay_duration": 5,
+            SESSION_KEYS["iqm_view_selection"]: "Overview",
+            SESSION_KEYS["iqm_display_mode_selection"]: "Dataset",
         }
 
         for key, value in defaults.items():
@@ -443,3 +439,32 @@ class SessionManager:
     def set_autoplay_duration(seconds: int):
         """Set the autoplay countdown duration in seconds (2–10)."""
         st.session_state["autoplay_duration"] = max(2, min(10, seconds))
+
+    # IQM Viewer Widget Selection Mirrors
+    #
+    # The IQM viewer's pipeline-tab selector and Dataset/Dataset+reference
+    # widgets live downstream of the sidebar in the script. Sidebar
+    # navigation calls st.rerun()/st.switch_page() mid-script, which aborts
+    # the run before those widgets are created, so Streamlit garbage-collects
+    # their own widget-keyed state. These mirrors are plain session_state
+    # entries the widgets are re-seeded from every run, so selections survive
+    # a subject/session switch instead of silently resetting.
+    @staticmethod
+    def get_iqm_view_selection() -> str | None:
+        """Get the remembered IQM pipeline-tab selection (e.g. "mriqc", "fmriprep"), or None if never set."""
+        return st.session_state.get(SESSION_KEYS["iqm_view_selection"])
+
+    @staticmethod
+    def set_iqm_view_selection(view: str):
+        """Remember the IQM pipeline-tab selection."""
+        st.session_state[SESSION_KEYS["iqm_view_selection"]] = view
+
+    @staticmethod
+    def get_iqm_display_mode_selection() -> str:
+        """Get the remembered IQM Dataset/Dataset+reference selection."""
+        return st.session_state.get(SESSION_KEYS["iqm_display_mode_selection"], "Dataset")
+
+    @staticmethod
+    def set_iqm_display_mode_selection(mode: str):
+        """Remember the IQM Dataset/Dataset+reference selection."""
+        st.session_state[SESSION_KEYS["iqm_display_mode_selection"]] = mode

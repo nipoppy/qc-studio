@@ -5,6 +5,7 @@ __pycache__/
 ui/__pycache__/
 *.pyc
 .DS_Store
+.env
 
 # Demo first-volume BOLD under bids/sub-CMH0001/ses-*/func/ (tracked).
 # Ignore other local raw BIDS files for sub-CMH0001 if present.
