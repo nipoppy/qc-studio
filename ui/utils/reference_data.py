@@ -12,9 +12,8 @@ import requests
 from utils.data_loaders import load_parquet_table
 
 # Reference-data host is not committed to source; set REFERENCE_DATA_URL in
-# the environment (or a .env file) before running the app.
-URL_PARENT = os.environ.get("REFERENCE_DATA_URL")
-
+# the environment (or a .env file) before running the app. Resolved at call
+# time (not import time) so it can't go stale relative to .env loading.
 REFERENCE_CACHE_DIR = Path(".streamlit/reference_cache")
 
 MAX_REFERENCE_ROWS = 50_000
@@ -66,17 +65,23 @@ def _get_reference_cache_dir() -> Path:
     return REFERENCE_CACHE_DIR
 
 
-def download_reference_parquet(modality: str, url_parent: str = URL_PARENT) -> str:
+def _resolve_reference_data_url(url_parent: Optional[str] = None) -> str:
+    """Return the active reference-data URL from runtime config."""
+    resolved = url_parent or os.environ.get("REFERENCE_DATA_URL")
+    if not resolved:
+        raise RuntimeError("REFERENCE_DATA_URL is not set. Set it in the environment to enable " "downloading reference IQM data.")
+    return resolved
+
+
+def download_reference_parquet(modality: str, url_parent: Optional[str] = None) -> str:
     """Ensure a reference Parquet file exists locally and return its path."""
     cache_file_path = REFERENCE_CACHE_DIR / f"{modality}.parquet"
 
     if cache_file_path.exists():
         return str(cache_file_path)
 
-    if not url_parent:
-        raise RuntimeError("REFERENCE_DATA_URL is not set. Set it in the environment to enable " "downloading reference IQM data.")
-
-    url = url_parent.rstrip("/") + f"/{modality}.parquet"
+    resolved_url_parent = _resolve_reference_data_url(url_parent)
+    url = resolved_url_parent.rstrip("/") + f"/{modality}.parquet"
     cache_file_path = _get_reference_cache_dir() / f"{modality}.parquet"
     cache_file_path.write_bytes(_download_reference_parquet_bytes(url))
 
@@ -116,7 +121,7 @@ def _load_reference_parquet(modality: str):
     """Ensure the modality's Parquet file is downloaded, then read it."""
     local_parquet_path = REFERENCE_CACHE_DIR / f"{modality}.parquet"
     if not local_parquet_path.exists():
-        download_reference_parquet(url_parent=URL_PARENT, modality=modality)
+        download_reference_parquet(modality=modality)
 
     return load_parquet_table(local_parquet_path)
 

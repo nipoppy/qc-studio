@@ -712,9 +712,10 @@ class TestDownloadReferenceParquet:
     def test_missing_url_does_not_create_cache_dir(self, temp_dir, monkeypatch):
         cache_dir = temp_dir / "reference_cache"
         monkeypatch.setattr("utils.reference_data.REFERENCE_CACHE_DIR", cache_dir)
+        monkeypatch.delenv("REFERENCE_DATA_URL", raising=False)
 
         with pytest.raises(RuntimeError):
-            download_reference_parquet("t1w", url_parent="")
+            download_reference_parquet("t1w")
 
         assert not cache_dir.exists()
 
