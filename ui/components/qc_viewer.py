@@ -74,11 +74,7 @@ def try_autoplay_advance_if_due(
 
     current_page = SessionManager.get_current_page()
     _, next_page = _filtered_adjacent_pages(
-        current_page=current_page,
-        total_participants=total_participants,
-        participant_ids=participant_ids,
-        qc_cohort=qc_cohort,
-        session_id=session_id
+        current_page=current_page, total_participants=total_participants, participant_ids=participant_ids, qc_cohort=qc_cohort, session_id=session_id
     )
 
     if next_page is not None:
@@ -660,7 +656,8 @@ def _display_qc_pagination_controls(
         elif next_page is not None:
             SessionManager.set_current_page(next_page)
         elif (
-            qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
             or not qc_cohort
             and participant_ids
             and session_id
@@ -731,6 +728,7 @@ def _display_qc_pagination(
         participant_ids=participant_ids,
         qc_cohort=qc_cohort,
     )
+
 
 def _save_qc_record(
     participant_id: str,

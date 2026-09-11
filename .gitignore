@@ -5,6 +5,7 @@ __pycache__/
 ui/__pycache__/
 *.pyc
 .DS_Store
+.env
 .cursor/
 
 # Demo first-volume BOLD under bids/sub-CMH0001/ses-*/func/ (tracked).

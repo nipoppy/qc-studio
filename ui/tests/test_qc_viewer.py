@@ -742,9 +742,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4
         mock_rerun.assert_called_once()
 
-    def test_save_qc_record_navigates_to_congratulations_when_filtered_view_completes_full_cohort(
-        self, autoplay_session_state, monkeypatch
-    ):
+    def test_save_qc_record_navigates_to_congratulations_when_filtered_view_completes_full_cohort(self, autoplay_session_state, monkeypatch):
         """If the active filter is the last remaining completed subset, saving should still finish the cohort."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 4
@@ -773,9 +771,7 @@ class TestDisplayQcPagination:
         st.info.assert_not_called()
         mock_rerun.assert_called_once()
 
-    def test_save_qc_record_warns_when_filtered_subject_list_is_complete_but_cohort_is_not(
-        self, autoplay_session_state, monkeypatch
-    ):
+    def test_save_qc_record_warns_when_filtered_subject_list_is_complete_but_cohort_is_not(self, autoplay_session_state, monkeypatch):
         """When the active filter completes, tell the user to clear the filter for any remaining cohort work."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 2
