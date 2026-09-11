@@ -742,8 +742,10 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4
         mock_rerun.assert_called_once()
 
-    def test_save_qc_record_keeps_filtered_view_active_and_shows_info(self, autoplay_session_state, monkeypatch):
-        """Save should persist the current filtered view without navigating to the congratulations page."""
+    def test_save_qc_record_navigates_to_congratulations_when_filtered_view_completes_full_cohort(
+        self, autoplay_session_state, monkeypatch
+    ):
+        """If the active filter is the last remaining completed subset, saving should still finish the cohort."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 4
         state["sidebar_subject_search"] = "ses-02"
@@ -767,8 +769,40 @@ class TestDisplayQcPagination:
             qc_cohort=qc_cohort,
         )
 
-        assert state["current_page"] == 4
-        st.info.assert_called_once_with("✅ QC results saved for the active filtered view.")
+        assert state["current_page"] == 5
+        st.info.assert_not_called()
+        mock_rerun.assert_called_once()
+
+    def test_save_qc_record_warns_when_filtered_subject_list_is_complete_but_cohort_is_not(
+        self, autoplay_session_state, monkeypatch
+    ):
+        """When the active filter completes, tell the user to clear the filter for any remaining cohort work."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 2
+        state["sidebar_subject_search"] = "ses-02"
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-02"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0004", "session_id": "ses-02"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0002", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0004", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0002",
+            session_id="ses-02",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=4,
+            qc_cohort=qc_cohort,
+        )
+
+        st.info.assert_called_once_with(
+            "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
+        )
         mock_rerun.assert_called_once()
 
     def test_confirm_and_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
