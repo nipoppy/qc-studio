@@ -671,7 +671,7 @@ def _display_qc_pagination_controls(
             qc_tasks, qc_cohort, participant_ids, session_id, total_participants
         ):
             msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-            st.toast(msg, icon="ℹ️")
+            st.info(msg)
             st.session_state["_pending_filtered_subject_msg"] = msg
         request_navigation_rerun(st)
 
@@ -761,11 +761,11 @@ def _save_qc_record(
     if _has_active_subject_filter():
         if _filtered_cohort_complete_for_tasks(qc_tasks, qc_cohort, participant_ids, session_id, total_participants):
             msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-            st.toast(msg, icon="ℹ️")
+            st.info(msg)
             st.session_state["_pending_filtered_subject_msg"] = msg
         else:
             msg = "✅ QC results saved for the active filtered view."
-            st.toast(msg, icon="✅")
+            st.info(msg)
             st.session_state["_pending_filtered_subject_msg"] = msg
 
     request_navigation_rerun(st)

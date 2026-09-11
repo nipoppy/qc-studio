@@ -743,7 +743,7 @@ class TestDisplayQcPagination:
         mock_rerun.assert_called_once()
 
     def test_save_qc_record_navigates_to_congratulations_when_filtered_view_completes_full_cohort(self, autoplay_session_state, monkeypatch):
-        """If the active filter is the last remaining completed subset, saving should still finish the cohort."""
+        """If the active filter is still on and the full cohort is fully rated, saving should finish the cohort."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 4
         state["sidebar_subject_search"] = "ses-02"
@@ -755,7 +755,9 @@ class TestDisplayQcPagination:
             {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
             {"participant_id": "sub-CMH0004", "session_id": "ses-02"},
         ]
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
         _record_qc_for_current_participant("sub-CMH0002", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0003", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
         _record_qc_for_current_participant("sub-CMH0004", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
 
         qc_viewer_module._save_qc_record(

@@ -180,11 +180,11 @@ class TestShowLandingPage:
         assert "Susceptibility distortion correction" not in all_line
 
     def test_compact_session_label_omits_pipeline_and_task_count(self):
-        from components.qc_viewer import _compact_session_label
+        from utils.cohort import compact_session_label
 
-        assert _compact_session_label("sub-CMH0001", "ses-01") == "sub-CMH0001 · ses-01"
-        assert _compact_session_label("sub-CMH0001", None) == "sub-CMH0001"
-        label = _compact_session_label("sub-CMH0001", "ses-01")
+        assert compact_session_label("sub-CMH0001", "ses-01") == "sub-CMH0001 · ses-01"
+        assert compact_session_label("sub-CMH0001", None) == "sub-CMH0001"
+        label = compact_session_label("sub-CMH0001", "ses-01")
         assert "fmriprep" not in label.lower()
         assert "count" not in label.lower()
 
