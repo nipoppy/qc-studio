@@ -237,8 +237,8 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
         # Rater name/ID
         rater_id = st.text_input(MESSAGES["rater_id_prompt"], value=SessionManager.get_rater_id())
 
-        # Remove spaces from rater_id
-        rater_id_clean = "".join(rater_id.split())
+        # Remove spaces and normalize to lowercase so exported filenames do not collide by case.
+        rater_id_clean = "".join(rater_id.split()).lower()
 
         # Experience level
         default_exp_idx = 0
@@ -316,6 +316,8 @@ def _display_csv_upload(
             filter_label = _upload_filter_label(qc_task, qc_config_path)
             decided = decided_rating_keys_from_df(df_task, qc_tasks)
             pages_reviewed = count_complete_cohort_pages(qc_cohort, qc_tasks, decided)
+            records_reviewed = len(decided)
+            total_qc_records = len(qc_cohort) * len(qc_tasks) if qc_cohort and qc_tasks else 0
             participant_ids_in_csv = {bare_bids_id(str(pid), "sub-") for pid in df_task["_participant_id_norm"].unique()}
 
             st.success(SUCCESS_MESSAGES["csv_loaded"].format(count=len(df), filename=uploaded_file.name))
@@ -340,13 +342,17 @@ def _display_csv_upload(
                 # Create comparison display
                 col_comp1, col_comp2 = st.columns(2)
                 with col_comp1:
-                    st.metric("QC records reviewed", pages_reviewed)
+                    st.metric(label="Cohort pages reviewed", value=pages_reviewed)
                 with col_comp2:
-                    st.metric("Total QC records", total_cohort_pages)
+                    st.metric(label="QC records reviewed", value=records_reviewed)
+                st.caption(
+                    f"Totals: {total_cohort_pages} cohort pages · {total_qc_records} QC records "
+                    f"across this workflow. When a page includes multiple tasks, records can exceed pages."
+                )
 
-                # Progress percentage
-                progress_pct = (pages_reviewed / total_cohort_pages) * 100 if total_cohort_pages > 0 else 0
-                st.progress(min(progress_pct / 100, 1.0), text=f"{progress_pct:.1f}% complete")
+                # Progress percentage is based on QC records, which reflects the actual per-task data points.
+                progress_pct = (records_reviewed / total_qc_records) * 100 if total_qc_records > 0 else 0
+                st.progress(min(progress_pct / 100, 1.0), text=f"{progress_pct:.1f}% of QC records complete")
 
             except Exception as e:
                 st.warning(ERROR_MESSAGES["csv_comparison_error"].format(error=e))

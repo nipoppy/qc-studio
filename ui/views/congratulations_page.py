@@ -8,13 +8,30 @@ from utils.export import save_qc_results_to_csv
 
 CONGRATS_EXPORT_PATH_KEY = "congrats_export_path"
 CONGRATS_EXPORT_PATH_DEFAULT_KEY = "_congrats_export_path_default"
+OVERWRITE_CONFIRMATION_PATH_KEY = "_pending_overwrite_path"
 
 
 def _default_congrats_export_path(out_dir: str, rater_id: str) -> str:
     """Default export path shown on the congratulations page."""
-    base_dir = Path(out_dir) if out_dir else Path(".")
-    rid = str(rater_id).strip() or "rater"
-    return str(base_dir / f"{rid}_QC_status.tsv")
+    base_dir = Path(out_dir).expanduser() if out_dir else Path(".").expanduser()
+    base_dir = base_dir if base_dir.is_absolute() else (Path.cwd() / base_dir)
+    rid = str(rater_id).strip().lower() or "rater"
+    return str((base_dir / f"{rid}_QC_status.tsv").resolve())
+
+
+def _require_overwrite_confirmation(file_path: str | Path, label: str) -> bool:
+    """Require a second explicit click before overwriting an existing export file."""
+    target = Path(str(file_path)).expanduser()
+    pending = st.session_state.get(OVERWRITE_CONFIRMATION_PATH_KEY)
+    if not target.exists():
+        st.session_state.pop(OVERWRITE_CONFIRMATION_PATH_KEY, None)
+        return True
+    if pending == str(target):
+        st.session_state.pop(OVERWRITE_CONFIRMATION_PATH_KEY, None)
+        return True
+    st.session_state[OVERWRITE_CONFIRMATION_PATH_KEY] = str(target)
+    st.warning(f"⚠️ {label} will overwrite the existing file: {target}")
+    return False
 
 
 def _resolve_congrats_export_file_path(out_dir: str, rater_id: str, save_file_path: str | None) -> Path:
@@ -26,7 +43,7 @@ def _resolve_congrats_export_file_path(out_dir: str, rater_id: str, save_file_pa
         candidate = Path(str(save_file_path).strip()).expanduser()
         if candidate.suffix:
             return candidate
-        rid = str(rater_id).strip() or "rater"
+        rid = str(rater_id).strip().lower() or "rater"
         return candidate / f"{rid}_QC_status.tsv"
     return Path(_default_congrats_export_path(out_dir, rater_id))
 
@@ -138,22 +155,39 @@ def show_congratulations_page(
     st.text_input(
         "QC status file path",
         key=CONGRATS_EXPORT_PATH_KEY,
-        help="Set a custom file path for exported QC results (for example, /path/to/QC_status.csv).",
+        help="Set a custom file path for exported QC results (for example, /path/to/QC_status.csv). The default uses the --output_dir CLI setting.",
+        value=st.session_state.get(CONGRATS_EXPORT_PATH_KEY, default_export_path),
     )
 
     # Action buttons
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        if st.button(MESSAGES["export_results_button"], width="stretch"):
-            export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
-            _export_qc_results(
-                rater_id,
-                out_dir,
-                export_rows,
-                drop_duplicates,
-                save_file_path=st.session_state.get(CONGRATS_EXPORT_PATH_KEY),
-            )
-            st.rerun()
+        export_target = _resolve_congrats_export_file_path(out_dir, rater_id, st.session_state.get(CONGRATS_EXPORT_PATH_KEY))
+        if st.session_state.get(OVERWRITE_CONFIRMATION_PATH_KEY) == str(export_target):
+            st.warning(f"⚠️ Existing export file will be overwritten: {export_target}")
+            if st.button("Overwrite existing file", key="confirm_congrats_overwrite", type="primary", width="stretch"):
+                export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
+                _export_qc_results(
+                    rater_id,
+                    out_dir,
+                    export_rows,
+                    drop_duplicates,
+                    save_file_path=st.session_state.get(CONGRATS_EXPORT_PATH_KEY),
+                )
+                st.rerun()
+        elif st.button(MESSAGES["export_results_button"], width="stretch"):
+            if _require_overwrite_confirmation(export_target, "Final QC export"):
+                export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
+                _export_qc_results(
+                    rater_id,
+                    out_dir,
+                    export_rows,
+                    drop_duplicates,
+                    save_file_path=st.session_state.get(CONGRATS_EXPORT_PATH_KEY),
+                )
+                st.rerun()
+            else:
+                st.rerun()
     with col2:
         if st.button(MESSAGES["previous_button"], width="stretch"):
             SessionManager.previous_page()

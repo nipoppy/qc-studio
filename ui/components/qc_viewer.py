@@ -6,10 +6,22 @@ import streamlit as st
 import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
-from constants import MONTAGE_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
+from pathlib import Path
+from constants import (
+    MONTAGE_HEIGHT,
+    MESSAGES,
+    ERROR_MESSAGES,
+    QC_RATINGS,
+    NIIVUE_SECONDARY_RATIO,
+    VIEW_MODES,
+    OVERLAY_COLORMAPS,
+    SUCCESS_MESSAGES,
+    INFO_MESSAGES,
+)
 from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
 from utils.cohort import compact_session_label
+from utils.export import save_qc_results_to_csv
 from utils.navigation import request_navigation_rerun
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
@@ -17,6 +29,8 @@ from models import QCRecord
 from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
+QC_SAVE_PATH_KEY = "qc_save_path"
+PENDING_QC_SAVE_MSG_KEY = "pending_qc_save_msg"
 
 # Extra wait past the configured autoplay duration before advancing, so a rating click
 # made right at the boundary has time to reach the server and self-save via on_change
@@ -557,6 +571,41 @@ def _filtered_adjacent_pages(
     )
 
 
+def _default_qc_save_path(out_dir: str | None) -> str:
+    """Default save path shown to users in the sidebar."""
+    base_dir = Path(out_dir).expanduser() if out_dir else Path(".").expanduser()
+    base_dir = base_dir if base_dir.is_absolute() else (Path.cwd() / base_dir)
+    rater_id = str(SessionManager.get_rater_id() or "rater").strip().lower() or "rater"
+    return str((base_dir / f"{rater_id}_QC_status.tsv").resolve())
+
+
+def _require_overwrite_confirmation(file_path: str | Path, label: str) -> bool:
+    """Require a second explicit click before overwriting an existing export file."""
+    target = Path(str(file_path)).expanduser()
+    if not target.exists():
+        st.session_state.pop("_pending_overwrite_path", None)
+        return True
+    current = st.session_state.get("_pending_overwrite_path")
+    if current == str(target):
+        st.session_state.pop("_pending_overwrite_path", None)
+        return True
+    st.session_state["_pending_overwrite_path"] = str(target)
+    st.warning(f"⚠️ {label} will overwrite the existing file: {target}")
+    return False
+
+
+def _resolve_qc_save_file_path(out_dir: str | None, save_file_path: str | None) -> Path:
+    """Resolve the final export path from optional user input.
+
+    If the user provides a directory-like path (no suffix), append the default file name.
+    """
+    if save_file_path and str(save_file_path).strip():
+        candidate = Path(str(save_file_path).strip()).expanduser()
+        if candidate.suffix:
+            return candidate
+        rater_id = str(SessionManager.get_rater_id() or "rater").strip().lower() or "rater"
+        return candidate / f"{rater_id}_QC_status.tsv"
+    return Path(_default_qc_save_path(out_dir))
 def _render_previous_page_button(target_page: int) -> None:
     """Sidebar Previous control; no-ops visually when omitted by the caller."""
     if st.button(
@@ -600,6 +649,8 @@ def _display_qc_pagination_controls(
     qc_tasks: list,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
+    out_dir: str | None = None,
+    drop_duplicates: bool = True,
 ) -> None:
     """Sidebar: autoplay, page buttons, save CSV (call inside ``with st.sidebar:``)."""
     autoplay_col1, autoplay_col2 = st.columns([1, 1])
@@ -625,6 +676,17 @@ def _display_qc_pagination_controls(
         st.info(pending)
 
     st.divider()
+
+    default_save_path = _default_qc_save_path(out_dir)
+    if QC_SAVE_PATH_KEY not in st.session_state:
+        st.session_state[QC_SAVE_PATH_KEY] = default_save_path
+    st.caption(f"Default path: {default_save_path}")
+    st.text_input(
+        "QC status file path",
+        key=QC_SAVE_PATH_KEY,
+        help="Save QC progress to this file. The default uses the --output_dir CLI setting.",
+        value=st.session_state.get(QC_SAVE_PATH_KEY, default_save_path),
+    )
 
     prev_page, next_page = _filtered_adjacent_pages(
         current_page=current_page,
@@ -688,21 +750,45 @@ def _display_qc_pagination_controls(
         """,
         unsafe_allow_html=True,
     )
-    if st.button(
+    save_target = _resolve_qc_save_file_path(out_dir, st.session_state.get(QC_SAVE_PATH_KEY))
+    if st.session_state.get("_pending_overwrite_path") == str(save_target):
+        st.warning(f"⚠️ Existing export file will be overwritten: {save_target}")
+        if st.button("Overwrite existing file", key="confirm_qc_overwrite", type="primary", width="stretch"):
+            _save_qc_record(
+                participant_id=participant_id,
+                session_id=session_id,
+                qc_pipeline=qc_pipeline,
+                qc_tasks=qc_tasks,
+                total_participants=total_participants,
+                participant_ids=participant_ids,
+                qc_cohort=qc_cohort,
+                out_dir=out_dir,
+                drop_duplicates=drop_duplicates,
+                save_file_path=st.session_state.get(QC_SAVE_PATH_KEY),
+                allow_overwrite=True,
+            )
+    elif st.button(
         MESSAGES["save_csv_button"],
         width="stretch",
         key="pag_save_csv",
         help=MESSAGES["save_csv_help"],
     ):
-        _save_qc_record(
-            participant_id=participant_id,
-            session_id=session_id,
-            qc_pipeline=qc_pipeline,
-            qc_tasks=qc_tasks,
-            total_participants=total_participants,
-            participant_ids=participant_ids,
-            qc_cohort=qc_cohort,
-        )
+        if _require_overwrite_confirmation(save_target, "QC export file"):
+            _save_qc_record(
+                participant_id=participant_id,
+                session_id=session_id,
+                qc_pipeline=qc_pipeline,
+                qc_tasks=qc_tasks,
+                total_participants=total_participants,
+                participant_ids=participant_ids,
+                qc_cohort=qc_cohort,
+                out_dir=out_dir,
+                drop_duplicates=drop_duplicates,
+                save_file_path=st.session_state.get(QC_SAVE_PATH_KEY),
+                allow_overwrite=True,
+            )
+        else:
+            st.rerun()
 
 
 def _display_qc_pagination(
@@ -738,8 +824,26 @@ def _save_qc_record(
     total_participants: int,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
+    out_dir: str | None = None,
+    drop_duplicates: bool = True,
+    save_file_path: str | None = None,
+    allow_overwrite: bool = False,
 ) -> None:
     _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+
+    export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
+    if export_rows:
+        out_file = _resolve_qc_save_file_path(out_dir, save_file_path)
+        saved_path, dropped, _ = save_qc_results_to_csv(out_file, export_rows, drop_duplicates)
+        record_count = len(export_rows)
+        unique_participants = len({str(r.participant_id if hasattr(r, "participant_id") else r.get("participant_id", "")) for r in export_rows})
+        msg = SUCCESS_MESSAGES["records_saved"].format(path=saved_path)
+        msg += f" Saved {record_count} record(s) across {unique_participants} unique participant(s)."
+        if dropped:
+            msg += f" ({dropped} duplicate record(s) removed)"
+        st.session_state[PENDING_QC_SAVE_MSG_KEY] = ("success", msg)
+    else:
+        st.session_state[PENDING_QC_SAVE_MSG_KEY] = ("info", INFO_MESSAGES["no_export_records"])
 
     cohort_is_complete = False
     if qc_cohort:

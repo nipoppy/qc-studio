@@ -10,15 +10,37 @@ from views.congratulations_page import (
     _default_congrats_export_path,
     _resolve_congrats_export_file_path,
     _export_qc_results,
+    _require_overwrite_confirmation,
 )
 
 pytestmark = pytest.mark.unit
 
 
-def test_default_congrats_export_path_uses_out_dir_and_rater_id(tmp_path):
-    path = _default_congrats_export_path(str(tmp_path), "rater42")
+def test_default_congrats_export_path_uses_out_dir_and_rater_id(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    path = _default_congrats_export_path("relative/run", "Rater42")
     assert path.endswith("rater42_QC_status.tsv")
-    assert str(tmp_path) in path
+    assert path == str((tmp_path / "relative" / "run" / "rater42_QC_status.tsv").resolve())
+
+
+def test_require_overwrite_confirmation_prompts_before_overwriting_existing_file(tmp_path):
+    existing = tmp_path / "existing.tsv"
+    existing.write_text("already here")
+    state = {}
+
+    with patch.object(st, "session_state", state):
+        assert _require_overwrite_confirmation(existing, "Exported QC results") is False
+        assert state["_pending_overwrite_path"] == str(existing)
+
+
+def test_require_overwrite_confirmation_allows_confirmed_overwrite(tmp_path):
+    existing = tmp_path / "existing.tsv"
+    existing.write_text("already here")
+    state = {"_pending_overwrite_path": str(existing)}
+
+    with patch.object(st, "session_state", state):
+        assert _require_overwrite_confirmation(existing, "Exported QC results") is True
+        assert "_pending_overwrite_path" not in state
 
 
 def test_resolve_congrats_export_file_path_honors_custom_file_path(tmp_path):

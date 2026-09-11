@@ -155,6 +155,44 @@ class TestShowLandingPage:
         mock_st.header.assert_any_call("fmriprep")
         assert not any("QC Pipeline:" in text and "|" in text for text in markdown_calls)
 
+    @patch("views.landing_page.pd.read_csv")
+    def test_landing_page_counts_both_pages_and_qc_records(self, mock_read_csv, tmp_path):
+        """Multi-task pages should show separate page and record counts, with records able to exceed pages."""
+        from views.landing_page import show_landing_page
+
+        participant_df = pd.DataFrame({"participant_id": ["sub-CMH0001", "sub-CMH0002"]})
+        upload_df = pd.DataFrame(
+            {
+                "participant_id": ["sub-CMH0001", "sub-CMH0001", "sub-CMH0002", "sub-CMH0002"],
+                "session_id": ["ses-01", "ses-01", "ses-01", "ses-01"],
+                "qc_task": ["anat_wf_qc", "func_wf_qc", "anat_wf_qc", "func_wf_qc"],
+                "final_qc": ["PASS", "PASS", "PASS", "PASS"],
+            }
+        )
+        mock_read_csv.side_effect = [participant_df, upload_df]
+
+        mock_st = MagicMock()
+        upload_file = MagicMock()
+        upload_file.name = "results.csv"
+
+        with _patch_streamlit_for_landing(mock_st):
+            mock_st.file_uploader.return_value = upload_file
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="all",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path, task="anat_wf_qc"),
+            )
+
+        metric_calls = [call.kwargs for call in mock_st.metric.call_args_list if call.kwargs]
+        assert any(call.get("label") == "Cohort pages reviewed" for call in metric_calls)
+        assert any(call.get("label") == "QC records reviewed" for call in metric_calls)
+        caption_text = "\n".join(str(call.args[0]) for call in mock_st.caption.call_args_list)
+        assert "records can exceed pages" in caption_text
+        progress_text = "\n".join(str(call.kwargs.get("text", "")) for call in mock_st.progress.call_args_list)
+        assert "QC records complete" in progress_text
+
     def test_landing_run_summary_uses_subject_page_task_names(self):
         from views.landing_page import _landing_run_summary_lines
 

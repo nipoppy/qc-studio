@@ -54,7 +54,8 @@ class SessionManager:
     @staticmethod
     def set_rater_id(rater_id: str):
         """Set rater ID."""
-        st.session_state[SESSION_KEYS["rater_id"]] = rater_id
+        clean_rater_id = str(rater_id or "").strip().lower()
+        st.session_state[SESSION_KEYS["rater_id"]] = clean_rater_id
 
     @staticmethod
     def get_rater_experience() -> str:

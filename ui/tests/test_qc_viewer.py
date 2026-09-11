@@ -10,6 +10,7 @@ import streamlit as st
 from components import qc_viewer as qc_viewer_module
 from components.qc_viewer import (
     _clean_filename,
+    _default_qc_save_path,
     _render_autoplay_countdown_main_banner,
     try_autoplay_advance_if_due,
     AUTOPLAY_ADVANCE_GRACE_SECONDS,
@@ -49,6 +50,13 @@ def autoplay_session_state():
 
 class TestCleanFilename:
     """Tests for compact tab label generation."""
+
+    def test_default_qc_save_path_uses_absolute_output_dir(self, tmp_path, monkeypatch):
+        """The sidebar default should resolve relative CLI output_dir values to absolute paths."""
+        monkeypatch.chdir(tmp_path)
+        path = _default_qc_save_path("results/run")
+        expected = str((tmp_path / "results" / "run" / "rater_QC_status.tsv").resolve())
+        assert path == expected
 
     def test_extracts_session_task_run_tokens(self):
         """Functional keys should prefer ses/task/run tokens."""
