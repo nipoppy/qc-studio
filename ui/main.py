@@ -183,8 +183,6 @@ def main():
                 "qc_tasks": qc_tasks,
                 "participant_ids": participant_ids,
                 "qc_cohort": qc_cohort,
-                "out_dir": out_dir,
-                "drop_duplicates": drop_duplicates,
             }
             if on_qc_viewer_page
             else None

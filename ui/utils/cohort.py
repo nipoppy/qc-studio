@@ -132,6 +132,14 @@ def count_complete_cohort_pages(
     return sum(1 for entry in qc_cohort if is_cohort_page_complete(entry, qc_tasks, decided))
 
 
+def compact_session_label(participant_id: str | None, session_id: str | None) -> str:
+    """Return a compact participant/session label for header text."""
+    pid = str(participant_id or "")
+    if session_id:
+        return f"{pid} · {session_id}"
+    return pid
+
+
 def first_incomplete_cohort_page(
     qc_cohort: list[dict],
     qc_tasks: list[str],

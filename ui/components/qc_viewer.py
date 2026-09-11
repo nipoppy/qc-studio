@@ -1,49 +1,27 @@
 """QC viewer component for displaying MRI, montage, and metrics panels."""
 
 import math
-from pathlib import Path
 import re
 import streamlit as st
 import streamlit.components.v1 as components
 import time
 from datetime import datetime, timedelta
-from constants import (
-    MONTAGE_HEIGHT,
-    MESSAGES,
-    ERROR_MESSAGES,
-    QC_RATINGS,
-    NIIVUE_SECONDARY_RATIO,
-    VIEW_MODES,
-    OVERLAY_COLORMAPS,
-    SUCCESS_MESSAGES,
-    INFO_MESSAGES,
-)
-from utils.export import save_qc_results_to_csv
+from constants import MONTAGE_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
 from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
+from utils.cohort import compact_session_label
+from utils.navigation import request_navigation_rerun
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
 from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
-PENDING_QC_SAVE_MSG_KEY = "_pending_qc_save_msg"
-QC_SAVE_PATH_KEY = "qc_save_path"
-QC_SAVE_PATH_DEFAULT_KEY = "_qc_save_path_default"
-PENDING_SIDEBAR_RERUN_KEY = "_pending_sidebar_rerun"
 
 # Extra wait past the configured autoplay duration before advancing, so a rating click
 # made right at the boundary has time to reach the server and self-save via on_change
 # before the poll treats the interval as elapsed.
 AUTOPLAY_ADVANCE_GRACE_SECONDS = 0.3
-
-
-def _compact_session_label(participant_id: str | None, session_id: str | None) -> str:
-    """One-line QC header: participant, plus session when present."""
-    pid = participant_id or ""
-    if session_id:
-        return f"{pid} · {session_id}"
-    return pid
 
 
 def _clean_filename(filename: str) -> str:
@@ -93,26 +71,33 @@ def try_autoplay_advance_if_due(
     tasks = list(qc_tasks or [])
     if not tasks:
         tasks = [qc_task] if qc_task else ["anat_wf_qc"]
-    if SessionManager.get_current_page() < total_participants:
+
+    current_page = SessionManager.get_current_page()
+    _, next_page = _filtered_adjacent_pages(
+        current_page=current_page, total_participants=total_participants, participant_ids=participant_ids, qc_cohort=qc_cohort, session_id=session_id
+    )
+
+    if next_page is not None:
         _record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
-        SessionManager.next_page()
+        SessionManager.set_current_page(next_page)
         SessionManager.set_autoplay_start_time(time.time())
     else:
         _record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
-        if qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort):
+        if not _has_active_subject_filter() and (
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort)
+            or not qc_cohort
+            and participant_ids
+            and session_id
+            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
+                tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            )
+        ):
             SessionManager.set_current_page(total_participants + 1)
-        elif not qc_cohort and participant_ids and session_id:
-            temp_cohort = []
-            for pid in participant_ids:
-                p = str(pid).strip()
-                if not p.startswith("sub-"):
-                    p = f"sub-{p}"
-                temp_cohort.append({"participant_id": p, "session_id": session_id})
-            if SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, temp_cohort):
-                SessionManager.set_current_page(total_participants + 1)
         SessionManager.set_autoplay_enabled(False)
         SessionManager.set_autoplay_start_time(0.0)
-    st.rerun()
+    request_navigation_rerun(st)
 
 
 def _render_autoplay_countdown_main_banner() -> None:
@@ -215,7 +200,7 @@ def display_qc_viewers(
 
     _render_autoplay_countdown_main_banner()
 
-    st.markdown(f"**{_compact_session_label(participant_id, session_id)}**")
+    st.markdown(f"**{compact_session_label(participant_id, session_id)}**")
 
     for i, tname in enumerate(tasks):
         qc_config = parse_qc_config(qc_config_path, tname, substitution_values)
@@ -511,6 +496,43 @@ def _cohort_entries_for_filter(
     return [{"participant_id": str(pid), "session_id": session_id} for pid in list(participant_ids or [])][:limit]
 
 
+def _cohort_entries_for_active_filter(
+    qc_cohort: list | None,
+    participant_ids: list | None,
+    session_id: str,
+    total_participants: int,
+) -> list:
+    """Return the currently visible cohort subset under the active sidebar filter, if any."""
+    from views.sidebar_cohort_nav import _matching_subject_entries, get_subject_search_query
+
+    entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+    query = get_subject_search_query()
+    if not query:
+        return entries
+    return [entry for _, entry in _matching_subject_entries(entries, query, session_id)]
+
+
+def _has_active_subject_filter() -> bool:
+    """True when a sidebar subject filter is currently active."""
+    from views.sidebar_cohort_nav import get_subject_search_query
+
+    return bool(get_subject_search_query())
+
+
+def _filtered_cohort_complete_for_tasks(
+    qc_tasks: list,
+    qc_cohort: list | None,
+    participant_ids: list | None,
+    session_id: str,
+    total_participants: int,
+) -> bool:
+    """True when the visible subset under the active filter is finished for all tasks."""
+    active_entries = _cohort_entries_for_active_filter(qc_cohort, participant_ids, session_id, total_participants)
+    if not active_entries:
+        return False
+    return SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, active_entries)
+
+
 def _filtered_adjacent_pages(
     current_page: int,
     total_participants: int,
@@ -519,15 +541,11 @@ def _filtered_adjacent_pages(
     session_id: str,
 ) -> tuple[int | None, int | None]:
     """Previous/next pages that match the subject filter. Empty filter → full cohort order."""
-    try:
-        from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
-    except ImportError:
-        prev_page = current_page - 1 if current_page > 1 else None
-        next_page = current_page + 1 if current_page < total_participants else None
-        return prev_page, next_page
+    from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
 
     entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-    # Direct calls (e.g., tests) may omit cohort data; use simple contiguous pagination bounds.
+    # Fallback for direct calls (e.g., tests) where cohort data is not provided.
+    # In that case, use simple contiguous pagination bounds.
     if not entries:
         prev_page = current_page - 1 if current_page > 1 else None
         next_page = current_page + 1 if current_page < total_participants else None
@@ -537,40 +555,6 @@ def _filtered_adjacent_pages(
         prev_visible_subject_page(entries, query, session_id, current_page),
         next_visible_subject_page(entries, query, session_id, current_page),
     )
-
-
-def _request_navigation_rerun() -> None:
-    """Request an app refresh after navigation/playback actions.
-
-    Streamlit's real ``st.rerun()`` raises internally to stop execution and rerun.
-    In test contexts where rerun is mocked/no-op, fall back to the deferred sidebar key.
-    """
-    rerun = getattr(st, "rerun", None)
-    if callable(rerun):
-        rerun()
-        return
-    st.session_state[PENDING_SIDEBAR_RERUN_KEY] = True
-
-
-def _default_qc_save_path(out_dir: str | None) -> str:
-    """Default save path shown to users in the sidebar."""
-    base_dir = Path(out_dir) if out_dir else Path(".")
-    rater_id = SessionManager.get_rater_id() or "rater"
-    return str(base_dir / f"{rater_id}_QC_status.tsv")
-
-
-def _resolve_qc_save_file_path(out_dir: str | None, save_file_path: str | None) -> Path:
-    """Resolve the final export path from optional user input.
-
-    If the user provides a directory-like path (no suffix), append the default file name.
-    """
-    if save_file_path and str(save_file_path).strip():
-        candidate = Path(str(save_file_path).strip()).expanduser()
-        if candidate.suffix:
-            return candidate
-        rater_id = SessionManager.get_rater_id() or "rater"
-        return candidate / f"{rater_id}_QC_status.tsv"
-    return Path(_default_qc_save_path(out_dir))
 
 
 def _render_previous_page_button(target_page: int) -> None:
@@ -584,7 +568,7 @@ def _render_previous_page_button(target_page: int) -> None:
         SessionManager.set_current_page(target_page)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        _request_navigation_rerun()
+        request_navigation_rerun(st)
 
 
 def _render_next_page_button(target_page: int) -> None:
@@ -598,7 +582,7 @@ def _render_next_page_button(target_page: int) -> None:
         SessionManager.set_current_page(target_page)
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
-        _request_navigation_rerun()
+        request_navigation_rerun(st)
 
 
 def _display_qc_pagination_header(current_page: int, total_participants: int) -> None:
@@ -616,8 +600,6 @@ def _display_qc_pagination_controls(
     qc_tasks: list,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
-    out_dir: str | None = None,
-    drop_duplicates: bool = True,
 ) -> None:
     """Sidebar: autoplay, page buttons, save CSV (call inside ``with st.sidebar:``)."""
     autoplay_col1, autoplay_col2 = st.columns([1, 1])
@@ -625,19 +607,22 @@ def _display_qc_pagination_controls(
         if st.button(MESSAGES["play_button"], width="stretch", key="autoplay_play"):
             SessionManager.set_autoplay_enabled(True)
             SessionManager.set_autoplay_start_time(time.time())
-            _request_navigation_rerun()
+            request_navigation_rerun(st)
 
     with autoplay_col2:
         if st.button(MESSAGES["pause_button"], width="stretch", key="autoplay_pause"):
             SessionManager.set_autoplay_enabled(False)
             SessionManager.set_autoplay_start_time(0.0)
-            _request_navigation_rerun()
+            request_navigation_rerun(st)
 
     if SessionManager.is_autoplay_enabled():
         if SessionManager.get_autoplay_start_time() > 0:
             _autoplay_fragment_advance_only()
         else:
             st.caption("Autoplay on — countdown starts on **Play**.")
+
+    if pending := st.session_state.pop("_pending_filtered_subject_msg", None):
+        st.info(pending)
 
     st.divider()
 
@@ -670,38 +655,27 @@ def _display_qc_pagination_controls(
             SessionManager.set_autoplay_start_time(time.time())
         elif next_page is not None:
             SessionManager.set_current_page(next_page)
-        elif qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
+        elif (
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+            or not qc_cohort
+            and participant_ids
+            and session_id
+            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
+                qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
+            )
+        ):
             SessionManager.set_current_page(total_participants + 1)
-        elif not qc_cohort and participant_ids and session_id:
-            temp_cohort = []
-            for pid in participant_ids:
-                p = str(pid).strip()
-                if not p.startswith("sub-"):
-                    p = f"sub-{p}"
-                temp_cohort.append({"participant_id": p, "session_id": session_id})
-            if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
-                SessionManager.set_current_page(total_participants + 1)
-        _request_navigation_rerun()
+        elif _has_active_subject_filter() and _filtered_cohort_complete_for_tasks(
+            qc_tasks, qc_cohort, participant_ids, session_id, total_participants
+        ):
+            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
+            st.info(msg)
+            st.session_state["_pending_filtered_subject_msg"] = msg
+        request_navigation_rerun(st)
 
     st.divider()
-
-    default_save_path = _default_qc_save_path(out_dir)
-    if QC_SAVE_PATH_KEY not in st.session_state:
-        st.session_state[QC_SAVE_PATH_KEY] = default_save_path
-        st.session_state[QC_SAVE_PATH_DEFAULT_KEY] = default_save_path
-    else:
-        prev_default = st.session_state.get(QC_SAVE_PATH_DEFAULT_KEY)
-        current_value = st.session_state.get(QC_SAVE_PATH_KEY, "")
-        if prev_default and current_value == prev_default and default_save_path != prev_default:
-            st.session_state[QC_SAVE_PATH_KEY] = default_save_path
-        st.session_state[QC_SAVE_PATH_DEFAULT_KEY] = default_save_path
-
-    st.caption(f"Default path: {default_save_path}")
-    st.text_input(
-        "QC status file path",
-        key=QC_SAVE_PATH_KEY,
-        help="Set a custom file path for Save QC (for example, /path/to/QC_status.csv).",
-    )
 
     st.markdown(
         """
@@ -718,7 +692,7 @@ def _display_qc_pagination_controls(
         MESSAGES["save_csv_button"],
         width="stretch",
         key="pag_save_csv",
-        help=MESSAGES.get("save_csv_help", "Save QC results to a CSV file"),
+        help=MESSAGES["save_csv_help"],
     ):
         _save_qc_record(
             participant_id=participant_id,
@@ -728,14 +702,7 @@ def _display_qc_pagination_controls(
             total_participants=total_participants,
             participant_ids=participant_ids,
             qc_cohort=qc_cohort,
-            out_dir=out_dir,
-            drop_duplicates=drop_duplicates,
-            save_file_path=st.session_state.get(QC_SAVE_PATH_KEY),
         )
-
-    if pending := st.session_state.pop(PENDING_QC_SAVE_MSG_KEY, None):
-        kind, msg = pending
-        (st.success if kind == "success" else st.info)(msg)
 
 
 def _display_qc_pagination(
@@ -747,8 +714,6 @@ def _display_qc_pagination(
     qc_tasks: list,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
-    out_dir: str | None = None,
-    drop_duplicates: bool = True,
 ) -> None:
     """Full navigation block (header + playback / page controls)."""
     _display_qc_pagination_header(current_page, total_participants)
@@ -762,15 +727,7 @@ def _display_qc_pagination(
         qc_tasks=qc_tasks,
         participant_ids=participant_ids,
         qc_cohort=qc_cohort,
-        out_dir=out_dir,
-        drop_duplicates=drop_duplicates,
     )
-
-
-def _display_iqm_panel() -> None:
-    """Display IQM metrics panel."""
-    st.caption(MESSAGES["metrics_header"])
-    st.write("Add QC metrics here (e.g., SNR, motion). This is a placeholder area.")
 
 
 def _save_qc_record(
@@ -781,38 +738,37 @@ def _save_qc_record(
     total_participants: int,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
-    out_dir: str | None = None,
-    drop_duplicates: bool = True,
-    save_file_path: str | None = None,
 ) -> None:
     _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
 
-    export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
-    if export_rows:
-        out_file = _resolve_qc_save_file_path(out_dir, save_file_path)
-        saved_path, dropped, _ = save_qc_results_to_csv(out_file, export_rows, drop_duplicates)
-        record_count = len(export_rows)
-        unique_participants = len({str(r.participant_id if hasattr(r, "participant_id") else r.get("participant_id", "")) for r in export_rows})
-        msg = SUCCESS_MESSAGES["records_saved"].format(path=saved_path)
-        msg += f" Saved {record_count} record(s) across {unique_participants} unique participant(s)."
-        if dropped:
-            msg += f" ({dropped} duplicate record(s) removed)"
-        st.session_state[PENDING_QC_SAVE_MSG_KEY] = ("success", msg)
-    else:
-        st.session_state[PENDING_QC_SAVE_MSG_KEY] = ("info", INFO_MESSAGES["no_export_records"])
-
-    if qc_cohort and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
-        SessionManager.set_current_page(total_participants + 1)
-    elif not qc_cohort and participant_ids and session_id:
+    cohort_is_complete = False
+    if qc_cohort:
+        cohort_is_complete = SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+    elif participant_ids and session_id:
         temp_cohort = []
         for pid in participant_ids:
             p = str(pid).strip()
             if not p.startswith("sub-"):
                 p = f"sub-{p}"
             temp_cohort.append({"participant_id": p, "session_id": session_id})
-        if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort):
-            SessionManager.set_current_page(total_participants + 1)
-    _request_navigation_rerun()
+        cohort_is_complete = SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort)
+
+    if cohort_is_complete:
+        SessionManager.set_current_page(total_participants + 1)
+        request_navigation_rerun(st)
+        return
+
+    if _has_active_subject_filter():
+        if _filtered_cohort_complete_for_tasks(qc_tasks, qc_cohort, participant_ids, session_id, total_participants):
+            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
+            st.info(msg)
+            st.session_state["_pending_filtered_subject_msg"] = msg
+        else:
+            msg = "✅ QC results saved for the active filtered view."
+            st.info(msg)
+            st.session_state["_pending_filtered_subject_msg"] = msg
+
+    request_navigation_rerun(st)
 
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:

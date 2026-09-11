@@ -106,6 +106,41 @@ def _upload_filter_label(qc_task: str, qc_config_path: str) -> str:
     return str(qc_task)
 
 
+def _qc_task_display_labels(qc_config_path: str, task_keys: list[str]) -> list[str]:
+    """Human-readable QC task names (qc.json ``display_name``, else the task key)."""
+    dummy = {"participant_id": "sub-x", "session_id": "ses-01"}
+    labels: list[str] = []
+    for key in task_keys:
+        key_s = str(key).strip()
+        if not key_s:
+            continue
+        cfg = parse_qc_config(qc_config_path, key_s, dummy)
+        labels.append(cfg.get("display_name") or key_s)
+    return labels
+
+
+def _landing_run_summary_lines(
+    qc_pipeline: str,
+    task_labels: list[str],
+    n_subjects: int,
+    n_pages: int,
+    *,
+    all_tasks: bool = False,
+) -> tuple[str, str]:
+    """Two compact lines: pipeline title, then task summary and cohort size."""
+    labels = [str(label).strip() for label in task_labels if str(label).strip()]
+    if all_tasks or len(labels) > 1:
+        n = len(labels)
+        task_word = "task" if n == 1 else "tasks"
+        task_part = f"**Task:** all tasks ({n} {task_word})"
+    elif len(labels) == 1:
+        task_part = f"**Task:** {labels[0]}"
+    else:
+        task_part = "**Task:** —"
+    line2 = f"{task_part} · **Subjects:** {n_subjects} · **Cohort pages:** {n_pages}"
+    return qc_pipeline, line2
+
+
 def show_landing_page(
     qc_pipeline,
     qc_task,
@@ -152,11 +187,17 @@ def show_landing_page(
         _maybe_apply_montage_defaults_from_qc_json(qc_config_path, qc_task, raw_ids[0])
 
     qc_tasks_for_page = _upload_qc_task_filter_keys(qc_task, qc_config_path) or []
-    task_count = len(qc_tasks_for_page if qc_tasks_for_page else [str(qc_task).strip()])
-    st.subheader(
-        f"QC Pipeline: {qc_pipeline} | QC Task: {qc_task} | QC task count: {task_count} | "
-        f"Number of subjects: {total_participants_in_ds} | Cohort pages: {total_cohort_pages}"
+    task_keys = qc_tasks_for_page if qc_tasks_for_page else [str(qc_task).strip()]
+    task_labels = _qc_task_display_labels(qc_config_path, task_keys)
+    line1, line2 = _landing_run_summary_lines(
+        qc_pipeline,
+        task_labels,
+        total_participants_in_ds,
+        total_cohort_pages,
+        all_tasks=str(qc_task).strip().lower() == "all",
     )
+    st.header(line1)
+    st.markdown(line2)
 
     st.markdown("---")
 
@@ -374,7 +415,7 @@ def _display_csv_upload(
     st.markdown(
         """
 	**ℹ️ Tips:**
-	- Save your work frequently using the 'Save QC results to CSV' button
+	- Save your work frequently using the **Save QC** button
 	- Your session data persists within this application
 	- Upload a previous file to resume or review work
 	"""
