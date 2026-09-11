@@ -998,9 +998,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 3  # still incomplete (sub-CMH0002 unrated), must not jump ahead
         mock_rerun.assert_called_once()
 
-    def test_save_progress_button_does_not_advance_to_congratulations_when_cohort_is_complete(
-        self, autoplay_session_state, monkeypatch, tmp_path
-    ):
+    def test_save_progress_button_does_not_advance_to_congratulations_when_cohort_is_complete(self, autoplay_session_state, monkeypatch, tmp_path):
         """Only the confirm-and-next action may advance to the congratulations page."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
