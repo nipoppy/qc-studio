@@ -1,5 +1,6 @@
 """Tests for congratulations page export path helpers and export behavior."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -19,8 +20,8 @@ pytestmark = pytest.mark.unit
 def test_default_congrats_export_path_uses_out_dir_and_rater_id(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     path = _default_congrats_export_path("relative/run", "Rater42")
-    assert path.endswith("rater42_QC_status.tsv")
-    assert path == str((tmp_path / "relative" / "run" / "rater42_QC_status.tsv").resolve())
+    assert path.endswith("rater42_all_tasks_status.tsv")
+    assert path == str((tmp_path / "relative" / "run" / "rater42_all_tasks_status.tsv").resolve())
 
 
 def test_require_overwrite_confirmation_prompts_before_overwriting_existing_file(tmp_path):

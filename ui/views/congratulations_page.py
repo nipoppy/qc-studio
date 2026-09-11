@@ -11,12 +11,22 @@ CONGRATS_EXPORT_PATH_DEFAULT_KEY = "_congrats_export_path_default"
 OVERWRITE_CONFIRMATION_PATH_KEY = "_pending_overwrite_path"
 
 
-def _default_congrats_export_path(out_dir: str, rater_id: str) -> str:
+def _default_congrats_export_path(
+    out_dir: str,
+    rater_id: str,
+    qc_pipeline: str | None = None,
+    qc_task: str | None = None,
+    qc_session_id: str | None = None,
+) -> str:
     """Default export path shown on the congratulations page."""
-    base_dir = Path(out_dir).expanduser() if out_dir else Path(".").expanduser()
-    base_dir = base_dir if base_dir.is_absolute() else (Path.cwd() / base_dir)
+    base_dir = Path(str(out_dir).strip()).expanduser() if out_dir and str(out_dir).strip() else Path(".").expanduser()
+    base_dir = base_dir.resolve() if base_dir.is_absolute() else (Path.cwd() / base_dir).resolve()
     rid = str(rater_id).strip().lower() or "rater"
-    return str((base_dir / f"{rid}_QC_status.tsv").resolve())
+    task = str(qc_task or "all").strip().lower()
+    if task == "all":
+        task = "all_tasks"
+    filename = f"{rid}_{task}_status.tsv"
+    return str((base_dir / filename).resolve())
 
 
 def _require_overwrite_confirmation(file_path: str | Path, label: str) -> bool:
@@ -43,8 +53,8 @@ def _resolve_congrats_export_file_path(out_dir: str, rater_id: str, save_file_pa
         candidate = Path(str(save_file_path).strip()).expanduser()
         if candidate.suffix:
             return candidate
-        rid = str(rater_id).strip().lower() or "rater"
-        return candidate / f"{rid}_QC_status.tsv"
+        default = _default_congrats_export_path(out_dir, rater_id)
+        return candidate / Path(default).name
     return Path(_default_congrats_export_path(out_dir, rater_id))
 
 
@@ -89,6 +99,7 @@ def show_congratulations_page(
             by_page.setdefault(k, set()).add(str(tk))
         return sum(1 for ts in by_page.values() if required <= ts)
 
+    st.sidebar.empty()
     if not cohort_complete:
         st.subheader("QC not finished yet")
         st.info("Not every review page has a PASS / FAIL / UNCERTAIN rating yet. " "When you are ready, use **Continue QC** to return to the review.")
@@ -140,7 +151,13 @@ def show_congratulations_page(
         kind, msg = pending
         (st.success if kind == "success" else st.info)(msg)
 
-    default_export_path = _default_congrats_export_path(out_dir, rater_id)
+    default_export_path = _default_congrats_export_path(
+        out_dir,
+        rater_id,
+        qc_pipeline=SessionManager.get_qc_session_label().split("_")[1] if "_" in SessionManager.get_qc_session_label() else None,
+        qc_task="all" if len(tasks_eff) > 1 else tasks_eff[0],
+        qc_session_id=SessionManager.get_qc_session_id(),
+    )
     if CONGRATS_EXPORT_PATH_KEY not in st.session_state:
         st.session_state[CONGRATS_EXPORT_PATH_KEY] = default_export_path
         st.session_state[CONGRATS_EXPORT_PATH_DEFAULT_KEY] = default_export_path
@@ -156,7 +173,6 @@ def show_congratulations_page(
         "QC status file path",
         key=CONGRATS_EXPORT_PATH_KEY,
         help="Set a custom file path for exported QC results (for example, /path/to/QC_status.csv). The default uses the --output_dir CLI setting.",
-        value=st.session_state.get(CONGRATS_EXPORT_PATH_KEY, default_export_path),
     )
 
     # Action buttons

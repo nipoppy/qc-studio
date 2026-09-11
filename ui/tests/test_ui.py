@@ -76,6 +76,84 @@ class TestParseArgs:
 
         assert args.session_list is None
 
+    def test_main_passes_output_dir_to_sidebar_navigation(self, monkeypatch):
+        """The sidebar default path should receive the CLI output_dir when the QC page is rendered."""
+        import main
+
+        ctx = {
+            "dataset_dir": "/data",
+            "participant_list": "/participants.tsv",
+            "session_list": "ses-01",
+            "qc_pipeline": "fmriprep",
+            "qc_task": "anat_wf_qc",
+            "qc_tasks": ["anat_wf_qc"],
+            "qc_config_path": "/tmp/qc.json",
+            "out_dir": "/tmp/output",
+            "total_participants": 1,
+            "drop_duplicates": True,
+            "participant_ids": ["CMH0001"],
+            "qc_cohort": [{"participant_id": "sub-CMH0001", "session_id": "ses-01"}],
+        }
+
+        captured = {}
+
+        monkeypatch.setattr(main, "get_cli_run_context", lambda: ctx)
+        monkeypatch.setattr(main.SessionManager, "init_session_state", lambda: None)
+        monkeypatch.setattr(main.SessionManager, "compact_duplicate_qc_records_if_needed", lambda: None)
+        monkeypatch.setattr(main.SessionManager, "get_qc_session_id", lambda: "20260911T193730Z")
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_id", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_label", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_checkpoint_dir", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_active_path", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "get_current_page", lambda: 1)
+        monkeypatch.setattr(main.SessionManager, "set_current_page", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main, "render_sidebar_cohort_subjects", lambda **kwargs: captured.setdefault("nav", kwargs))
+        monkeypatch.setattr(main, "app", lambda **kwargs: None)
+        monkeypatch.setattr(main.st, "session_state", {"current_page": 1})
+
+        main.main()
+
+        assert captured["nav"]["navigation_kwargs"]["out_dir"] == "/tmp/output"
+
+    def test_main_hides_subject_sidebar_on_congratulations_page(self, monkeypatch):
+        """The main app should suppress the subject list when there is no active QC participant page."""
+        import main
+
+        ctx = {
+            "dataset_dir": "/data",
+            "participant_list": "/participants.tsv",
+            "session_list": "ses-01",
+            "qc_pipeline": "fmriprep",
+            "qc_task": "anat_wf_qc",
+            "qc_tasks": ["anat_wf_qc"],
+            "qc_config_path": "/tmp/qc.json",
+            "out_dir": "/tmp/output",
+            "total_participants": 1,
+            "drop_duplicates": True,
+            "participant_ids": ["CMH0001"],
+            "qc_cohort": [{"participant_id": "sub-CMH0001", "session_id": "ses-01"}],
+        }
+        captured = {}
+
+        monkeypatch.setattr(main, "get_cli_run_context", lambda: ctx)
+        monkeypatch.setattr(main.SessionManager, "init_session_state", lambda: None)
+        monkeypatch.setattr(main.SessionManager, "compact_duplicate_qc_records_if_needed", lambda: None)
+        monkeypatch.setattr(main.SessionManager, "get_qc_session_id", lambda: "20260911T193730Z")
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_id", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_label", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_checkpoint_dir", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "set_qc_session_active_path", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main.SessionManager, "get_current_page", lambda: 2)
+        monkeypatch.setattr(main.SessionManager, "set_current_page", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(main, "render_sidebar_cohort_subjects", lambda **kwargs: captured.setdefault("nav", kwargs))
+        monkeypatch.setattr(main, "app", lambda **kwargs: None)
+        monkeypatch.setattr(main.st, "session_state", {"current_page": 2})
+
+        main.main()
+
+        assert captured["nav"]["show_subject_filter"] is False
+        assert captured["nav"]["show_subject_list"] is False
+
     def test_parse_args_missing_required_argument(self):
         """Test parsing with missing required argument."""
         from main import parse_args

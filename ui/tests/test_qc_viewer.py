@@ -2,6 +2,7 @@
 
 import re
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -52,11 +53,43 @@ class TestCleanFilename:
     """Tests for compact tab label generation."""
 
     def test_default_qc_save_path_uses_absolute_output_dir(self, tmp_path, monkeypatch):
-        """The sidebar default should resolve relative CLI output_dir values to absolute paths."""
+        """The sidebar default should resolve relative CLI output_dir values under the requested output tree."""
         monkeypatch.chdir(tmp_path)
-        path = _default_qc_save_path("results/run")
-        expected = str((tmp_path / "results" / "run" / "rater_QC_status.tsv").resolve())
+        path = _default_qc_save_path("results/run", qc_task="anat_wf_qc")
+        expected = str((tmp_path / "results" / "run" / "rater_anat_wf_qc_status.tsv").resolve())
         assert path == expected
+
+    def test_qc_save_path_refreshes_when_cli_output_dir_changes(self, monkeypatch):
+        """A stale widget value should update when the next app run uses a different CLI output_dir."""
+        old_out = "/tmp/old_output"
+        new_out = "/tmp/new_output"
+        default_path = str((Path(new_out) / "rater1_anat_wf_qc_status.tsv").resolve())
+        state = {
+            "rater_id": "rater1",
+            "qc_save_path": str((Path(old_out) / "rater1_anat_wf_qc_status.tsv").resolve()),
+            "_qc_save_path_default": str((Path(old_out) / "rater1_anat_wf_qc_status.tsv").resolve()),
+        }
+        monkeypatch.setattr(st, "session_state", state)
+        monkeypatch.setattr(st, "caption", lambda *args, **kwargs: None)
+        monkeypatch.setattr(st, "divider", lambda *args, **kwargs: None)
+        monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
+        monkeypatch.setattr(st, "text_input", lambda *args, **kwargs: None)
+        monkeypatch.setattr(st, "info", lambda *args, **kwargs: None)
+        monkeypatch.setattr(st, "warning", lambda *args, **kwargs: None)
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=1,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            out_dir=new_out,
+            drop_duplicates=True,
+        )
+
+        assert state["qc_save_path"] == default_path
+        assert state["_qc_save_path_default"] == default_path
 
     def test_extracts_session_task_run_tokens(self):
         """Functional keys should prefer ses/task/run tokens."""
@@ -301,7 +334,7 @@ class TestSaveQcRecord:
             drop_duplicates=True,
         )
 
-        out_file = tmp_path / "rater1_QC_status.tsv"
+        out_file = tmp_path / "rater1_anat_wf_qc_status.tsv"
         assert out_file.exists()
         text = out_file.read_text(encoding="utf-8")
         assert "sub-CMH0001" in text
@@ -965,12 +998,90 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 3  # still incomplete (sub-CMH0002 unrated), must not jump ahead
         mock_rerun.assert_called_once()
 
-    def test_save_csv_button_calls_save_qc_record(self, autoplay_session_state, monkeypatch, tmp_path):
-        """Clicking Save QC should write current progress to disk without waiting for cohort completion."""
+    def test_save_progress_button_does_not_advance_to_congratulations_when_cohort_is_complete(
+        self, autoplay_session_state, monkeypatch, tmp_path
+    ):
+        """Only the confirm-and-next action may advance to the congratulations page."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 1
+        state["autoplay_enabled"] = False
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0003", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("save_progress"))
+        monkeypatch.setattr(st, "success", MagicMock())
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            participant_ids=["CMH0001", "CMH0002", "CMH0003"],
+            qc_cohort=qc_cohort,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        assert state["current_page"] == 1
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_button_does_not_advance_to_congratulations_when_cohort_is_complete(
+        self, autoplay_session_state, monkeypatch, tmp_path
+    ):
+        """Checkpoint creation is a side action and should not trigger congratulation-page navigation."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 1
+        state["autoplay_enabled"] = False
+
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0003", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        success_mock = MagicMock()
+        monkeypatch.setattr(st, "success", success_mock)
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            participant_ids=["CMH0001", "CMH0002", "CMH0003"],
+            qc_cohort=qc_cohort,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        assert state["current_page"] == 1
+        assert "_pending_checkpoint_msg" not in state
+        success_mock.assert_called_once()
+        mock_rerun.assert_not_called()
+
+    def test_save_progress_button_calls_save_qc_record(self, autoplay_session_state, monkeypatch, tmp_path):
+        """Clicking Save progress should write current progress and show feedback without forcing another click."""
         state, mock_rerun = autoplay_session_state
         state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
 
-        monkeypatch.setattr(st, "button", self._button_returns_true_for("pag_save_csv"))
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("save_progress"))
 
         qc_viewer_module._display_qc_pagination_controls(
             current_page=1,
@@ -983,12 +1094,12 @@ class TestDisplayQcPagination:
             drop_duplicates=True,
         )
 
-        out_file = tmp_path / "rater1_QC_status.tsv"
+        out_file = tmp_path / "rater1_anat_wf_qc_status.tsv"
         assert out_file.exists()
         text = out_file.read_text(encoding="utf-8")
         assert "sub-CMH0001" in text
         assert "PASS" in text
-        mock_rerun.assert_called_once()
+        mock_rerun.assert_not_called()
 
 
 # pure autoplay
