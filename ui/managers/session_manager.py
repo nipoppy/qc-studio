@@ -39,6 +39,11 @@ class SessionManager:
             "autoplay_duration": 5,
             SESSION_KEYS["iqm_view_selection"]: "Overview",
             SESSION_KEYS["iqm_display_mode_selection"]: "Dataset",
+            "qc_session_id": "",
+            "qc_session_label": "",
+            "qc_session_started_at": "",
+            "qc_session_active_path": "",
+            "qc_session_checkpoint_dir": "",
         }
 
         for key, value in defaults.items():
@@ -54,7 +59,48 @@ class SessionManager:
     @staticmethod
     def set_rater_id(rater_id: str):
         """Set rater ID."""
-        st.session_state[SESSION_KEYS["rater_id"]] = rater_id
+        clean_rater_id = str(rater_id or "").strip().lower()
+        st.session_state[SESSION_KEYS["rater_id"]] = clean_rater_id
+
+    @staticmethod
+    def get_qc_session_id() -> str:
+        """Get the active QC rating-session identifier."""
+        return str(st.session_state.get("qc_session_id", "")).strip()
+
+    @staticmethod
+    def set_qc_session_id(qc_session_id: str):
+        """Set the active QC rating-session identifier."""
+        st.session_state["qc_session_id"] = str(qc_session_id or "").strip()
+
+    @staticmethod
+    def get_qc_session_label() -> str:
+        """Get the human-readable QC session label."""
+        return str(st.session_state.get("qc_session_label", "")).strip()
+
+    @staticmethod
+    def set_qc_session_label(label: str):
+        """Set the human-readable QC session label."""
+        st.session_state["qc_session_label"] = str(label or "").strip()
+
+    @staticmethod
+    def get_qc_session_active_path() -> str:
+        """Get the active session export path."""
+        return str(st.session_state.get("qc_session_active_path", "")).strip()
+
+    @staticmethod
+    def set_qc_session_active_path(path: str):
+        """Set the active session export path."""
+        st.session_state["qc_session_active_path"] = str(path or "").strip()
+
+    @staticmethod
+    def get_qc_session_checkpoint_dir() -> str:
+        """Get the checkpoint directory for the current QC session."""
+        return str(st.session_state.get("qc_session_checkpoint_dir", "")).strip()
+
+    @staticmethod
+    def set_qc_session_checkpoint_dir(path: str):
+        """Set the checkpoint directory for the current QC session."""
+        st.session_state["qc_session_checkpoint_dir"] = str(path or "").strip()
 
     @staticmethod
     def get_rater_experience() -> str:

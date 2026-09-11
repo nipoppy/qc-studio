@@ -57,11 +57,7 @@ def _build_logger(output_dir: Path) -> logging.Logger:
 
 
 def _flatten_item(item: dict) -> dict:
-    row = {
-        k: v
-        for k, v in item.items()
-        if k not in ("_meta", "_created", "_etag", "_links", "_updated", "provenance", "bids_meta")
-    }
+    row = {k: v for k, v in item.items() if k not in ("_meta", "_created", "_etag", "_links", "_updated", "provenance", "bids_meta")}
     bids_metadata = item.get("bids_meta", {})
     for field in BIDS_METADATA_FIELDS:
         row[field] = bids_metadata.get(field, "Unknown")
@@ -105,7 +101,7 @@ def iter_reference_pages(modality, logger: logging.Logger, failed_pages: list[di
                     break
 
                 if status_code is None or status_code >= 500:
-                    sleep_s = BACKOFF_BASE_SECONDS ** attempt
+                    sleep_s = BACKOFF_BASE_SECONDS**attempt
                     logger.warning(
                         "Attempt %s/%s failed on page %s (status=%s). Retrying in %ss...",
                         attempt,
@@ -149,25 +145,25 @@ def iter_reference_pages(modality, logger: logging.Logger, failed_pages: list[di
 
         page += 1
         time.sleep(REQUEST_DELAY_SECONDS)
-   
+
 
 def _read_reference_json(json_path, save_path=None):
-    #this should be used once for the retrived json file
+    # this should be used once for the retrived json file
 
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         data = json.load(f)
     items = data.get("_items", [])
     rows = []
     for item in items:
-        row = {k:v for k,v in item.items() if k not in ("_id", "_created", "_etag", "_links", "_updated", "provenance", "bids_meta")}
+        row = {k: v for k, v in item.items() if k not in ("_id", "_created", "_etag", "_links", "_updated", "provenance", "bids_meta")}
         bids_metadata = item.get("bids_meta", {})
         row["Manufacturer"] = bids_metadata.get("Manufacturer", "Unknown")
         row["MagneticFieldStrength"] = bids_metadata.get("MagneticFieldStrength", "Unknown")
         rows.append(row)
-    
+
     if save_path:
         df = pd.DataFrame(rows)
-        df.to_csv(save_path, sep='\t', index=False)
+        df.to_csv(save_path, sep="\t", index=False)
     return pd.DataFrame(rows)
 
 
@@ -194,9 +190,9 @@ if __name__ == "__main__":
             page_df = pd.DataFrame(page_rows)
             page_df.to_csv(
                 save_path,
-                sep='\t',
+                sep="\t",
                 index=False,
-                mode='a',
+                mode="a",
                 header=not wrote_header,
             )
             wrote_header = True
@@ -211,7 +207,7 @@ if __name__ == "__main__":
                 )
 
         if not wrote_header:
-            pd.DataFrame().to_csv(save_path, sep='\t', index=False)
+            pd.DataFrame().to_csv(save_path, sep="\t", index=False)
 
         logger.info("Saved %s records for %s to %s", total_rows, modality, save_path)
 

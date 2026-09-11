@@ -32,6 +32,8 @@ def render_sidebar_cohort_subjects(
     session_id: str = "ses-01",
     prepend_navigation: bool = False,
     navigation_kwargs: dict | None = None,
+    show_subject_filter: bool = True,
+    show_subject_list: bool = True,
 ) -> None:
     """Add sidebar QC navigation, then a scrollable subject list.
 
@@ -45,6 +47,8 @@ def render_sidebar_cohort_subjects(
     When ``entrypoint_rel_path`` is set (e.g. ``\"main.py\"``), uses ``st.switch_page``.
     """
     if not SessionManager.is_landing_page_complete():
+        return
+    if not show_subject_filter and not show_subject_list:
         return
 
     tasks_eff = list(qc_tasks) if qc_tasks else [qc_task]
@@ -69,23 +73,26 @@ def render_sidebar_cohort_subjects(
 
             _display_qc_pagination_header(kw["current_page"], kw["total_participants"])
 
-        # Search is instantiated before Play/Previous/Next so Streamlit does not
-        # blank it. JS then places the box immediately above the subject scroller.
-        query = _render_subject_search()
-        snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
-        if snap_to is not None:
-            SessionManager.set_current_page(snap_to)
-            st.rerun()
+        query = ""
+        if show_subject_filter:
+            # Search is instantiated before Play/Previous/Next so Streamlit does not
+            # blank it. JS then places the box immediately above the subject scroller.
+            query = _render_subject_search()
+            snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
+            if snap_to is not None:
+                SessionManager.set_current_page(snap_to)
+                st.rerun()
         if kw:
             _display_qc_pagination_controls(**kw)
             st.divider()
-        _render_subject_list(
-            entries=entries,
-            session_id=session_id,
-            tasks_eff=tasks_eff,
-            entrypoint_rel_path=entrypoint_rel_path,
-            query=query,
-        )
+        if show_subject_list:
+            _render_subject_list(
+                entries=entries,
+                session_id=session_id,
+                tasks_eff=tasks_eff,
+                entrypoint_rel_path=entrypoint_rel_path,
+                query=query,
+            )
         if st.session_state.get(PENDING_SIDEBAR_RERUN_KEY):
             del st.session_state[PENDING_SIDEBAR_RERUN_KEY]
             st.rerun()
