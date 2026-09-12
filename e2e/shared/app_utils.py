@@ -103,7 +103,13 @@ def get_form_submit_button(page: Page, label: LabelType) -> Locator:
 
 
 def get_file_uploader(page: Page) -> Locator:
-    """The file uploader's hidden <input type=file>, ready for set_input_files."""
+    """The file uploader's hidden <input type=file>, ready for set_input_files.
+
+    UNVERIFIED: every other test id in this file was taken from Streamlit's own
+    test suite, but that suite has no file-uploader helper, so this one is
+    inferred. If CSV upload tests can't find the input, this is the first line
+    to check -- inspect the DOM of st.file_uploader in the running app.
+    """
     return page.get_by_test_id("stFileUploaderDropzoneInput")
 
 

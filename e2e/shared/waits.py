@@ -27,8 +27,6 @@ Adapted from streamlit/streamlit's own e2e_playwright/conftest.py.
 
 from __future__ import annotations
 
-from typing import Callable
-
 from playwright.sync_api import Page, expect
 
 DEFAULT_TIMEOUT_MS = 25_000
@@ -47,9 +45,7 @@ def wait_for_app_run(page: Page, initial_wait_ms: int = INITIAL_WAIT_MS) -> None
     page.wait_for_timeout(initial_wait_ms)
 
     # The websocket to the Streamlit server is up.
-    page.locator("[data-testid='stApp'][data-test-connection-state='CONNECTED']").wait_for(
-        state="attached", timeout=DEFAULT_TIMEOUT_MS
-    )
+    page.locator("[data-testid='stApp'][data-test-connection-state='CONNECTED']").wait_for(state="attached", timeout=DEFAULT_TIMEOUT_MS)
 
     # The script has finished running.
     page.locator("[data-testid='stApp'][data-test-script-state='notRunning']").wait_for(state="attached", timeout=DEFAULT_TIMEOUT_MS)
@@ -65,19 +61,3 @@ def wait_for_app_loaded(page: Page) -> None:
     """
     page.wait_for_selector("[data-testid='stAppViewContainer']", state="attached", timeout=30_000)
     wait_for_app_run(page)
-
-
-def wait_until(page: Page, condition: Callable[[], bool], timeout_ms: int = 5_000, interval_ms: int = 100) -> None:
-    """Poll `condition` until it returns True, or fail after `timeout_ms`.
-
-    An escape hatch for states the specific helpers don't cover. Prefer an
-    `expect(...)` assertion where one exists -- they give better failure
-    messages.
-    """
-    elapsed = 0
-    while elapsed < timeout_ms:
-        if condition():
-            return
-        page.wait_for_timeout(interval_ms)
-        elapsed += interval_ms
-    raise AssertionError(f"Condition was still false after {timeout_ms}ms")
