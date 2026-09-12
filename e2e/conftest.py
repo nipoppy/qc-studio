@@ -76,13 +76,39 @@ def app_port() -> int:
 
 @pytest.fixture(scope="module")
 def output_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Per-module output directory.
+    """Where the app under test writes its QC results.
 
-    Two jobs: it keeps test ratings out of the repository's real ./output
-    folder, and it gives export tests a directory they own, so asserting on
-    the written CSV is a legitimate end-to-end check.
+    Keeps test ratings out of the repository's real ./output folder, and gives
+    export tests a directory they own -- so asserting on the written CSV is a
+    legitimate end-to-end check.
+
+    Module-scoped of necessity: the app is launched with --output_dir fixed at
+    startup, and the server is module-scoped, so every test in a file shares
+    this directory. That means an export test can see files an earlier test in
+    the same file left behind -- use the `output_files` fixture below rather
+    than listing this directory directly.
     """
     return tmp_path_factory.mktemp("qc_output")
+
+
+@pytest.fixture
+def output_files(output_dir: Path):
+    """Callable returning the files *this test* created in `output_dir`.
+
+    Snapshots the directory before the test runs, so export assertions are
+    about this test's output and not a previous test's leftovers:
+
+        def test_export_writes_one_row_per_rating(app, output_files):
+            ...
+            written = output_files()
+            assert len(written) == 1
+    """
+
+    def _listing() -> set[Path]:
+        return set(output_dir.iterdir()) if output_dir.exists() else set()
+
+    before = _listing()
+    return lambda: _listing() - before
 
 
 def build_launch_command(config: QCAppConfig, port: int, output_dir: Path) -> list[str]:
