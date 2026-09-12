@@ -20,3 +20,6 @@ sample_data/bids/sub-CMH0001/**/*
 sample_data/bids/sub-CMH0001/ses-*/func/*
 !sample_data/bids/sub-CMH0001/ses-01/func/sub-CMH0001_ses-01_task-rest_run-1_bold.nii.gz
 !sample_data/bids/sub-CMH0001/ses-02/func/sub-CMH0001_ses-02_task-rest_run-1_bold.nii.gz
+
+# Personal, machine-specific agent notes
+CLAUDE.local.md
