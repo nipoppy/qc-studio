@@ -67,13 +67,6 @@ never session state — the one exception being export, since the tests own
 **All selectors live in `shared/app_utils.py`.** Tests never call
 `page.locator(...)`. One file to fix when Streamlit changes.
 
-## Not to be confused
-
-`playwright-practice/` is a separate TypeScript Playwright project targeting a
-public demo site, kept as personal practice. Unrelated to `e2e/`; leave it
-alone. `.venv-agent/` is a throwaway virtualenv (gitignored), not the project
-environment — that's `.venv/`.
-
 ## References
 
 - `references/status.md` — what is built, what is verified, what to do next.
