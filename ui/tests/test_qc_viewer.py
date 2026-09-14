@@ -1121,22 +1121,24 @@ class TestDisplayQcPagination:
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_path = checkpoint_dir / "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
-        pd.DataFrame([
-            {
-                "pipeline": "fmriprep",
-                "qc_task": "anat_wf_qc",
-                "participant_id": "sub-CMH0001",
-                "session_id": "ses-01",
-                "task_id": "",
-                "run_id": "",
-                "timestamp": "2024-01-01 00:00:00",
-                "rater_id": "rater1",
-                "rater_experience": "novice",
-                "rater_fatigue": "low",
-                "final_qc": "PASS",
-                "notes": "",
-            }
-        ]).to_csv(checkpoint_path, sep="\t", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "pipeline": "fmriprep",
+                    "qc_task": "anat_wf_qc",
+                    "participant_id": "sub-CMH0001",
+                    "session_id": "ses-01",
+                    "task_id": "",
+                    "run_id": "",
+                    "timestamp": "2024-01-01 00:00:00",
+                    "rater_id": "rater1",
+                    "rater_experience": "novice",
+                    "rater_fatigue": "low",
+                    "final_qc": "PASS",
+                    "notes": "",
+                }
+            ]
+        ).to_csv(checkpoint_path, sep="\t", index=False)
 
         monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
         monkeypatch.setattr(st, "success", MagicMock())
@@ -1188,22 +1190,24 @@ class TestDisplayQcPagination:
         checkpoint_dir = tmp_path / "checkpoints"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_path = checkpoint_dir / "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
-        pd.DataFrame([
-            {
-                "pipeline": "fmriprep",
-                "qc_task": "anat_wf_qc",
-                "participant_id": "sub-CMH0001",
-                "session_id": "ses-01",
-                "task_id": "",
-                "run_id": "",
-                "timestamp": "2024-01-01 00:00:00",
-                "rater_id": "rater1",
-                "rater_experience": "novice",
-                "rater_fatigue": "low",
-                "final_qc": "PASS",
-                "notes": "",
-            }
-        ]).to_csv(checkpoint_path, sep="\t", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "pipeline": "fmriprep",
+                    "qc_task": "anat_wf_qc",
+                    "participant_id": "sub-CMH0001",
+                    "session_id": "ses-01",
+                    "task_id": "",
+                    "run_id": "",
+                    "timestamp": "2024-01-01 00:00:00",
+                    "rater_id": "rater1",
+                    "rater_experience": "novice",
+                    "rater_fatigue": "low",
+                    "final_qc": "PASS",
+                    "notes": "",
+                }
+            ]
+        ).to_csv(checkpoint_path, sep="\t", index=False)
 
         refreshed = QCRecord(
             participant_id="sub-CMH0001",
