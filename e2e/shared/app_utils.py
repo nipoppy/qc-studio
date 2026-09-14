@@ -141,17 +141,28 @@ def fill_text_input(page: Page, label: LabelType, value: str) -> None:
 
 
 def check_checkbox(page: Page, label: LabelType) -> None:
-    """Tick a checkbox if it isn't already ticked, then wait for the rerun."""
-    checkbox = get_checkbox(page, label).locator("input")
+    """Tick a checkbox if it isn't already ticked, then wait for the rerun.
+
+    Streamlit positions the native `<input>` off-screen (its styled `<label>`
+    sibling is what's shown), which fails Playwright's actionability checks
+    even with force=True. Clicking the visible `<label>` instead lets the
+    browser's own label-forwards-to-input behaviour toggle it, which is what
+    actually notifies Streamlit -- a raw dispatch_event on the hidden input
+    changes its DOM `checked` property but never reaches the app's session
+    state.
+    """
+    container = get_checkbox(page, label)
+    checkbox = container.locator("input")
     if not checkbox.is_checked():
-        checkbox.check()
+        container.locator("label").click()
         wait_for_app_run(page)
 
 
 def uncheck_checkbox(page: Page, label: LabelType) -> None:
-    checkbox = get_checkbox(page, label).locator("input")
+    container = get_checkbox(page, label)
+    checkbox = container.locator("input")
     if checkbox.is_checked():
-        checkbox.uncheck()
+        container.locator("label").click()
         wait_for_app_run(page)
 
 
@@ -171,11 +182,32 @@ def upload_file(page: Page, file_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+#: st.error/st.warning/st.success auto-extract a single leading emoji from
+#: the message and render it as a separate icon, stripping it from the text
+#: node -- so a constant like ERROR_MESSAGES["no_panel_selected"] (which is
+#: authored with that emoji baked in) never appears verbatim in the DOM.
+_LEADING_EMOJI_RE = re.compile(r"^[\U0001F300-\U0001FAFF☀-➿←-⇿️‍]+\s*")
+
+
 def expect_text_visible(page: Page, text: LabelType) -> None:
     """Assert some copy is on screen.
 
     Pass the value from ui/constants.py, never a hand-typed string:
 
         expect_text_visible(app, ERROR_MESSAGES["invalid_rater_id"])
+
+    Handles messages authored with a leading emoji (e.g.
+    ERROR_MESSAGES["no_panel_selected"]) that Streamlit strips out and
+    renders as a separate icon instead.
     """
-    expect(page.get_by_text(text)).to_be_visible()
+    if isinstance(text, re.Pattern):
+        expect(page.get_by_text(text)).to_be_visible()
+        return
+
+    stripped = _LEADING_EMOJI_RE.sub("", text)
+    if stripped == text:
+        expect(page.get_by_text(text)).to_be_visible()
+        return
+
+    pattern = re.compile("|".join(re.escape(candidate) for candidate in (text, stripped)))
+    expect(page.get_by_text(pattern)).to_be_visible()
