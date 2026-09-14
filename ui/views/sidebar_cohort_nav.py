@@ -65,6 +65,8 @@ def render_sidebar_cohort_subjects(
 
     with st.sidebar:
         kw = navigation_kwargs if (prepend_navigation and navigation_kwargs) else None
+        query = ""
+
         if kw:
             from components.qc_viewer import (
                 _display_qc_pagination_controls,
@@ -73,18 +75,19 @@ def render_sidebar_cohort_subjects(
 
             _display_qc_pagination_header(kw["current_page"], kw["total_participants"])
 
-        if kw:
-            _display_qc_pagination_controls(**kw)
-
-        query = ""
         if show_subject_filter:
-            # Search is instantiated after navigation so the subjects label sits directly
-            # above the filter box while the field still persists across reruns.
+            # Initialize the subject-search state before any sidebar controls read it so the
+            # persisted filter exists during navigation callbacks and the search box remains
+            # stable across reruns.
             query = _render_subject_search()
             snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
             if snap_to is not None:
                 SessionManager.set_current_page(snap_to)
                 st.rerun()
+
+        if kw:
+            _display_qc_pagination_controls(**kw)
+
         if show_subject_list:
             _render_subject_list(
                 entries=entries,
