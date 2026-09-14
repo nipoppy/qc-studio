@@ -16,8 +16,7 @@ nothing there proves the button is connected to the check.
 
 ### Given
 
-A rater on a freshly loaded landing page, with at least one display panel
-selected (so that panel validation is not what blocks them).
+A rater on a freshly loaded landing page.
 
 ### When
 
@@ -46,3 +45,7 @@ The rater form is still on screen -- the app did not advance to the QC viewer.
   -- `st.form_submit_button` renders with a different test id.
 - Panel selection lives in the middle column and is validated separately
   (`ERROR_MESSAGES["no_panel_selected"]`); that is spec 002, not this one.
+- The rater ID check runs before the panel check (`if not rater_id_clean: ...
+  elif panel_count == 0: ...` in `views/landing_page.py`), so an empty rater ID
+  always shows `invalid_rater_id` regardless of panel state -- no panel needs
+  to be selected for this spec.
