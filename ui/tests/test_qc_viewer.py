@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 import streamlit as st
 
@@ -22,6 +23,7 @@ from components.qc_viewer import (
     _record_all_qc_tasks,
 )
 from managers.session_manager import SessionManager
+from models import QCRecord
 
 pytestmark = pytest.mark.unit
 
@@ -874,8 +876,8 @@ class TestDisplayQcPagination:
         st.info.assert_not_called()
         mock_rerun.assert_called_once()
 
-    def test_save_qc_record_warns_when_filtered_subject_list_is_complete_but_cohort_is_not(self, autoplay_session_state, monkeypatch):
-        """When the active filter completes, tell the user to clear the filter for any remaining cohort work."""
+    def test_save_qc_record_does_not_warn_when_filtered_subject_list_is_complete_but_cohort_is_not(self, autoplay_session_state, monkeypatch):
+        """Save progress should not trigger the filtered-complete navigation warning."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 2
         state["sidebar_subject_search"] = "ses-02"
@@ -899,9 +901,7 @@ class TestDisplayQcPagination:
             qc_cohort=qc_cohort,
         )
 
-        st.info.assert_called_once_with(
-            "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-        )
+        st.info.assert_not_called()
         mock_rerun.assert_called_once()
 
     def test_confirm_and_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
@@ -1071,7 +1071,7 @@ class TestDisplayQcPagination:
 
         assert state["current_page"] == 1
         assert "_pending_checkpoint_msg" not in state
-        success_mock.assert_called_once()
+        success_mock.assert_not_called()
         mock_rerun.assert_not_called()
 
     def test_save_progress_button_calls_save_qc_record(self, autoplay_session_state, monkeypatch, tmp_path):
@@ -1098,6 +1098,150 @@ class TestDisplayQcPagination:
         assert "sub-CMH0001" in text
         assert "PASS" in text
         mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_does_not_duplicate_when_records_match_last_checkpoint(self, autoplay_session_state, monkeypatch, tmp_path):
+        """If the QC records are unchanged since the last checkpoint, do not create a duplicate backup."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "rater1"
+
+        record = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-01 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="",
+        )
+        SessionManager.set_qc_records([record])
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+        pd.DataFrame([
+            {
+                "pipeline": "fmriprep",
+                "qc_task": "anat_wf_qc",
+                "participant_id": "sub-CMH0001",
+                "session_id": "ses-01",
+                "task_id": "",
+                "run_id": "",
+                "timestamp": "2024-01-01 00:00:00",
+                "rater_id": "rater1",
+                "rater_experience": "novice",
+                "rater_fatigue": "low",
+                "final_qc": "PASS",
+                "notes": "",
+            }
+        ]).to_csv(checkpoint_path, sep="\t", index=False)
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        monkeypatch.setattr(st, "success", MagicMock())
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            participant_ids=["CMH0001", "CMH0002", "CMH0003"],
+            qc_cohort=[
+                {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+                {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+                {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            ],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        assert qc_viewer_module._checkpoint_contents_match_records(
+            SessionManager.get_latest_qc_records_per_dedup(None),
+            str(tmp_path),
+            "ses-01",
+        )
+        assert len(list(checkpoint_dir.glob("*.tsv"))) == 1
+
+    def test_checkpoint_guard_ignores_refresh_timestamps_when_qc_content_is_unchanged(self, autoplay_session_state, tmp_path):
+        """Saving progress can refresh timestamps without representing new QC content; the checkpoint guard should ignore that."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "rater1"
+
+        record = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-01 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="",
+        )
+        SessionManager.set_qc_records([record])
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+        pd.DataFrame([
+            {
+                "pipeline": "fmriprep",
+                "qc_task": "anat_wf_qc",
+                "participant_id": "sub-CMH0001",
+                "session_id": "ses-01",
+                "task_id": "",
+                "run_id": "",
+                "timestamp": "2024-01-01 00:00:00",
+                "rater_id": "rater1",
+                "rater_experience": "novice",
+                "rater_fatigue": "low",
+                "final_qc": "PASS",
+                "notes": "",
+            }
+        ]).to_csv(checkpoint_path, sep="\t", index=False)
+
+        refreshed = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-02 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="",
+        )
+        SessionManager.set_qc_records([refreshed])
+
+        assert qc_viewer_module._checkpoint_contents_match_records(
+            SessionManager.get_latest_qc_records_per_dedup(None),
+            str(tmp_path),
+            "ses-01",
+        )
+
+    def test_default_checkpoint_path_uses_single_timestamp_without_pipeline_name(self, autoplay_session_state, tmp_path):
+        """Checkpoint snapshots should use a compact rater/task/timestamp naming pattern."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "Rater1"
+
+        path = qc_viewer_module._default_qc_checkpoint_path(
+            str(tmp_path),
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            qc_session_id="ses-01",
+            timestamp="20240102T030405Z",
+        )
+
+        expected_name = "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+        assert Path(path).name == expected_name
+        assert "fmriprep" not in Path(path).name
+        assert Path(path).name.count("20240102T030405Z") == 1
 
 
 # pure autoplay

@@ -73,18 +73,18 @@ def render_sidebar_cohort_subjects(
 
             _display_qc_pagination_header(kw["current_page"], kw["total_participants"])
 
+        if kw:
+            _display_qc_pagination_controls(**kw)
+
         query = ""
         if show_subject_filter:
-            # Search is instantiated before Play/Previous/Next so Streamlit does not
-            # blank it. JS then places the box immediately above the subject scroller.
+            # Search is instantiated after navigation so the subjects label sits directly
+            # above the filter box while the field still persists across reruns.
             query = _render_subject_search()
             snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
             if snap_to is not None:
                 SessionManager.set_current_page(snap_to)
                 st.rerun()
-        if kw:
-            _display_qc_pagination_controls(**kw)
-            st.divider()
         if show_subject_list:
             _render_subject_list(
                 entries=entries,
@@ -138,11 +138,24 @@ def _enable_live_subject_search() -> None:
             const inputWrap = doc.querySelector(".st-key-sidebar_subject_search_input");
             const listBtn = doc.querySelector('[class*="st-key-sidebar_cohort_nav_"]');
             if (!inputWrap || !listBtn) return;
+            const textInput = inputWrap.closest('.stTextInput, [data-testid="stTextInput"]');
+            if (textInput) {
+              textInput.style.marginTop = "0";
+              textInput.style.marginBottom = "0.1rem";
+            }
+            const inputField = inputWrap.closest('.stTextInput input');
+            if (inputField) {
+              inputField.style.marginBottom = "0";
+            }
             const listWrap = listBtn.closest('[data-testid="stLayoutWrapper"]');
             if (!listWrap || !listWrap.parentNode) return;
             const nodes = [];
             const prev = inputWrap.previousElementSibling;
-            if (prev && prev.querySelector('[data-testid="stCaption"]')) nodes.push(prev);
+            if (prev && prev.querySelector('[data-testid="stCaption"]')) {
+              prev.style.marginTop = "0";
+              prev.style.marginBottom = "0.1rem";
+              nodes.push(prev);
+            }
             nodes.push(inputWrap);
             const after = inputWrap.nextElementSibling;
             if (after && after.querySelector("iframe")) nodes.push(after);

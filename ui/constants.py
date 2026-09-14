@@ -140,7 +140,7 @@ MESSAGES = {
     "play_button": "▶️ Play",
     "pause_button": "⏸️ Pause",
     "back_landing_button": "🏠 Back to Landing Page",
-    "sidebar_subjects_header": "Subjects",
+    "sidebar_subjects_header": "QC subject list",
     "sidebar_subjects_search": "Search subjects",
     "sidebar_subjects_search_placeholder": "Filter by subject or session",
     "sidebar_subjects_search_empty": "No subjects match this search.",
@@ -191,13 +191,15 @@ SUCCESS_MESSAGES = {
     "csv_loaded": "✅ Loaded {count} QC records from {filename}",
     "records_exported": "✅ All QC results exported to: {path}",
     "records_loaded": "✅ Loaded {count} QC records into session!",
-    "records_saved": "✅ QC results saved to: {path}",
+    "records_saved": "✅ QC results saved to output_dir: {path}",
+    "checkpoint_saved": "✅ Checkpoint saved to output_dir/checkpoints",
 }
 
 # Info messages
 INFO_MESSAGES = {
     "proceed_with_form": "You can now proceed with the rater form on the left to continue QC.",
     "no_export_records": "No QC records to export.",
+    "checkpoint_unchanged": "No QC changes since the last checkpoint were detected, so no new checkpoint was created.",
     "rater_info_extracted": "📋 Rater information extracted:",
     "rater_id_prefix": "- **Rater ID:** {id}",
     "experience_prefix": "- **Experience:** {exp}",
