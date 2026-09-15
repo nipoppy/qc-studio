@@ -429,10 +429,19 @@ def _notes_widget_key(qc_task: str, nver: int) -> str:
 
 
 def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
-    """Callback to save rating and notes when changed."""
+    """Save rating and notes as soon as either widget changes.
+
+    Used by both the rating radio and the notes box so a later forced page jump
+    (sidebar search, autoplay, subject-list click) cannot drop unsaved notes.
+    """
     rating = st.session_state.get(_rating_widget_key(qc_task, rver))
     notes = st.session_state.get(_notes_widget_key(qc_task, nver), "")
     _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
+
+
+def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
+    """Same save path as ``_on_rating_change``; named for the notes widget callback."""
+    _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver)
 
 
 def _display_qc_rating_for_task(
@@ -472,6 +481,8 @@ def _display_qc_rating_for_task(
         value=initial_notes,
         key=_notes_widget_key(qc_task, nver),
         height=notes_height,
+        on_change=_on_notes_change,
+        args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
     )
 
 
@@ -789,6 +800,7 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_
         rater_id=SessionManager.get_rater_id(),
         rater_experience=SessionManager.get_rater_experience(),
         rater_fatigue=SessionManager.get_rater_fatigue(),
+        rater_screen_size=SessionManager.get_rater_screen_size(),
         final_qc=rating,
         notes=notes,
     )
