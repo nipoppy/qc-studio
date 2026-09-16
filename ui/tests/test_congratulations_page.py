@@ -44,6 +44,16 @@ def test_require_overwrite_confirmation_allows_confirmed_overwrite(tmp_path):
         assert "_pending_overwrite_path" not in state
 
 
+def test_overwrite_confirm_button_resets_pending_state_after_export(tmp_path):
+    existing = tmp_path / "existing.tsv"
+    existing.write_text("already here")
+    state = {"_pending_overwrite_path": str(existing)}
+
+    with patch.object(st, "session_state", state):
+        assert _require_overwrite_confirmation(existing, "Exported QC results") is True
+        assert "_pending_overwrite_path" not in state
+
+
 def test_resolve_congrats_export_file_path_honors_custom_file_path(tmp_path):
     custom_file = tmp_path / "custom" / "QC_status.csv"
     resolved = _resolve_congrats_export_file_path(str(tmp_path), "rater42", str(custom_file))

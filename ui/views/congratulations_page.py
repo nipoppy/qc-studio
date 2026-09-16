@@ -182,6 +182,7 @@ def show_congratulations_page(
         if st.session_state.get(OVERWRITE_CONFIRMATION_PATH_KEY) == str(export_target):
             st.warning(f"⚠️ Existing export file will be overwritten: {export_target}")
             if st.button("Overwrite existing file", key="confirm_congrats_overwrite", type="primary", width="stretch"):
+                st.session_state.pop(OVERWRITE_CONFIRMATION_PATH_KEY, None)
                 export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
                 _export_qc_results(
                     rater_id,

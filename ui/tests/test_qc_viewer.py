@@ -61,37 +61,13 @@ class TestCleanFilename:
         expected = str((tmp_path / "results" / "run" / "rater_anat_wf_qc_status.tsv").resolve())
         assert path == expected
 
-    def test_qc_save_path_refreshes_when_cli_output_dir_changes(self, monkeypatch):
-        """A stale widget value should update when the next app run uses a different CLI output_dir."""
-        old_out = "/tmp/old_output"
+    def test_congrats_export_path_uses_current_cli_output_dir(self, monkeypatch):
+        """The final export default should follow the active CLI output_dir rather than any stale session path."""
         new_out = "/tmp/new_output"
-        default_path = str((Path(new_out) / "rater1_anat_wf_qc_status.tsv").resolve())
-        state = {
-            "rater_id": "rater1",
-            "qc_save_path": str((Path(old_out) / "rater1_anat_wf_qc_status.tsv").resolve()),
-            "_qc_save_path_default": str((Path(old_out) / "rater1_anat_wf_qc_status.tsv").resolve()),
-        }
+        expected = str((Path(new_out) / "rater1_all_tasks_status.tsv").resolve())
+        state = {"rater_id": "rater1"}
         monkeypatch.setattr(st, "session_state", state)
-        monkeypatch.setattr(st, "caption", lambda *args, **kwargs: None)
-        monkeypatch.setattr(st, "divider", lambda *args, **kwargs: None)
-        monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
-        monkeypatch.setattr(st, "text_input", lambda *args, **kwargs: None)
-        monkeypatch.setattr(st, "info", lambda *args, **kwargs: None)
-        monkeypatch.setattr(st, "warning", lambda *args, **kwargs: None)
-
-        qc_viewer_module._display_qc_pagination_controls(
-            current_page=1,
-            total_participants=1,
-            participant_id="sub-CMH0001",
-            session_id="ses-01",
-            qc_pipeline="fmriprep",
-            qc_tasks=["anat_wf_qc"],
-            out_dir=new_out,
-            drop_duplicates=True,
-        )
-
-        assert state["qc_save_path"] == default_path
-        assert state["_qc_save_path_default"] == default_path
+        assert qc_viewer_module._default_qc_save_path(new_out, qc_task="all") == expected
 
     def test_extracts_session_task_run_tokens(self):
         """Functional keys should prefer ses/task/run tokens."""
@@ -1074,12 +1050,14 @@ class TestDisplayQcPagination:
         success_mock.assert_not_called()
         mock_rerun.assert_not_called()
 
-    def test_save_progress_button_calls_save_qc_record(self, autoplay_session_state, monkeypatch, tmp_path):
-        """Clicking Save progress should write current progress and show feedback without forcing another click."""
+    def test_create_checkpoint_button_shows_output_dir_above_button(self, autoplay_session_state, monkeypatch, tmp_path):
+        """The selected output directory should be visible directly above the checkpoint button."""
         state, mock_rerun = autoplay_session_state
-        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
-
-        monkeypatch.setattr(st, "button", self._button_returns_true_for("save_progress"))
+        caption_mock = MagicMock()
+        monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
+        monkeypatch.setattr(st, "caption", caption_mock)
+        monkeypatch.setattr(st, "info", MagicMock())
+        monkeypatch.setattr(st, "markdown", MagicMock())
 
         qc_viewer_module._display_qc_pagination_controls(
             current_page=1,
@@ -1092,11 +1070,32 @@ class TestDisplayQcPagination:
             drop_duplicates=True,
         )
 
-        out_file = tmp_path / "rater1_anat_wf_qc_status.tsv"
-        assert out_file.exists()
-        text = out_file.read_text(encoding="utf-8")
-        assert "sub-CMH0001" in text
-        assert "PASS" in text
+        caption_mock.assert_any_call(f"Output dir: {Path(tmp_path).resolve()}")
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_button_creates_backup_for_current_qc_records(self, autoplay_session_state, monkeypatch, tmp_path):
+        """The sidebar checkpoint action should back up current QC records to the configured output_dir/checkpoints folder."""
+        state, mock_rerun = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        monkeypatch.setattr(st, "info", MagicMock())
+        monkeypatch.setattr(st, "markdown", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        assert any(checkpoint_dir.glob("*.tsv"))
         mock_rerun.assert_not_called()
 
     def test_create_checkpoint_does_not_duplicate_when_records_match_last_checkpoint(self, autoplay_session_state, monkeypatch, tmp_path):
@@ -1228,6 +1227,25 @@ class TestDisplayQcPagination:
             str(tmp_path),
             "ses-01",
         )
+
+    def test_checkpoint_path_uses_session_output_dir_when_out_dir_is_not_explicit(self, autoplay_session_state, tmp_path):
+        """Checkpoint snapshots should honor the active user-selected output directory even when callers omit out_dir."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "Rater1"
+
+        custom_output = tmp_path / "custom_output"
+        SessionManager.set_qc_session_checkpoint_dir(str((custom_output / "checkpoints").resolve()))
+
+        path = qc_viewer_module._default_qc_checkpoint_path(
+            None,
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            qc_session_id="ses-01",
+            timestamp="20240102T030405Z",
+        )
+
+        assert Path(path).parent == custom_output / "checkpoints"
+        assert Path(path).name == "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
 
     def test_default_checkpoint_path_uses_single_timestamp_without_pipeline_name(self, autoplay_session_state, tmp_path):
         """Checkpoint snapshots should use a compact rater/task/timestamp naming pattern."""

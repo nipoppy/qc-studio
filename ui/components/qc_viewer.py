@@ -650,7 +650,19 @@ def _default_qc_save_path(
 
 def _checkpoint_dir_for_session(out_dir: str | None, qc_session_id: str | None = None) -> Path:
     """Directory for timestamped checkpoint snapshots associated with a QC session."""
-    base_dir = _resolve_output_base_dir(out_dir)
+    if out_dir and str(out_dir).strip():
+        base_dir = _resolve_output_base_dir(out_dir)
+        checkpoint_dir = base_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoint_dir.resolve()
+
+    session_dir = SessionManager.get_qc_session_checkpoint_dir()
+    if session_dir:
+        checkpoint_dir = Path(session_dir).expanduser().resolve()
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoint_dir
+
+    base_dir = _resolve_output_base_dir(None)
     checkpoint_dir = base_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     return checkpoint_dir.resolve()
@@ -932,77 +944,31 @@ def _display_qc_pagination_controls(
         _render_previous_page_button(prev_page)
 
     active_task_label = "all" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else qc_pipeline)
-    default_save_path = _default_qc_save_path(
-        out_dir,
-        qc_pipeline=qc_pipeline,
-        qc_task=active_task_label,
-        qc_session_id=SessionManager.get_qc_session_id(),
-    )
-    if QC_SAVE_PATH_KEY not in st.session_state:
-        st.session_state[QC_SAVE_PATH_KEY] = default_save_path
-        st.session_state[QC_SAVE_PATH_DEFAULT_KEY] = default_save_path
-    else:
-        prev_default = st.session_state.get(QC_SAVE_PATH_DEFAULT_KEY)
-        current_value = st.session_state.get(QC_SAVE_PATH_KEY, "")
-        if _should_refresh_qc_save_path_widget(current_value, prev_default, default_save_path):
-            st.session_state[QC_SAVE_PATH_KEY] = default_save_path
-        st.session_state[QC_SAVE_PATH_DEFAULT_KEY] = default_save_path
-    st.caption(f"Default output dir: {out_dir}")
-    st.text_input(
-        "QC status file path",
-        key=QC_SAVE_PATH_KEY,
-        help="Active QC session export. This is the main save file and will warn before overwriting.",
-    )
 
-    save_col, checkpoint_col = st.columns(2)
-    with save_col:
-        if st.button(
-            MESSAGES["save_progress_button"],
-            width="stretch",
-            key="save_progress",
-            help=MESSAGES["save_progress_help"],
-        ):
-            _save_qc_record(
-                participant_id=participant_id,
-                session_id=session_id,
-                qc_pipeline=qc_pipeline,
-                qc_tasks=qc_tasks,
-                total_participants=total_participants,
-                participant_ids=participant_ids,
-                qc_cohort=qc_cohort,
+    resolved_out_dir = Path(out_dir).expanduser().resolve() if out_dir else Path.cwd().resolve()
+    st.caption(f"Output dir: {resolved_out_dir}")
+
+    if st.button(
+        MESSAGES["create_checkpoint_button"],
+        width="stretch",
+        key="create_checkpoint",
+        help=MESSAGES["create_checkpoint_help"],
+    ):
+        records = SessionManager.get_latest_qc_records_per_dedup(None)
+        if not records:
+            st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["no_export_records"])
+        elif _checkpoint_contents_match_records(records, out_dir, SessionManager.get_qc_session_id()):
+            st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["checkpoint_unchanged"])
+        else:
+            checkpoint_path = _create_qc_checkpoint(
+                records=records,
                 out_dir=out_dir,
-                drop_duplicates=drop_duplicates,
-                save_file_path=st.session_state.get(QC_SAVE_PATH_KEY),
-                allow_overwrite=True,
-                trigger_rerun=False,
-                allow_completion_navigation=False,
+                qc_pipeline=qc_pipeline,
+                qc_task=active_task_label,
+                qc_session_id=SessionManager.get_qc_session_id(),
             )
+            st.session_state["_pending_checkpoint_msg"] = ("success", SUCCESS_MESSAGES["checkpoint_saved"].format(path=checkpoint_path))
 
-    with checkpoint_col:
-        if st.button(
-            MESSAGES["create_checkpoint_button"],
-            width="stretch",
-            key="create_checkpoint",
-            help=MESSAGES["create_checkpoint_help"],
-        ):
-            records = SessionManager.get_latest_qc_records_per_dedup(None)
-            if not records:
-                st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["no_export_records"])
-            elif _checkpoint_contents_match_records(records, out_dir, SessionManager.get_qc_session_id()):
-                st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["checkpoint_unchanged"])
-            else:
-                checkpoint_path = _create_qc_checkpoint(
-                    records=records,
-                    out_dir=out_dir,
-                    qc_pipeline=qc_pipeline,
-                    qc_task=active_task_label,
-                    qc_session_id=SessionManager.get_qc_session_id(),
-                )
-                st.session_state["_pending_checkpoint_msg"] = ("success", SUCCESS_MESSAGES["checkpoint_saved"].format(path=checkpoint_path))
-
-    if pending := st.session_state.pop(PENDING_QC_SAVE_MSG_KEY, None):
-        kind, msg = pending
-        _render_sidebar_status_banner(kind, msg)
     if pending := st.session_state.pop("_pending_checkpoint_msg", None):
         kind, msg = pending
         _render_sidebar_status_banner(kind, msg)

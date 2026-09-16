@@ -131,10 +131,8 @@ MESSAGES = {
     "qc_rating_header": "QC Rating",
     "qc_rating_prompt": "Rate this qc-task:",
     "qc_notes_prompt": "Notes (optional):",
-    "save_progress_button": "💾 Save progress",
-    "save_progress_help": "Save the current QC session to the active status file. This overwrites the existing file.",
     "create_checkpoint_button": "🏁 Create checkpoint",
-    "create_checkpoint_help": "Create a timestamped backup snapshot of the current QC records. Does not overwrite the active status file.",
+    "create_checkpoint_help": "Create a timestamped snapshot of the current QC records.",
     "confirm_next_button": "Confirm ✅️ and Next ▶️",
     "next_button": "Next ▶️",
     "play_button": "▶️ Play",
@@ -192,7 +190,7 @@ SUCCESS_MESSAGES = {
     "records_exported": "✅ All QC results exported to: {path}",
     "records_loaded": "✅ Loaded {count} QC records into session!",
     "records_saved": "✅ QC results saved to output_dir: {path}",
-    "checkpoint_saved": "✅ Checkpoint saved to output_dir/checkpoints",
+    "checkpoint_saved": "✅ Checkpoint saved to user specified <output_dir>/checkpoints",
 }
 
 # Info messages
