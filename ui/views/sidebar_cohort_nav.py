@@ -67,6 +67,9 @@ def render_sidebar_cohort_subjects(
         kw = navigation_kwargs if (prepend_navigation and navigation_kwargs) else None
         query = ""
 
+        if show_subject_filter:
+            st.session_state.setdefault(SESSION_KEYS["sidebar_subject_search"], "")
+
         if kw:
             from components.qc_viewer import (
                 _display_qc_pagination_controls,
@@ -75,18 +78,23 @@ def render_sidebar_cohort_subjects(
 
             _display_qc_pagination_header(kw["current_page"], kw["total_participants"])
 
+        if kw:
+            _display_qc_pagination_controls(**kw)
+
         if show_subject_filter:
-            # Initialize the subject-search state before any sidebar controls read it so the
-            # persisted filter exists during navigation callbacks and the search box remains
-            # stable across reruns.
-            query = _render_subject_search()
+            if st.session_state.get(SIDEBAR_SEARCH_HOLD_KEY):
+                query = get_subject_search_query()
+            else:
+                widget_query = st.session_state.get(SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY)
+                if widget_query is not None:
+                    query = str(widget_query)
+                    st.session_state[SESSION_KEYS["sidebar_subject_search"]] = query
+                else:
+                    query = get_subject_search_query()
             snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
             if snap_to is not None:
                 SessionManager.set_current_page(snap_to)
                 st.rerun()
-
-        if kw:
-            _display_qc_pagination_controls(**kw)
 
         if show_subject_list:
             _render_subject_list(
@@ -95,6 +103,7 @@ def render_sidebar_cohort_subjects(
                 tasks_eff=tasks_eff,
                 entrypoint_rel_path=entrypoint_rel_path,
                 query=query,
+                show_filter=show_subject_filter,
             )
         if st.session_state.get(PENDING_SIDEBAR_RERUN_KEY):
             del st.session_state[PENDING_SIDEBAR_RERUN_KEY]
@@ -127,72 +136,6 @@ def _hold_search_across_nav() -> None:
         st.session_state[SIDEBAR_SEARCH_HOLD_KEY] = True
     if st.session_state.get(SIDEBAR_SEARCH_HOLD_KEY):
         st.session_state[_SUBJECT_SEARCH_WIDGET_KEY] = persist
-
-
-def _enable_live_subject_search() -> None:
-    """Commit the search box on each keystroke and keep it above the subject list."""
-    st.components.v1.html(
-        """
-        <script>
-        (function() {
-          const doc = window.parent.document;
-          const placeholder = "Filter by subject or session";
-          const placeSearchAboveList = () => {
-            const inputWrap = doc.querySelector(".st-key-sidebar_subject_search_input");
-            const listBtn = doc.querySelector('[class*="st-key-sidebar_cohort_nav_"]');
-            if (!inputWrap || !listBtn) return;
-            const textInput = inputWrap.closest('.stTextInput, [data-testid="stTextInput"]');
-            if (textInput) {
-              textInput.style.marginTop = "0";
-              textInput.style.marginBottom = "0.1rem";
-            }
-            const inputField = inputWrap.closest('.stTextInput input');
-            if (inputField) {
-              inputField.style.marginBottom = "0";
-            }
-            const listWrap = listBtn.closest('[data-testid="stLayoutWrapper"]');
-            if (!listWrap || !listWrap.parentNode) return;
-            const nodes = [];
-            const prev = inputWrap.previousElementSibling;
-            if (prev && prev.querySelector('[data-testid="stCaption"]')) {
-              prev.style.marginTop = "0";
-              prev.style.marginBottom = "0.1rem";
-              nodes.push(prev);
-            }
-            nodes.push(inputWrap);
-            const after = inputWrap.nextElementSibling;
-            if (after && after.querySelector("iframe")) nodes.push(after);
-            const last = nodes[nodes.length - 1];
-            if (last.nextElementSibling === listWrap) return;
-            nodes.forEach((node) => listWrap.parentNode.insertBefore(node, listWrap));
-          };
-          const bind = () => {
-            placeSearchAboveList();
-            const el = Array.from(doc.querySelectorAll("input")).find(
-              (n) => n.getAttribute("placeholder") === placeholder
-            );
-            if (!el || el.dataset.qcLiveFilter === "1") return;
-            el.dataset.qcLiveFilter = "1";
-            let timer = null;
-            el.addEventListener("input", () => {
-              window.clearTimeout(timer);
-              timer = window.setTimeout(() => {
-                const start = el.selectionStart;
-                const end = el.selectionEnd;
-                el.blur();
-                el.focus();
-                try { el.setSelectionRange(start, end); } catch (err) {}
-              }, 80);
-            });
-          };
-          bind();
-          new MutationObserver(bind).observe(doc.body, { childList: true, subtree: true });
-        })();
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
 
 
 def _matching_subject_entries(entries: list, query: str, session_id: str) -> list[tuple[int, dict]]:
@@ -260,8 +203,8 @@ def _page_after_filter_change(entries: list, query: str, session_id: str, curren
 
 
 def _render_subject_search() -> str:
-    """Create the subject filter before any nav buttons and persist its value."""
-    st.caption(MESSAGES["sidebar_subjects_header"])
+    """Render the subject filter within the subject-list panel and persist its value."""
+    st.session_state.setdefault(SESSION_KEYS["sidebar_subject_search"], "")
     _hold_search_across_nav()
     query = st.text_input(
         MESSAGES["sidebar_subjects_search"],
@@ -269,7 +212,6 @@ def _render_subject_search() -> str:
         placeholder=MESSAGES["sidebar_subjects_search_placeholder"],
         label_visibility="collapsed",
     )
-    _enable_live_subject_search()
     query = "" if query is None else str(query)
     if st.session_state.get(SIDEBAR_SEARCH_HOLD_KEY):
         query = str(st.session_state.get(SESSION_KEYS["sidebar_subject_search"], "") or "")
@@ -285,11 +227,15 @@ def _render_subject_list(
     tasks_eff: list,
     entrypoint_rel_path: str | None,
     query: str,
+    show_filter: bool = True,
 ) -> None:
-    """Render the cohort subject buttons inside a fixed-height scroller."""
-    visible = _matching_subject_entries(entries, query, session_id)
+    """Render the subject filter and cohort buttons inside one fixed-height scroller panel."""
     current_page = SessionManager.get_current_page()
     with st.container(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True):
+        if show_filter:
+            st.caption(MESSAGES["sidebar_subjects_header"])
+            query = _render_subject_search()
+        visible = _matching_subject_entries(entries, query, session_id)
         if not visible:
             st.caption(MESSAGES["sidebar_subjects_search_empty"])
             return

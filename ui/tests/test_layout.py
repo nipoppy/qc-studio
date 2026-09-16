@@ -661,7 +661,7 @@ class TestSidebarCohortNavOrder:
 
         def controls(**kwargs):
             order.append(("controls", None))
-            assert mock_st.session_state[SESSION_KEYS["sidebar_subject_search"]] == "ses-01"
+            assert mock_st.session_state.get(SESSION_KEYS["sidebar_subject_search"], "") == ""
 
         with (
             patch("views.sidebar_cohort_nav.st", mock_st),
@@ -683,7 +683,7 @@ class TestSidebarCohortNavOrder:
             )
 
         names = [name for name, _ in order]
-        assert names[:4] == ["header", "caption", "search", "controls"]
+        assert names[:4] == ["header", "controls", "caption", "search"]
         mock_st.container.assert_any_call(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True)
         mock_st.caption.assert_called_with(MESSAGES["sidebar_subjects_header"])
         mock_st.text_input.assert_called_once_with(
@@ -996,7 +996,7 @@ class TestSidebarSubjectSearch:
         mock_st = MagicMock()
         mock_st.sidebar = _sidebar_ctx()
         mock_st.container.return_value = _sidebar_ctx()
-        mock_st.session_state = {}
+        mock_st.session_state = {SESSION_KEYS["sidebar_subject_search"]: "ses-01"}
         mock_st.text_input.return_value = "ses-01"
         mock_st.button.return_value = False
 
