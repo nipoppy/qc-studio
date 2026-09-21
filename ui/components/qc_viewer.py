@@ -23,7 +23,7 @@ from constants import (
 from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
 from utils.cohort import compact_session_label
-from utils.export import save_qc_results_to_csv
+from utils.export import save_qc_results_to_csv, normalize_note_value
 from utils.navigation import request_navigation_rerun
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
@@ -723,7 +723,10 @@ def _checkpoint_frame_for_records(records: list) -> pd.DataFrame:
         df = pd.DataFrame(columns=columns)
     df = df.reindex(columns=columns, fill_value="")
     for col in columns:
-        df[col] = df[col].fillna("").astype(str)
+        if col == "notes":
+            df[col] = df[col].map(normalize_note_value)
+        else:
+            df[col] = df[col].fillna("").astype(str)
     return df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
 
 
@@ -759,8 +762,12 @@ def _checkpoint_contents_match_records(records: list, out_dir: str | None, qc_se
     current_df = _checkpoint_frame_for_records(records).reindex(columns=comparison_columns, fill_value="")
     latest_df = latest_df.reindex(columns=comparison_columns, fill_value="")
     for col in comparison_columns:
-        current_df[col] = current_df[col].fillna("").astype(str)
-        latest_df[col] = latest_df[col].fillna("").astype(str)
+        if col == "notes":
+            current_df[col] = current_df[col].map(normalize_note_value)
+            latest_df[col] = latest_df[col].map(normalize_note_value)
+        else:
+            current_df[col] = current_df[col].fillna("").astype(str)
+            latest_df[col] = latest_df[col].fillna("").astype(str)
     current_df = current_df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
     latest_df = latest_df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
     return current_df.equals(latest_df)

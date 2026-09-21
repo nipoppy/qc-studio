@@ -8,6 +8,18 @@ from pathlib import Path
 from constants import QC_DEDUP_KEYS
 
 
+def normalize_note_value(value):
+    """Strip leading/trailing whitespace and line endings from note text."""
+    if value is None:
+        return ""
+    if pd.isna(value):
+        return ""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    if text.lower() == "nan":
+        return ""
+    return text.strip()
+
+
 def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
     """Save QC results from Streamlit session state to a CSV file.
 
@@ -53,7 +65,7 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
             session_id = str(session_id)
 
         raw_notes = rec_dict.get("notes")
-        normalized_notes = str(raw_notes).strip() if raw_notes is not None else ""
+        normalized_notes = normalize_note_value(raw_notes)
 
         row = {
             "pipeline": rec_dict.get("pipeline"),

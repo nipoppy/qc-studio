@@ -8,11 +8,11 @@ FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Rater monitor screen sizes (diagonal)
 SCREEN_SIZES = [
-    "14 or less",
-    "15-20",
-    "21-25",
-    "26-30",
-    "31 or above",
+    "14in or less",
+    "15-20in",
+    "21-25in",
+    "26-30in",
+    "31in or above",
     "Unknown",
 ]
 

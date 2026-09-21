@@ -1228,6 +1228,35 @@ class TestDisplayQcPagination:
         )
         assert len(list(checkpoint_dir.glob("*.tsv"))) == 1
 
+    def test_checkpoint_export_trims_whitespace_and_newlines_from_notes(self, autoplay_session_state, tmp_path):
+        """Checkpoint exports should normalize notes the same way as final TSV exports."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "rater1"
+
+        record = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-01 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="\n  Motion artifact\n  ",
+        )
+        SessionManager.set_qc_records([record])
+
+        checkpoint_path = qc_viewer_module._create_qc_checkpoint(
+            SessionManager.get_qc_records(),
+            str(tmp_path),
+            "fmriprep",
+            "anat_wf_qc",
+        )
+
+        checkpoint_df = pd.read_csv(checkpoint_path, sep="\t", dtype=str)
+        assert checkpoint_df.iloc[0]["notes"] == "Motion artifact"
+
     def test_checkpoint_guard_ignores_refresh_timestamps_when_qc_content_is_unchanged(self, autoplay_session_state, tmp_path):
         """Saving progress can refresh timestamps without representing new QC content; the checkpoint guard should ignore that."""
         state, _ = autoplay_session_state
