@@ -1004,9 +1004,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4  # total_participants + 1 -> congratulations page
         mock_rerun.assert_called_once()
 
-    def test_next_button_builds_cohort_from_participant_ids_and_does_not_advance_when_incomplete(
-        self, autoplay_session_state, monkeypatch
-    ):
+    def test_next_button_builds_cohort_from_participant_ids_and_does_not_advance_when_incomplete(self, autoplay_session_state, monkeypatch):
         """Same fallback cohort-building path, but must not advance while that cohort is still incomplete."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3

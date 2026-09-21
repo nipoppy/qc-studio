@@ -970,7 +970,6 @@ def _display_qc_pagination_controls(
     if prev_page is not None:
         _render_previous_page_button(prev_page)
 
-
     active_task_label = "all" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else qc_pipeline)
 
     resolved_out_dir = Path(out_dir).expanduser().resolve() if out_dir else Path.cwd().resolve()
