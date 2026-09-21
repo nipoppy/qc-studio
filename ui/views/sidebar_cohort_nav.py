@@ -17,7 +17,7 @@ from utils.navigation import request_navigation_rerun
 
 _MAX_PID_DISPLAY_LEN = 28
 _SUBJECT_SEARCH_WIDGET_KEY = SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY
-_NAV_BUTTON_KEYS = ("pag_next", "pag_prev", "pag_confirm", "autoplay_play", "autoplay_pause")
+_NAV_BUTTON_KEYS = ("pag_next", "pag_prev", "autoplay_play", "autoplay_pause")
 _LAST_APPLIED_FILTER_KEY = "_sidebar_search_applied_query"
 
 

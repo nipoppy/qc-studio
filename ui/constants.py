@@ -8,8 +8,8 @@ FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Rater monitor screen sizes (diagonal)
 SCREEN_SIZES = [
-    "14in or less",
-    "15-20in",
+    "14 or less",
+    "15-20",
     "21-25",
     "26-30",
     "31 or above",
@@ -118,7 +118,7 @@ MESSAGES = {
     "rater_id_prompt": "Enter your Rater Name or ID:",
     "experience_prompt": "What is your QC experience level?",
     "fatigue_prompt": "How tired are you feeling?",
-    "screen_size_prompt": "What is the screen size of the monitor you are using?",
+    "screen_size_prompt": "What is the screen size (inches) of the monitor you are using?",
     "panels_header": "🖼️ Display Panels",
     "panels_help": "Select which panels to display during QC (at least one required).",
     "panels_validation_warning": "⚠️ You must select at least one panel to proceed!",
@@ -132,9 +132,8 @@ MESSAGES = {
     "export_results_button": "💾 Export Final Results",
     "previous_button": "◀️ Previous",
     "nav_tooltip_previous": ("Previous: navigates to the previous subject or session without saving any rating changes."),
-    "nav_tooltip_next": ("Next: navigates to the next subject or session without saving any rating changes."),
-    "nav_tooltip_confirm_next": (
-        "Confirm and Next: saves QC ratings for this page and advances to the next subject or "
+    "nav_tooltip_next": (
+        "Next: saves the current page's QC ratings and notes, then advances to the next subject or "
         "session. When more than one QC task is shown, set PASS, FAIL, or UNCERTAIN for every "
         "task before continuing."
     ),
@@ -145,7 +144,6 @@ MESSAGES = {
     "qc_notes_prompt": "Notes (optional):",
     "create_checkpoint_button": "🏁 Create checkpoint",
     "create_checkpoint_help": "Create a timestamped snapshot of the current QC records.",
-    "confirm_next_button": "Confirm ✅️ and Next ▶️",
     "next_button": "Next ▶️",
     "play_button": "▶️ Play",
     "pause_button": "⏸️ Pause",

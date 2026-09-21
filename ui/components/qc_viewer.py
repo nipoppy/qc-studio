@@ -855,15 +855,47 @@ def _render_previous_page_button(target_page: int) -> None:
         request_navigation_rerun(st)
 
 
-def _render_next_page_button(target_page: int) -> None:
-    """Sidebar Next control (does not save ratings)."""
+def _render_next_page_button(
+    target_page: int | None,
+    *,
+    participant_id: str,
+    session_id: str,
+    qc_pipeline: str,
+    qc_tasks: list,
+    participant_ids: list | None = None,
+    qc_cohort: list | None = None,
+    total_participants: int | None = None,
+) -> None:
+    """Sidebar Next control: save current page, then advance only when the page transition is allowed."""
     if st.button(
         MESSAGES["next_button"],
         width="stretch",
         key="pag_next",
         help=MESSAGES["nav_tooltip_next"],
     ):
-        SessionManager.set_current_page(target_page)
+        _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+
+        if target_page is not None:
+            SessionManager.set_current_page(target_page)
+        elif (
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+            or not qc_cohort
+            and participant_ids
+            and session_id
+            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants or 0)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
+                qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants or 0)
+            )
+        ):
+            SessionManager.set_current_page((total_participants or 0) + 1)
+        elif _has_active_subject_filter() and _filtered_cohort_complete_for_tasks(
+            qc_tasks, qc_cohort, participant_ids, session_id, total_participants or 0
+        ):
+            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
+            st.info(msg)
+            st.session_state["_pending_filtered_subject_msg"] = msg
+
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
         request_navigation_rerun(st)
@@ -917,42 +949,20 @@ def _display_qc_pagination_controls(
         session_id=session_id,
     )
 
-    if next_page is not None:
-        _render_next_page_button(next_page)
-
-    if st.button(
-        MESSAGES["confirm_next_button"],
-        width="stretch",
-        key="pag_confirm",
-        help=MESSAGES["nav_tooltip_confirm_next"],
-    ):
-        _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
-        if SessionManager.is_autoplay_enabled():
-            SessionManager.set_autoplay_start_time(time.time())
-        elif next_page is not None:
-            SessionManager.set_current_page(next_page)
-        elif (
-            qc_cohort
-            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
-            or not qc_cohort
-            and participant_ids
-            and session_id
-            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
-                qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-            )
-        ):
-            SessionManager.set_current_page(total_participants + 1)
-        elif _has_active_subject_filter() and _filtered_cohort_complete_for_tasks(
-            qc_tasks, qc_cohort, participant_ids, session_id, total_participants
-        ):
-            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-            st.info(msg)
-            st.session_state["_pending_filtered_subject_msg"] = msg
-        request_navigation_rerun(st)
+    _render_next_page_button(
+        next_page,
+        participant_id=participant_id,
+        session_id=session_id,
+        qc_pipeline=qc_pipeline,
+        qc_tasks=qc_tasks,
+        participant_ids=participant_ids,
+        qc_cohort=qc_cohort,
+        total_participants=total_participants,
+    )
 
     if prev_page is not None:
         _render_previous_page_button(prev_page)
+
 
     active_task_label = "all" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else qc_pipeline)
 
