@@ -211,7 +211,17 @@ class TestSessionStateInitialization:
 
     def test_session_state_keys(self, sample_session_state):
         """Test that session state has expected keys."""
-        expected_keys = ["current_page", "batch_size", "current_batch_qc", "qc_records", "rater_id", "rater_experience", "rater_fatigue", "notes"]
+        expected_keys = [
+            "current_page",
+            "batch_size",
+            "current_batch_qc",
+            "qc_records",
+            "rater_id",
+            "rater_experience",
+            "rater_fatigue",
+            "rater_screen_size",
+            "notes",
+        ]
 
         for key in expected_keys:
             assert key in sample_session_state

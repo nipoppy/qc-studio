@@ -37,6 +37,7 @@ class QCRecord(BaseModel):
     rater_id: Annotated[str, Field(description="Name of the rater")]
     rater_experience: Annotated[Optional[str], Field(description="Rater experience level")] = None
     rater_fatigue: Annotated[Optional[str], Field(description="Rater fatigue level")] = None
+    rater_screen_size: Annotated[Optional[str], Field(description="Rater monitor screen size")] = None
     final_qc: Optional[str] = None
     notes: Annotated[Optional[str], Field(description="Additional comment")] = None
 

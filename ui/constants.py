@@ -6,6 +6,16 @@ EXPERIENCE_LEVELS = ["Beginner (< 1 year experience)", "Intermediate (1-5 year e
 # Rater fatigue levels
 FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
+# Rater monitor screen sizes (diagonal)
+SCREEN_SIZES = [
+    "14in or less",
+    "15-20in",
+    "21-25",
+    "26-30",
+    "31 or above",
+    "Unknown",
+]
+
 # Default panel selections
 DEFAULT_PANELS = {"niivue": True, "montage": True, "iqm": False}
 
@@ -61,6 +71,7 @@ SESSION_KEYS = {
     "rater_id": "rater_id",
     "rater_experience": "rater_experience",
     "rater_fatigue": "rater_fatigue",
+    "rater_screen_size": "rater_screen_size",
     "notes": "notes",
     "notes_version": "notes_version",
     "rating_version": "rating_version",
@@ -107,6 +118,7 @@ MESSAGES = {
     "rater_id_prompt": "Enter your Rater Name or ID:",
     "experience_prompt": "What is your QC experience level?",
     "fatigue_prompt": "How tired are you feeling?",
+    "screen_size_prompt": "What is the screen size of the monitor you are using?",
     "panels_header": "🖼️ Display Panels",
     "panels_help": "Select which panels to display during QC (at least one required).",
     "panels_validation_warning": "⚠️ You must select at least one panel to proceed!",
@@ -202,6 +214,7 @@ INFO_MESSAGES = {
     "rater_id_prefix": "- **Rater ID:** {id}",
     "experience_prefix": "- **Experience:** {exp}",
     "fatigue_prefix": "- **Fatigue Level:** {fatigue}",
+    "screen_size_prefix": "- **Screen Size:** {size}",
     "preview_header": "Preview of Loaded Records",
     "load_records_button": "📥 Load These Records",
 }

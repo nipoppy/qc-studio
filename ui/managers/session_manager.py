@@ -24,6 +24,7 @@ class SessionManager:
             SESSION_KEYS["rater_id"]: "",
             SESSION_KEYS["rater_experience"]: None,
             SESSION_KEYS["rater_fatigue"]: None,
+            SESSION_KEYS["rater_screen_size"]: None,
             SESSION_KEYS["notes"]: "",
             SESSION_KEYS["notes_version"]: 0,
             SESSION_KEYS["rating_version"]: 0,
@@ -121,6 +122,16 @@ class SessionManager:
     def set_rater_fatigue(fatigue: str):
         """Set rater fatigue level."""
         st.session_state[SESSION_KEYS["rater_fatigue"]] = fatigue
+
+    @staticmethod
+    def get_rater_screen_size() -> str:
+        """Get current rater monitor screen size."""
+        return st.session_state.get(SESSION_KEYS["rater_screen_size"], "")
+
+    @staticmethod
+    def set_rater_screen_size(screen_size: str):
+        """Set rater monitor screen size."""
+        st.session_state[SESSION_KEYS["rater_screen_size"]] = screen_size
 
     # Panel Selection Methods
     @staticmethod
@@ -295,6 +306,7 @@ class SessionManager:
             "rater_id": SessionManager.get_rater_id(),
             "experience": SessionManager.get_rater_experience(),
             "fatigue": SessionManager.get_rater_fatigue(),
+            "screen_size": SessionManager.get_rater_screen_size(),
         }
 
     @staticmethod

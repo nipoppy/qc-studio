@@ -20,6 +20,7 @@ from constants import (
     DEFAULT_MONTAGE_MAX_ROWS,
     DEFAULT_MONTAGE_MAX_COLS,
     EXPERIENCE_LEVELS,
+    SCREEN_SIZES,
     MESSAGES,
     PENDING_SIDEBAR_RERUN_KEY,
     SIDEBAR_SEARCH_HOLD_KEY,
@@ -39,6 +40,7 @@ def _session_state_dict():
         SESSION_KEYS["rater_id"]: "",
         SESSION_KEYS["rater_experience"]: None,
         SESSION_KEYS["rater_fatigue"]: None,
+        SESSION_KEYS["rater_screen_size"]: None,
         SESSION_KEYS["notes"]: "",
         SESSION_KEYS["notes_version"]: 0,
         SESSION_KEYS["rating_version"]: 0,
@@ -335,6 +337,27 @@ class TestLandingPageRaterInfo:
         assert len(experience_options) == 3
         assert any("Expert" in opt for opt in experience_options)
 
+    @patch("views.landing_page.pd.read_csv")
+    def test_screen_size_options(self, mock_read_csv, tmp_path):
+        """Test that screen size options are presented."""
+        from views.landing_page import show_landing_page
+
+        mock_df = pd.DataFrame({"participant_id": ["sub-CMH0001"]})
+        mock_read_csv.return_value = mock_df
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path),
+            )
+
+        assert len(SCREEN_SIZES) >= 1
+        assert any("in" in opt for opt in SCREEN_SIZES)
+
 
 class TestLandingPagePanelSelection:
     """Test panel selection functionality."""
@@ -575,6 +598,7 @@ class TestSessionStateManagement:
         assert sample_session_state["rater_id"] == "test_rater"
         assert sample_session_state["rater_experience"] is not None
         assert sample_session_state["rater_fatigue"] is not None
+        assert sample_session_state["rater_screen_size"] is not None
 
     def test_qc_records_in_session(self, sample_session_state):
         """Test QC records stored in session state."""
@@ -1016,6 +1040,62 @@ class TestSidebarSubjectSearch:
             )
 
         mock_sm.set_current_page.assert_called_once_with(1)
+        mock_st.rerun.assert_called_once()
+
+    def test_filter_jump_flushes_notes_before_changing_page(self):
+        """Search snap must save the current subject's notes before jumping (issue #84)."""
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        nav_kwargs = {
+            "current_page": 2,
+            "total_participants": 2,
+            "participant_id": "sub-CMH0001",
+            "session_id": "ses-02",
+            "qc_pipeline": "fmriprep",
+            "qc_tasks": ["sdc_wf_qc"],
+            "participant_ids": ["sub-CMH0001"],
+            "qc_cohort": cohort,
+        }
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = "ses-01"
+        mock_st.button.return_value = False
+        flush_order = []
+
+        def flush(*args, **kwargs):
+            flush_order.append("flush")
+
+        def set_page(page):
+            flush_order.append(("page", page))
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+            patch("components.qc_viewer._display_qc_pagination_header"),
+            patch("components.qc_viewer._display_qc_pagination_controls"),
+            patch("components.qc_viewer._record_all_qc_tasks", side_effect=flush),
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 2
+            mock_sm.set_current_page.side_effect = set_page
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+                prepend_navigation=True,
+                navigation_kwargs=nav_kwargs,
+            )
+
+        assert flush_order == ["flush", ("page", 1)]
         mock_st.rerun.assert_called_once()
 
     def test_clear_subject_search_empties_filter(self):
