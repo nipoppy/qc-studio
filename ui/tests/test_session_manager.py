@@ -77,6 +77,15 @@ class TestRaterMethods:
         SessionManager.set_rater_fatigue(fatigue_level)
         assert SessionManager.get_rater_fatigue() == fatigue_level
 
+    def test_set_and_get_rater_screen_size(self, mock_session_state):
+        """Test setting and getting rater screen size."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        screen_size = "26-30"
+        SessionManager.set_rater_screen_size(screen_size)
+        assert SessionManager.get_rater_screen_size() == screen_size
+
     def test_get_rater_id_default_empty_string(self, mock_session_state):
         """Test that get_rater_id returns empty string when not set."""
         st.session_state = mock_session_state.data
@@ -318,6 +327,7 @@ class TestSessionManagerIntegration:
         SessionManager.set_rater_id("rater_001")
         SessionManager.set_rater_experience("Expert (>5 year experience)")
         SessionManager.set_rater_fatigue("A bit tired ☕")
+        SessionManager.set_rater_screen_size("26-30")
 
         # Panel selection
         panels = {"niivue": True, "montage": True, "iqm": False}

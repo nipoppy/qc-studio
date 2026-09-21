@@ -5,6 +5,7 @@ import streamlit as st
 from constants import (
     EXPERIENCE_LEVELS,
     FATIGUE_LEVELS,
+    SCREEN_SIZES,
     PANEL_CONFIG,
     UPLOAD_FILE_TYPES,
     MESSAGES,
@@ -252,6 +253,12 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
             default_fatigue_idx = FATIGUE_LEVELS.index(SessionManager.get_rater_fatigue())
         rater_fatigue = st.radio(MESSAGES["fatigue_prompt"], FATIGUE_LEVELS, index=default_fatigue_idx)
 
+        # Screen size
+        default_screen_idx = 0
+        if SessionManager.get_rater_screen_size() in SCREEN_SIZES:
+            default_screen_idx = SCREEN_SIZES.index(SessionManager.get_rater_screen_size())
+        rater_screen_size = st.radio(MESSAGES["screen_size_prompt"], SCREEN_SIZES, index=default_screen_idx)
+
         # Autoplay countdown duration
         autoplay_duration = st.slider(
             "⏱️ Autoplay duration (seconds)", min_value=2, max_value=10, value=SessionManager.get_autoplay_duration(), step=1
@@ -268,6 +275,7 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
                 SessionManager.set_rater_id(rater_id_clean)
                 SessionManager.set_rater_experience(rater_experience)
                 SessionManager.set_rater_fatigue(rater_fatigue)
+                SessionManager.set_rater_screen_size(rater_screen_size)
                 SessionManager.set_autoplay_duration(autoplay_duration)
                 SessionManager.set_landing_page_complete(True)
                 if entrypoint_rel_path:
@@ -358,16 +366,19 @@ def _display_csv_upload(
                 extracted_rater_id = str(first_record.get("rater_id", ""))
                 extracted_experience = str(first_record.get("rater_experience", ""))
                 extracted_fatigue = str(first_record.get("rater_fatigue", ""))
+                extracted_screen_size = str(first_record.get("rater_screen_size", ""))
 
                 # Update session state with extracted rater info
                 SessionManager.set_rater_id(extracted_rater_id)
                 SessionManager.set_rater_experience(extracted_experience)
                 SessionManager.set_rater_fatigue(extracted_fatigue)
+                SessionManager.set_rater_screen_size(extracted_screen_size)
 
                 st.info(INFO_MESSAGES["rater_info_extracted"])
                 st.write(INFO_MESSAGES["rater_id_prefix"].format(id=extracted_rater_id))
                 st.write(INFO_MESSAGES["experience_prefix"].format(exp=extracted_experience))
                 st.write(INFO_MESSAGES["fatigue_prefix"].format(fatigue=extracted_fatigue))
+                st.write(INFO_MESSAGES["screen_size_prefix"].format(size=extracted_screen_size))
 
             # Display preview (filtered to current qc_task)
             st.subheader(INFO_MESSAGES["preview_header"])
@@ -391,6 +402,7 @@ def _display_csv_upload(
                         rater_id=str(row.get("rater_id", "")),
                         rater_experience=str(row.get("rater_experience", "")),
                         rater_fatigue=str(row.get("rater_fatigue", "")),
+                        rater_screen_size=str(row.get("rater_screen_size", "")),
                         final_qc=str(row.get("final_qc", "")),
                         notes=str(row.get("notes", "")) if pd.notna(row.get("notes")) else "",
                     )

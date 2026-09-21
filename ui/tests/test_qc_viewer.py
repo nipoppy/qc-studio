@@ -14,6 +14,7 @@ from components.qc_viewer import (
     try_autoplay_advance_if_due,
     AUTOPLAY_ADVANCE_GRACE_SECONDS,
     _on_rating_change,
+    _on_notes_change,
     _record_qc_for_current_participant,
     _rating_widget_key,
     _notes_widget_key,
@@ -37,6 +38,7 @@ def autoplay_session_state():
         "rater_id": "rater1",
         "rater_experience": "Expert (>5 year experience)",
         "rater_fatigue": "Not at all",
+        "rater_screen_size": "26-30",
         "notes_version": 0,
         "rating_version": 0,
         "autoplay_enabled": True,
@@ -242,9 +244,64 @@ class TestOnRatingChange:
         assert saved.notes == ""
 
 
+class TestOnNotesChange:
+    def test_saves_notes_typed_after_rating_without_waiting_for_flush(self, autoplay_session_state):
+        """Notes on_change should persist text immediately, same as the rating radio."""
+        state, _ = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 0)] = ""
+
+        _on_rating_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Motion artifact, borderline."
+        _on_notes_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "PASS"
+        assert saved.notes == "Motion artifact, borderline."
+
+    def test_notes_saved_via_on_change_survive_a_forced_page_jump(self, autoplay_session_state):
+        """A search-style page jump after notes on_change must not drop the saved notes."""
+        state, _ = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Ringing at the vertex."
+
+        _on_notes_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+        SessionManager.set_current_page(2)
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "FAIL"
+        assert saved.notes == "Ringing at the vertex."
+        assert SessionManager.get_current_page() == 2
+
+
 class TestRecordQcForCurrentParticipant:
     def test_populates_rater_metadata_and_timestamp_from_session_manager(self, autoplay_session_state):
-        """A saved record should carry the rater's id/experience/fatigue and a real timestamp,
+        """A saved record should carry the rater's id/experience/fatigue/screen size and a real timestamp,
         not just final_qc/notes (which is all prior tests in this file have checked)."""
         state, _ = autoplay_session_state
 
@@ -255,6 +312,7 @@ class TestRecordQcForCurrentParticipant:
         assert saved.rater_id == state["rater_id"]
         assert saved.rater_experience == state["rater_experience"]
         assert saved.rater_fatigue == state["rater_fatigue"]
+        assert saved.rater_screen_size == state["rater_screen_size"]
         assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", saved.timestamp)
 
 
@@ -416,7 +474,7 @@ class TestRatingPersistenceNearAutoAdvance:
         assert unrated is None
 
     def test_notes_typed_after_rating_saved_are_merged_on_flush(self, autoplay_session_state):
-        """Notes have no on_change; a later flush should merge them with the already-saved rating."""
+        """Notes on_change or a later Confirm flush should merge them with the already-saved rating."""
         state, _ = autoplay_session_state
 
         state["rating_version"] = 0
@@ -436,9 +494,15 @@ class TestRatingPersistenceNearAutoAdvance:
         assert saved.final_qc == "PASS"
         assert saved.notes == ""
 
-        # User types notes afterward; only a flush (not on_change) picks notes up.
         state[_notes_widget_key("anat_wf_qc", 0)] = "Motion artifact, borderline."
-        _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+        _on_notes_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
 
         saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
         assert saved.final_qc == "PASS"

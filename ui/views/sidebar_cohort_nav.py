@@ -74,6 +74,7 @@ def render_sidebar_cohort_subjects(
         query = _render_subject_search()
         snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
         if snap_to is not None:
+            _flush_qc_before_forced_navigation(kw)
             SessionManager.set_current_page(snap_to)
             st.rerun()
         if kw:
@@ -85,12 +86,22 @@ def render_sidebar_cohort_subjects(
             tasks_eff=tasks_eff,
             entrypoint_rel_path=entrypoint_rel_path,
             query=query,
+            flush_kwargs=kw,
         )
         if st.session_state.get(PENDING_SIDEBAR_RERUN_KEY):
             del st.session_state[PENDING_SIDEBAR_RERUN_KEY]
             st.rerun()
         elif st.session_state.get(SIDEBAR_SEARCH_HOLD_KEY):
             del st.session_state[SIDEBAR_SEARCH_HOLD_KEY]
+
+
+def _flush_qc_before_forced_navigation(kw: dict | None) -> None:
+    """Save the current page's rating/notes before a jump that skips Confirm."""
+    if not kw:
+        return
+    from components.qc_viewer import _record_all_qc_tasks
+
+    _record_all_qc_tasks(kw["participant_id"], kw["session_id"], kw["qc_pipeline"], kw["qc_tasks"])
 
 
 def get_subject_search_query() -> str:
@@ -262,6 +273,7 @@ def _render_subject_list(
     tasks_eff: list,
     entrypoint_rel_path: str | None,
     query: str,
+    flush_kwargs: dict | None = None,
 ) -> None:
     """Render the cohort subject buttons inside a fixed-height scroller."""
     visible = _matching_subject_entries(entries, query, session_id)
@@ -281,6 +293,8 @@ def _render_subject_list(
             suffix = " — current" if page_num == current_page else ""
             label = f"{mark} {label_core}{suffix}"
             if st.button(label, key=f"sidebar_cohort_nav_{i}", width="stretch"):
+                if page_num != current_page:
+                    _flush_qc_before_forced_navigation(flush_kwargs)
                 SessionManager.set_current_page(page_num)
                 if SessionManager.is_autoplay_enabled():
                     SessionManager.set_autoplay_start_time(time.time())
