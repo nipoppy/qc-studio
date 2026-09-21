@@ -38,7 +38,7 @@ def autoplay_session_state():
         "rater_id": "rater1",
         "rater_experience": "Expert (>5 year experience)",
         "rater_fatigue": "Not at all",
-        "rater_screen_size": "Desktop (27 inch)",
+        "rater_screen_size": "26-30",
         "notes_version": 0,
         "rating_version": 0,
         "autoplay_enabled": True,

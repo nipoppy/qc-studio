@@ -318,7 +318,7 @@ class TestLandingPageRaterInfo:
             )
 
         assert len(SCREEN_SIZES) >= 1
-        assert any("inch" in opt for opt in SCREEN_SIZES)
+        assert any("in" in opt for opt in SCREEN_SIZES)
 
 
 class TestLandingPagePanelSelection:

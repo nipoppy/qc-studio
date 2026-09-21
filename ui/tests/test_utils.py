@@ -509,7 +509,7 @@ class TestSaveQcResultsToCsv:
         assert list(df.columns)[0] == "pipeline"
         assert df.iloc[0]["participant_id"] == "sub-CMH0001"
         assert "rater_screen_size" in df.columns
-        assert df.iloc[0]["rater_screen_size"] == "Desktop (27 inch)"
+        assert df.iloc[0]["rater_screen_size"] == "26-30"
 
     def test_save_empty_records_list(self, temp_dir):
         """Test saving empty records list."""

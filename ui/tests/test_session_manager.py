@@ -82,7 +82,7 @@ class TestRaterMethods:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        screen_size = "Desktop (27 inch)"
+        screen_size = "26-30"
         SessionManager.set_rater_screen_size(screen_size)
         assert SessionManager.get_rater_screen_size() == screen_size
 
@@ -327,7 +327,7 @@ class TestSessionManagerIntegration:
         SessionManager.set_rater_id("rater_001")
         SessionManager.set_rater_experience("Expert (>5 year experience)")
         SessionManager.set_rater_fatigue("A bit tired ☕")
-        SessionManager.set_rater_screen_size("Desktop (27 inch)")
+        SessionManager.set_rater_screen_size("26-30")
 
         # Panel selection
         panels = {"niivue": True, "montage": True, "iqm": False}

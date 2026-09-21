@@ -68,7 +68,7 @@ class TestQCRecord:
         assert qc_record_sample.session_id == "ses-01"
         assert qc_record_sample.rater_experience == "Expert (>5 year experience)"
         assert qc_record_sample.rater_fatigue == "Not at all"
-        assert qc_record_sample.rater_screen_size == "Desktop (27 inch)"
+        assert qc_record_sample.rater_screen_size == "26-30"
         assert qc_record_sample.final_qc == "PASS"
         assert qc_record_sample.notes == "Good quality scan"
 

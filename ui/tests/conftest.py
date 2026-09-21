@@ -75,7 +75,7 @@ def sample_qc_results_csv(temp_dir):
         "rater_id": ["rater1", "rater1"],
         "rater_experience": ["Expert (>5 year experience)", "Expert (>5 year experience)"],
         "rater_fatigue": ["Not at all", "A bit tired ☕"],
-        "rater_screen_size": ["Desktop (27 inch)", "Laptop (15-16 inch)"],
+        "rater_screen_size": ["26-30", "15-20in"],
         "final_qc": ["PASS", "FAIL"],
         "notes": ["Good quality", "Artifacts detected"],
     }
@@ -182,7 +182,7 @@ def sample_session_state():
         "rater_id": "test_rater",
         "rater_experience": "Expert (>5 year experience)",
         "rater_fatigue": "Not at all",
-        "rater_screen_size": "Desktop (27 inch)",
+        "rater_screen_size": "26-30",
         "notes": "",
         "landing_page_complete": False,
         "selected_panels": {"niivue_col": True, "montage_col": True, "iqm_col": False},
@@ -202,7 +202,7 @@ def qc_record_sample():
         rater_id="test_rater",
         rater_experience="Expert (>5 year experience)",
         rater_fatigue="Not at all",
-        rater_screen_size="Desktop (27 inch)",
+        rater_screen_size="26-30",
         final_qc="PASS",
         notes="Good quality scan",
     )

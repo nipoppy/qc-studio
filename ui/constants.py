@@ -8,12 +8,12 @@ FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Rater monitor screen sizes (diagonal)
 SCREEN_SIZES = [
-    "Laptop (13-14 inch)",
-    "Laptop (15-16 inch)",
-    "Desktop (21-24 inch)",
-    "Desktop (27 inch)",
-    "Desktop (32 inch or larger)",
-    "Other / unknown",
+    "14in or less",
+    "15-20in",
+    "21-25",
+    "26-30",
+    "31 or above",
+    "Unknown",
 ]
 
 # Default panel selections
