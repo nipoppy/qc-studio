@@ -1,7 +1,7 @@
 """Constants used throughout the QC-Studio UI application."""
 
 # Rater experience levels
-EXPERIENCE_LEVELS = ["Beginner (< 1 year experience)", "Intermediate (1-5 year experience)", "Expert (>5 year experience)"]
+EXPERIENCE_LEVELS = ["Beginner (< 1 year)", "Intermediate (1-5 years)", "Expert (>5 years)"]
 
 # Rater fatigue levels
 FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
@@ -125,7 +125,7 @@ MESSAGES = {
     "panels_success": "✅ {count} panel(s) selected",
     "upload_header": "📤 Upload Existing QC File (Optional)",
     "upload_help": "Upload a previously saved <QC_status>.tsv file / checkpoint to resume your QC session or review previous results.",
-    "csv_uploader_label": "Choose a QC_status.csv file",
+    "csv_uploader_label": "Choose a QC_status.tsv file",
     "continue_button": "✅ Continue to QC",
     "rater_form_button": "✅ Continue to QC",
     "congratulations_title": "🎉 QC Complete! Congratulations! 🎉",
@@ -174,8 +174,8 @@ MESSAGES = {
 ERROR_MESSAGES = {
     "invalid_rater_id": "Please enter a valid Rater ID (no spaces).",
     "no_panel_selected": "⚠️ You must select at least one display panel to proceed!",
-    "no_participants": "❌ Error: The uploaded CSV contains {count} participant(s) not in the participant list: {participants}",
-    "too_many_participants": "❌ Error: The uploaded CSV has {csv_count} unique participants, but the participant list only has {list_count}.",
+    "no_participants": "❌ Error: The uploaded TSV contains {count} participant(s) not in the participant list: {participants}",
+    "too_many_participants": "❌ Error: The uploaded TSV has {csv_count} unique participants, but the participant list only has {list_count}.",
     "file_load_error": "❌ Error loading file: {error}",
     "csv_comparison_error": "Could not display comparison: {error}",
     "mri_load_error": "Failed to load base MRI in Niivue viewer: {error}",

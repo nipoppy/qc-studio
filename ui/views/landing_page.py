@@ -307,8 +307,8 @@ def _display_csv_upload(
 
     if uploaded_file is not None:
         try:
-            # Read the uploaded file
-            df = pd.read_csv(uploaded_file, sep=None, engine="python")
+            # Read the uploaded file while preserving zero-padded subject IDs.
+            df = pd.read_csv(uploaded_file, sep=None, engine="python", dtype=str)
 
             # Deduplicate rows by QC_DEDUP_KEYS (keeping most recent record per participant)
             dedup_cols = [k for k in QC_DEDUP_KEYS if k in df.columns]
@@ -327,6 +327,7 @@ def _display_csv_upload(
             records_reviewed = len(decided)
             total_qc_records = len(qc_cohort) * len(qc_tasks) if qc_cohort and qc_tasks else 0
             participant_ids_in_csv = {bare_bids_id(str(pid), "sub-") for pid in df_task["_participant_id_norm"].unique()}
+            preview_df = df_task.drop(columns=["_participant_id_norm"], errors="ignore")
 
             st.success(SUCCESS_MESSAGES["csv_loaded"].format(count=len(df), filename=uploaded_file.name))
             st.caption(f"Current workflow filter: **{filter_label}**")
@@ -388,11 +389,11 @@ def _display_csv_upload(
 
             # Display preview (filtered to current qc_task)
             st.subheader(INFO_MESSAGES["preview_header"])
-            if df_task.empty:
+            if preview_df.empty:
                 st.warning(f"No records found for workflow **{filter_label}** in the uploaded file. " f"All {len(df)} records are for other tasks.")
             else:
                 st.caption(f"Showing records for workflow: **{filter_label}**")
-                st.dataframe(df_task.head(10), width="stretch")
+                st.dataframe(preview_df.head(10), width="stretch")
 
             # Option to load these records
             if st.button(INFO_MESSAGES["load_records_button"], width="stretch"):

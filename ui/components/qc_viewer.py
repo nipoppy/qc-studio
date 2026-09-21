@@ -740,7 +740,7 @@ def _checkpoint_contents_match_records(records: list, out_dir: str | None, qc_se
     if latest_path is None:
         return False
     try:
-        latest_df = pd.read_csv(latest_path, sep="\t")
+        latest_df = pd.read_csv(latest_path, sep="\t", dtype=str)
     except Exception:
         return False
     comparison_columns = [
