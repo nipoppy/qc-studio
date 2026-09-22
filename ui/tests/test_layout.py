@@ -356,7 +356,7 @@ class TestLandingPageRaterInfo:
             )
 
         assert len(SCREEN_SIZES) >= 1
-        assert any("in" in opt for opt in SCREEN_SIZES)
+        assert all(isinstance(opt, str) and opt.strip() for opt in SCREEN_SIZES)
 
 
 class TestLandingPagePanelSelection:

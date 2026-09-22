@@ -443,6 +443,10 @@ class SessionManager:
     @staticmethod
     def reset_for_new_participant():
         """Reset session state for next participant."""
+        for key in list(st.session_state.keys()):
+            if key.startswith("_notes_edit_mode_"):
+                del st.session_state[key]
+        st.session_state.pop("_pending_autoplay_pause_msg", None)
         st.session_state[SESSION_KEYS["notes"]] = ""
         st.session_state[SESSION_KEYS["notes_version"]] = SessionManager.get_notes_version() + 1
         st.session_state[SESSION_KEYS["rating_version"]] = SessionManager.get_rating_version() + 1

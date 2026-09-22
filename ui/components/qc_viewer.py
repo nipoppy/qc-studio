@@ -82,6 +82,13 @@ def _clean_filename(filename: str) -> str:
     return clean or filename
 
 
+def _pause_autoplay_for_notes_edit() -> None:
+    """Stop playback and surface a banner when the user explicitly starts note entry."""
+    SessionManager.set_autoplay_enabled(False)
+    SessionManager.set_autoplay_start_time(0.0)
+    st.session_state["_pending_autoplay_pause_msg"] = INFO_MESSAGES["autoplay_paused_notes_editing"]
+
+
 def try_autoplay_advance_if_due(
     participant_id: str | None,
     session_id: str | None,
@@ -99,6 +106,9 @@ def try_autoplay_advance_if_due(
     """
     if participant_id is None or not total_participants:
         return
+    tasks = list(qc_tasks or [])
+    if not tasks:
+        tasks = [qc_task] if qc_task else ["anat_wf_qc"]
     if not SessionManager.is_autoplay_enabled():
         return
     start_time = SessionManager.get_autoplay_start_time()
@@ -108,9 +118,6 @@ def try_autoplay_advance_if_due(
     duration = SessionManager.get_autoplay_duration()
     if elapsed < duration + AUTOPLAY_ADVANCE_GRACE_SECONDS:
         return
-    tasks = list(qc_tasks or [])
-    if not tasks:
-        tasks = [qc_task] if qc_task else ["anat_wf_qc"]
 
     current_page = SessionManager.get_current_page()
     _, next_page = _filtered_adjacent_pages(
@@ -468,20 +475,52 @@ def _notes_widget_key(qc_task: str, nver: int) -> str:
     return f"qc_notes_{qc_task}_{nver}"
 
 
+def _notes_edit_mode_key(qc_task: str) -> str:
+    return f"_notes_edit_mode_{qc_task}"
+
+
+def _latest_state_value_for_task_widget(prefix: str, qc_task: str, version: int | None = None):
+    """Return the newest live widget value for a task, even if older versioned keys remain in state."""
+    candidates = []
+    for key, value in st.session_state.items():
+        if not key.startswith(f"{prefix}_{qc_task}_"):
+            continue
+        suffix = key.rsplit("_", 1)[-1]
+        if suffix.isdigit():
+            candidates.append((int(suffix), value))
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+    if version is not None:
+        direct_key = f"{prefix}_{qc_task}_{version}"
+        if direct_key in st.session_state:
+            return st.session_state[direct_key]
+    return None
+
+
 def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
     """Save rating and notes as soon as either widget changes.
 
     Used by both the rating radio and the notes box so a later forced page jump
     (sidebar search, autoplay, subject-list click) cannot drop unsaved notes.
     """
-    rating = st.session_state.get(_rating_widget_key(qc_task, rver))
-    notes = st.session_state.get(_notes_widget_key(qc_task, nver), "")
+    rating = _latest_state_value_for_task_widget("qc_rating", qc_task, rver)
+    notes = _latest_state_value_for_task_widget("qc_notes", qc_task, nver)
+    if notes is None:
+        notes = ""
     _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
 
 
 def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
-    """Same save path as ``_on_rating_change``; named for the notes widget callback."""
+    """Pause autoplay and save the current task state when the user starts entering notes."""
+    if SessionManager.is_autoplay_enabled():
+        _pause_autoplay_for_notes_edit()
     _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver)
+
+
+def _toggle_notes_editing_for_task(qc_task: str) -> None:
+    """Reveal the notes box for editing and pause autoplay until the user resumes manually."""
+    st.session_state[_notes_edit_mode_key(qc_task)] = True
+    _pause_autoplay_for_notes_edit()
 
 
 def _display_qc_rating_for_task(
@@ -516,22 +555,33 @@ def _display_qc_rating_for_task(
         on_change=_on_rating_change,
         args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
     )
-    st.text_area(
-        MESSAGES["qc_notes_prompt"],
-        value=initial_notes,
-        key=_notes_widget_key(qc_task, nver),
-        height=notes_height,
-        on_change=_on_notes_change,
-        args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
-    )
+    notes_editable = st.session_state.get(_notes_edit_mode_key(qc_task), False)
+    action_col, notes_col = st.columns([2, 6])
+    with action_col:
+        st.caption("Autoplay will be paused when you type notes")
+        if st.button("Add notes" if not notes_editable else "Edit notes", key=f"_toggle_notes_{qc_task}_{nver}", use_container_width=True):
+            _toggle_notes_editing_for_task(qc_task)
+            st.rerun()
+    with notes_col:
+        st.text_area(
+            MESSAGES["qc_notes_prompt"],
+            value=initial_notes,
+            key=_notes_widget_key(qc_task, nver),
+            height=notes_height,
+            disabled=not notes_editable,
+            on_change=_on_notes_change,
+            args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
+        )
 
 
 def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str, qc_tasks: list) -> None:
     rver = SessionManager.get_rating_version()
     nver = SessionManager.get_notes_version()
     for t in qc_tasks:
-        rating = st.session_state.get(_rating_widget_key(t, rver))
-        notes = st.session_state.get(_notes_widget_key(t, nver), "")
+        rating = _latest_state_value_for_task_widget("qc_rating", t, rver)
+        notes = _latest_state_value_for_task_widget("qc_notes", t, nver)
+        if notes is None:
+            notes = ""
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
 
 
@@ -944,6 +994,9 @@ def _display_qc_pagination_controls(
             _autoplay_fragment_advance_only()
         else:
             st.caption("Autoplay on — countdown starts on **Play**.")
+
+    if pending := st.session_state.pop("_pending_autoplay_pause_msg", None):
+        st.warning(pending)
 
     if pending := st.session_state.pop("_pending_filtered_subject_msg", None):
         st.info(pending)

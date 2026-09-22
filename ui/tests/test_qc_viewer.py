@@ -25,6 +25,7 @@ from components.qc_viewer import (
 )
 from managers.session_manager import SessionManager
 from models import QCRecord
+from constants import INFO_MESSAGES
 
 pytestmark = pytest.mark.unit
 
@@ -294,6 +295,22 @@ class TestOnNotesChange:
         assert saved.final_qc == "PASS"
         assert saved.notes == "Motion artifact, borderline."
 
+    def test_uses_latest_versioned_note_state_during_autoplay_flush(self, autoplay_session_state):
+        """Autoplay should save the newest note value even if older widget-version keys are still in state."""
+        state, _ = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "older note"
+        state[_rating_widget_key("anat_wf_qc", 1)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 1)] = "Motion artifact, borderline."
+
+        _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "PASS"
+        assert saved.notes == "Motion artifact, borderline."
+
     def test_notes_saved_via_on_change_survive_a_forced_page_jump(self, autoplay_session_state):
         """A search-style page jump after notes on_change must not drop the saved notes."""
         state, _ = autoplay_session_state
@@ -316,6 +333,40 @@ class TestOnNotesChange:
         assert saved.final_qc == "FAIL"
         assert saved.notes == "Ringing at the vertex."
         assert SessionManager.get_current_page() == 2
+
+    def test_notes_edit_pauses_autoplay(self, autoplay_session_state):
+        """Typing in the notes box should pause autoplay immediately so the user can finish their entry."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = True
+        state["autoplay_start_time"] = time.time()
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Motion artifact, borderline."
+
+        _on_notes_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+
+        assert state["autoplay_enabled"] is False
+        assert state["autoplay_start_time"] == 0.0
+        assert state["_pending_autoplay_pause_msg"] == INFO_MESSAGES["autoplay_paused_notes_editing"]
+
+    def test_reset_for_new_participant_clears_notes_edit_mode(self, autoplay_session_state):
+        """A new page should reset task note edit state so the notes box is locked again until re-enabled."""
+        state, _ = autoplay_session_state
+        state["_notes_edit_mode_anat_wf_qc"] = True
+        state["_notes_edit_mode_func_wf_qc"] = True
+
+        SessionManager.reset_for_new_participant()
+
+        assert "_notes_edit_mode_anat_wf_qc" not in state
+        assert "_notes_edit_mode_func_wf_qc" not in state
 
 
 class TestRecordQcForCurrentParticipant:

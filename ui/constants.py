@@ -8,11 +8,11 @@ FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Rater monitor screen sizes (diagonal)
 SCREEN_SIZES = [
-    "14in or less",
-    "15-20in",
-    "21-25in",
-    "26-30in",
-    "31in or above",
+    "14 inches or less",
+    "15-20 inches",
+    "21-25 inches",
+    "26-30 inches",
+    "31 inches or above",
     "Unknown",
 ]
 
@@ -208,6 +208,7 @@ INFO_MESSAGES = {
     "proceed_with_form": "You can now proceed with the rater form on the left to continue QC.",
     "no_export_records": "No QC records to export.",
     "checkpoint_unchanged": "No QC changes since the last checkpoint were detected, so no new checkpoint was created.",
+    "autoplay_paused_notes_editing": "Autoplay paused while editing notes. Click Play to resume autoplay or use Next / Previous buttons to navigate.",
     "rater_info_extracted": "📋 Rater information extracted:",
     "rater_id_prefix": "- **Rater ID:** {id}",
     "experience_prefix": "- **Experience:** {exp}",
