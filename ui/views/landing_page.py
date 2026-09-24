@@ -24,7 +24,6 @@ from managers.panel_layout_manager import PanelLayoutManager
 from managers.niivue_viewer_manager import NiivueViewerManager
 from utils.config import list_qc_tasks_from_json, parse_qc_config
 from utils.cohort import (
-    bare_bids_id,
     build_qc_cohort,
     count_complete_cohort_pages,
     decided_rating_keys_from_df,
@@ -35,7 +34,7 @@ from utils.cohort import (
 
 def _normalize_participant_id(pid: str) -> str:
     """Normalize participant IDs for CSV/list comparisons."""
-    pid_str = str(pid)
+    pid_str = str(pid).strip()
     return pid_str[4:] if pid_str.startswith("sub-") else pid_str
 
 
@@ -293,7 +292,7 @@ def _display_csv_upload(
     """Render CSV upload section in the landing page.
 
     Args:
-            participant_ids_in_ds: Set of bare participant IDs in dataset
+            participant_ids_in_ds: Set of normalized participant IDs in dataset
             total_cohort_pages: Total (participant, session) pages in this run
             qc_cohort: Ordered cohort rows for pagination
             qc_task: Current QC task name (used to filter uploaded CSV)
@@ -326,7 +325,7 @@ def _display_csv_upload(
             pages_reviewed = count_complete_cohort_pages(qc_cohort, qc_tasks, decided)
             records_reviewed = len(decided)
             total_qc_records = len(qc_cohort) * len(qc_tasks) if qc_cohort and qc_tasks else 0
-            participant_ids_in_csv = {bare_bids_id(str(pid), "sub-") for pid in df_task["_participant_id_norm"].unique()}
+            participant_ids_in_csv = {str(pid).strip() for pid in df_task["_participant_id_norm"].unique()}
             preview_df = df_task.drop(columns=["_participant_id_norm"], errors="ignore")
 
             st.success(SUCCESS_MESSAGES["csv_loaded"].format(count=len(df), filename=uploaded_file.name))

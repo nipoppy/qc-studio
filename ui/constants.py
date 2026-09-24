@@ -8,11 +8,11 @@ FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Rater monitor screen sizes (diagonal)
 SCREEN_SIZES = [
-    "14 inches or less",
-    "15-20 inches",
-    "21-25 inches",
-    "26-30 inches",
-    "31 inches or above",
+    "14 or less",
+    "15-20",
+    "21-25",
+    "26-30",
+    "31 or above",
     "Unknown",
 ]
 
@@ -118,7 +118,7 @@ MESSAGES = {
     "rater_id_prompt": "Enter your Rater Name or ID:",
     "experience_prompt": "What is your QC experience level?",
     "fatigue_prompt": "How tired are you feeling?",
-    "screen_size_prompt": "What is the screen size (inches) of the monitor you are using?",
+    "screen_size_prompt": "What is the screen size of the monitor you are using?",
     "panels_header": "🖼️ Display Panels",
     "panels_help": "Select which panels to display during QC (at least one required).",
     "panels_validation_warning": "⚠️ You must select at least one panel to proceed!",

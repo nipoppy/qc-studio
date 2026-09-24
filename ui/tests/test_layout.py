@@ -475,6 +475,52 @@ class TestLandingPageCsvUpload:
         # 2 cohort pages complete -> move to congratulations page at index 3.
         assert mock_st.session_state[SESSION_KEYS["current_page"]] == 3
 
+    @patch("views.landing_page.pd.read_csv")
+    def test_upload_accepts_zero_padded_participant_ids(self, mock_read_csv, tmp_path):
+        """Upload validation should treat sub-00153 as a known participant when list contains sub-00153."""
+        from views.landing_page import show_landing_page
+
+        participants_df = pd.DataFrame(
+            {
+                "participant_id": ["sub-00153"],
+                "session_id": ["ses-01"],
+            }
+        )
+        uploaded_df = pd.DataFrame(
+            {
+                "pipeline": ["fmriprep"],
+                "qc_task": ["anat_wf_qc"],
+                "participant_id": ["sub-00153"],
+                "session_id": ["ses-01"],
+                "timestamp": ["2026-09-24 13:57:25"],
+                "rater_id": ["nik"],
+                "rater_experience": ["Beginner (< 1 year)"],
+                "rater_fatigue": ["Not at all"],
+                "rater_screen_size": ["14 inches or less"],
+                "final_qc": ["UNCERTAIN"],
+                "notes": [""],
+            }
+        )
+        mock_read_csv.side_effect = [participants_df, uploaded_df]
+
+        uploaded_file = MagicMock()
+        uploaded_file.name = "nik_sdc_wf_qc_status.tsv"
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            mock_st.file_uploader.return_value = uploaded_file
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path),
+            )
+
+        error_texts = [str(call.args[0]) for call in mock_st.error.call_args_list if call.args]
+        assert not any("not in the participant list" in text for text in error_texts)
+        mock_st.stop.assert_not_called()
+
 
 class TestApp:
     """Test main app function."""
