@@ -25,7 +25,6 @@ from components.qc_viewer import (
 )
 from managers.session_manager import SessionManager
 from models import QCRecord
-from constants import INFO_MESSAGES
 
 pytestmark = pytest.mark.unit
 
@@ -355,7 +354,6 @@ class TestOnNotesChange:
 
         assert state["autoplay_enabled"] is False
         assert state["autoplay_start_time"] == 0.0
-        assert state["_pending_autoplay_pause_msg"] == INFO_MESSAGES["autoplay_paused_notes_editing"]
 
     def test_reset_for_new_participant_clears_notes_edit_mode(self, autoplay_session_state):
         """A new page should reset task note edit state so the notes box is locked again until re-enabled."""

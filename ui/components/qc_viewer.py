@@ -86,7 +86,6 @@ def _pause_autoplay_for_notes_edit() -> None:
     """Stop playback and surface a banner when the user explicitly starts note entry."""
     SessionManager.set_autoplay_enabled(False)
     SessionManager.set_autoplay_start_time(0.0)
-    st.session_state["_pending_autoplay_pause_msg"] = INFO_MESSAGES["autoplay_paused_notes_editing"]
 
 
 def try_autoplay_advance_if_due(
@@ -558,7 +557,7 @@ def _display_qc_rating_for_task(
     notes_editable = st.session_state.get(_notes_edit_mode_key(qc_task), False)
     action_col, notes_col = st.columns([2, 6])
     with action_col:
-        st.caption("Autoplay will be paused when you type notes")
+        st.caption("Autoplay will be paused when you add notes. Notes are saved when you continue with rating or navigation.")
         if st.button("Add notes" if not notes_editable else "Edit notes", key=f"_toggle_notes_{qc_task}_{nver}", use_container_width=True):
             _toggle_notes_editing_for_task(qc_task)
             st.rerun()
@@ -994,9 +993,6 @@ def _display_qc_pagination_controls(
             _autoplay_fragment_advance_only()
         else:
             st.caption("Autoplay on — countdown starts on **Play**.")
-
-    if pending := st.session_state.pop("_pending_autoplay_pause_msg", None):
-        st.warning(pending)
 
     if pending := st.session_state.pop("_pending_filtered_subject_msg", None):
         st.info(pending)
