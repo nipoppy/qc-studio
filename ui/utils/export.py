@@ -26,7 +26,8 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
     This function is resilient to both `QCRecord` model instances and plain
     dicts. It will extract the canonical fields from the updated `QCRecord`:
     - pipeline (first column in the TSV), qc_task, participant_id, session_id,
-      task_id, run_id, timestamp, rater_id, rater_experience, rater_fatigue, rater_screen_size, final_qc
+            task_id, run_id, timestamp, rater_id, rater_experience, rater_fatigue,
+            rater_screen_size, final_qc, duration, decision_duration
 
     If a record also contains a `metrics` list (items compatible with
     `MetricQC`), those metrics will be flattened into columns as
@@ -80,6 +81,8 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
             "rater_fatigue": rec_dict.get("rater_fatigue"),
             "rater_screen_size": rec_dict.get("rater_screen_size"),
             "final_qc": rec_dict.get("final_qc"),
+            "duration": rec_dict.get("duration"),
+            "decision_duration": rec_dict.get("decision_duration"),
             "notes": normalized_notes,
         }
         rows.append(row)
@@ -98,6 +101,8 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
         "rater_fatigue",
         "rater_screen_size",
         "final_qc",
+        "duration",
+        "decision_duration",
         "notes",
     ]
 

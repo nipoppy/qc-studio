@@ -1,8 +1,11 @@
 """Congratulations page component for QC-Studio UI."""
 
 from pathlib import Path
+import numpy as np
+import pandas as pd
+import plotly.express as px
 import streamlit as st
-from constants import MESSAGES, SUCCESS_MESSAGES, INFO_MESSAGES, SESSION_KEYS, QC_RATINGS
+from constants import MESSAGES, SUCCESS_MESSAGES, INFO_MESSAGES, QC_RATINGS
 from managers.session_manager import SessionManager
 from utils.export import save_qc_results_to_csv
 
@@ -14,9 +17,7 @@ OVERWRITE_CONFIRMATION_PATH_KEY = "_pending_overwrite_path"
 def _default_congrats_export_path(
     out_dir: str,
     rater_id: str,
-    qc_pipeline: str | None = None,
     qc_task: str | None = None,
-    qc_session_id: str | None = None,
 ) -> str:
     """Default export path shown on the congratulations page."""
     base_dir = Path(str(out_dir).strip()).expanduser() if out_dir and str(out_dir).strip() else Path(".").expanduser()
@@ -137,8 +138,6 @@ def show_congratulations_page(
 
 	Thank you for completing the quality control process. Your thorough review ensures the integrity of our data!
 
-	✅ All QC records have been automatically saved.
-
 	"""
     )
 
@@ -154,9 +153,7 @@ def show_congratulations_page(
     default_export_path = _default_congrats_export_path(
         out_dir,
         rater_id,
-        qc_pipeline=SessionManager.get_qc_session_label().split("_")[1] if "_" in SessionManager.get_qc_session_label() else None,
         qc_task="all" if len(tasks_eff) > 1 else tasks_eff[0],
-        qc_session_id=SessionManager.get_qc_session_id(),
     )
     if CONGRATS_EXPORT_PATH_KEY not in st.session_state:
         st.session_state[CONGRATS_EXPORT_PATH_KEY] = default_export_path
@@ -240,31 +237,170 @@ def _display_session_summary(
             reviewed_count: Participants with a decided rating; defaults to len(record_list)
             multi_task: When True, ``reviewed_count`` counts cohort pages with every task rated.
     """
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        st.subheader("Session Information")
+    n_rev = reviewed_count if reviewed_count is not None else len(record_list)
+
+    num_reviewed = len(record_list)
+    final_qc_counts = {}
+    review_by_rating: dict[str, list[int]] = {}
+    decision_by_rating: dict[str, list[int]] = {}
+    durations: list[int] = []
+    decision_durations: list[int] = []
+    labels: list[str] = []
+    for record in record_list:
+        qc_value = record.final_qc
+        if qc_value not in QC_RATINGS:
+            rating_label = "Unrated"
+        else:
+            rating_label = qc_value
+        final_qc_counts[rating_label] = final_qc_counts.get(rating_label, 0) + 1
+        labels.append(rating_label)
+
+        duration_val = getattr(record, "duration", None)
+        if duration_val is None and isinstance(record, dict):
+            duration_val = record.get("duration")
+        try:
+            duration_int = int(duration_val) if duration_val is not None else None
+        except (TypeError, ValueError):
+            duration_int = None
+        if duration_int is not None and duration_int >= 0:
+            durations.append(duration_int)
+            review_by_rating.setdefault(rating_label, []).append(duration_int)
+
+        decision_val = getattr(record, "decision_duration", None)
+        if decision_val is None and isinstance(record, dict):
+            decision_val = record.get("decision_duration")
+        try:
+            decision_int = int(decision_val) if decision_val is not None else None
+        except (TypeError, ValueError):
+            decision_int = None
+        if decision_int is not None and decision_int >= 0:
+            decision_durations.append(decision_int)
+            decision_by_rating.setdefault(rating_label, []).append(decision_int)
+
+    final_qc_df = pd.DataFrame.from_dict(final_qc_counts, orient="index", columns=["Count"])
+    rating_order = [*QC_RATINGS, "Unrated"]
+    final_qc_df = final_qc_df.reindex([rating for rating in rating_order if rating in final_qc_df.index])
+    if num_reviewed > 0:
+        final_qc_df["Percentage (%)"] = (final_qc_df["Count"] / num_reviewed).mul(100).round(1)
+    else:
+        final_qc_df["Percentage (%)"] = []
+
+    final_qc_df["Avg review duration (s)"] = [
+        round(sum(review_by_rating.get(rating, [])) / len(review_by_rating.get(rating, [])), 1) if review_by_rating.get(rating) else pd.NA
+        for rating in final_qc_df.index
+    ]
+    final_qc_df["Avg rating duration (s)"] = [
+        round(sum(decision_by_rating.get(rating, [])) / len(decision_by_rating.get(rating, [])), 1) if decision_by_rating.get(rating) else pd.NA
+        for rating in final_qc_df.index
+    ]
+    final_qc_df = final_qc_df[final_qc_df["Count"] > 0]
+
+    total_duration_s = int(sum(durations)) if durations and len(durations) == len(labels) else None
+    avg_duration_s = (total_duration_s / len(durations)) if total_duration_s is not None and durations else None
+    total_decision_s = int(sum(decision_durations)) if decision_durations and len(decision_durations) == len(labels) else None
+    avg_decision_s = (total_decision_s / len(decision_durations)) if total_decision_s is not None and decision_durations else None
+
+    info_col, timing_col, table_col = st.columns([1.1, 1.4, 1.5])
+    with info_col:
+        st.subheader("QC Session Information")
         st.write(f"**Rater ID:** {rater_id}")
         st.write(f"**QC Task:** {qc_task}")
-        n_rev = reviewed_count if reviewed_count is not None else len(record_list)
         if multi_task:
             st.write(f"**Fully completed review pages:** {n_rev}")
         else:
             st.write(f"**Total Participants Reviewed:** {n_rev}")
 
-    with col2:
-        st.subheader("QC Results Summary")
-        # Count final_qc values
-        if record_list:
-            final_qc_counts = {}
-            for record in record_list:
-                qc_value = record.final_qc
-                if qc_value not in QC_RATINGS:
-                    final_qc_counts["Unrated"] = final_qc_counts.get("Unrated", 0) + 1
-                else:
-                    final_qc_counts[qc_value] = final_qc_counts.get(qc_value, 0) + 1
+    with timing_col:
+        st.subheader("Timing Summary")
+        if total_duration_s is None:
+            st.caption("No valid review durations yet.")
+        else:
+            st.write(f"**Total QC review duration:** {total_duration_s}s")
+            st.write(f"**Average review time per participant:** {avg_duration_s:.1f}s")
 
-            for qc_status, count in sorted(final_qc_counts.items()):
-                st.write(f"**{qc_status}:** {count}")
+        if total_decision_s is None:
+            st.caption("No valid final-decision durations yet.")
+        else:
+            st.write(f"**Total final-decision duration:** {total_decision_s}s")
+            st.write(f"**Average final-decision time per participant:** {avg_decision_s:.1f}s")
+
+    with table_col:
+        st.subheader("QC Results Summary")
+        # Size table to content to avoid rendering empty placeholder rows.
+        table_height = 36 + (35 * max(len(final_qc_df), 1))
+        st.dataframe(final_qc_df, width="stretch", height=table_height)
+
+    review_fig = None
+    decision_fig = None
+
+    if total_duration_s is not None:
+        duration_df = pd.DataFrame({"duration": durations, "qc_value": labels})
+        count_df = duration_df.groupby(["duration", "qc_value"]).size().reset_index(name="count")
+        review_fig = px.bar(
+            count_df,
+            x="duration",
+            y="count",
+            color="qc_value",
+            barmode="group",
+            title="Distribution of review duration per page",
+        )
+        review_fig.update_yaxes(
+            tickvals=np.arange(0, int(count_df["count"].max()) + 1, 1),
+            tick0=0,
+        )
+        review_fig.update_layout(
+            xaxis_title="Duration (s)",
+            yaxis_title="Count",
+            legend_title="",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+            ),
+            bargap=0.1,
+        )
+
+    if total_decision_s is not None:
+        decision_df = pd.DataFrame({"duration": decision_durations, "qc_value": labels})
+        decision_count_df = decision_df.groupby(["duration", "qc_value"]).size().reset_index(name="count")
+        decision_fig = px.bar(
+            decision_count_df,
+            x="duration",
+            y="count",
+            color="qc_value",
+            barmode="group",
+            title="Distribution of rating duration per task",
+        )
+        decision_fig.update_yaxes(
+            tickvals=np.arange(0, int(decision_count_df["count"].max()) + 1, 1),
+            tick0=0,
+        )
+        decision_fig.update_layout(
+            xaxis_title="Duration (s)",
+            yaxis_title="Count",
+            legend_title="",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+            ),
+            bargap=0.1,
+        )
+
+    if review_fig is not None and decision_fig is not None:
+        plot_col1, plot_col2 = st.columns(2)
+        with plot_col1:
+            st.plotly_chart(review_fig, use_container_width=True)
+        with plot_col2:
+            st.plotly_chart(decision_fig, use_container_width=True)
+    elif review_fig is not None:
+        st.plotly_chart(review_fig, use_container_width=True)
+    elif decision_fig is not None:
+        st.plotly_chart(decision_fig, use_container_width=True)
 
 
 def _export_qc_results(

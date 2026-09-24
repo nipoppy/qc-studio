@@ -41,6 +41,7 @@ class QCRecord(BaseModel):
     final_qc: Optional[str] = None
     notes: Annotated[Optional[str], Field(description="Additional comment")] = None
     duration: Annotated[Optional[int], Field(description="Duration of the session resulting in the final annotation")] = None
+    decision_duration: Annotated[Optional[int], Field(description="Duration from page load to the last rating selection")] = None
 
 
 class QCTask(BaseModel):

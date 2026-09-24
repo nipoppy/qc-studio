@@ -38,6 +38,7 @@ class SessionManager:
             "autoplay_enabled": False,
             "autoplay_start_time": 0.0,
             "autoplay_duration": 5,
+            "session_start_time": 0.0,
             SESSION_KEYS["iqm_view_selection"]: "Overview",
             SESSION_KEYS["iqm_display_mode_selection"]: "Dataset",
             "qc_session_id": "",
@@ -501,6 +502,16 @@ class SessionManager:
     def set_autoplay_duration(seconds: int):
         """Set the autoplay countdown duration in seconds (2–10)."""
         st.session_state["autoplay_duration"] = max(2, min(10, seconds))
+
+    @staticmethod
+    def get_session_start_time() -> float:
+        """Get the timestamp when the current participant/session page was first shown."""
+        return st.session_state.get("session_start_time", 0.0)
+
+    @staticmethod
+    def set_session_start_time(t: float):
+        """Set the timestamp for when the current participant/session page was first shown."""
+        st.session_state["session_start_time"] = t
 
     # IQM Viewer Widget Selection Mirrors
     #

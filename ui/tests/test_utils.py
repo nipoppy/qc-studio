@@ -499,7 +499,7 @@ class TestSaveQcResultsToCsv:
     def test_save_qc_records_to_csv(self, temp_dir, qc_record_sample):
         """Test saving QC records to CSV."""
         output_file = temp_dir / "output.tsv"
-        records = [qc_record_sample]
+        records = [qc_record_sample.model_copy(update={"duration": 15, "decision_duration": 9})]
 
         result = save_qc_results_to_csv(output_file, records, drop_duplicates=False)
 
@@ -510,6 +510,10 @@ class TestSaveQcResultsToCsv:
         assert df.iloc[0]["participant_id"] == "sub-CMH0001"
         assert "rater_screen_size" in df.columns
         assert df.iloc[0]["rater_screen_size"] == "26-30"
+        assert "duration" in df.columns
+        assert "decision_duration" in df.columns
+        assert int(df.iloc[0]["duration"]) == 15
+        assert int(df.iloc[0]["decision_duration"]) == 9
 
     def test_save_empty_records_list(self, temp_dir):
         """Test saving empty records list."""
