@@ -1,0 +1,11 @@
+# Dependencies for the end-to-end browser tests in e2e/.
+# Kept separate from requirements-test.txt so the existing unit-test CI job
+# doesn't have to install browsers.
+#
+#   pip install -r e2e/requirements-e2e.txt
+#   playwright install chromium
+
+-r ../requirements-test.txt
+
+pytest-playwright>=0.5
+requests>=2.32
