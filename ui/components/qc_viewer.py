@@ -248,6 +248,12 @@ def display_qc_viewers(
 
     st.markdown(f"**{compact_session_label(participant_id, session_id)}**")
 
+    # Start timing when the displayed participant/session changes.
+    timing_key = (participant_id, session_id)
+    if st.session_state.get("_qc_timing_key") != timing_key:
+        st.session_state["_qc_timing_key"] = timing_key
+        SessionManager.set_session_start_time(time.time())
+
     for i, tname in enumerate(tasks):
         qc_config = parse_qc_config(qc_config_path, tname, substitution_values)
         display_label = qc_config.get("display_name") or tname
@@ -478,6 +484,13 @@ def _notes_edit_mode_key(qc_task: str) -> str:
     return f"_notes_edit_mode_{qc_task}"
 
 
+def _decision_timestamp_key(participant_id: str | None, session_id: str | None, qc_task: str) -> str:
+    pid = str(participant_id or "")
+    sid = str(session_id or "")
+    task = str(qc_task or "")
+    return f"_decision_ts_{pid}_{sid}_{task}"
+
+
 def _latest_state_value_for_task_widget(prefix: str, qc_task: str, version: int | None = None):
     """Return the newest live widget value for a task, even if older versioned keys remain in state."""
     candidates = []
@@ -496,24 +509,55 @@ def _latest_state_value_for_task_widget(prefix: str, qc_task: str, version: int 
     return None
 
 
+def _persist_current_task_state(
+    participant_id: str | None,
+    session_id: str | None,
+    qc_pipeline: str | None,
+    qc_task: str,
+    rver: int,
+    nver: int,
+    *,
+    mark_decision_time: bool,
+) -> None:
+    rating = _latest_state_value_for_task_widget("qc_rating", qc_task, rver)
+    notes = _latest_state_value_for_task_widget("qc_notes", qc_task, nver)
+    if notes is None:
+        notes = ""
+    if mark_decision_time:
+        st.session_state[_decision_timestamp_key(participant_id, session_id, qc_task)] = time.time()
+    _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
+
+
 def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
     """Save rating and notes as soon as either widget changes.
 
     Used by both the rating radio and the notes box so a later forced page jump
     (sidebar search, autoplay, subject-list click) cannot drop unsaved notes.
     """
-    rating = _latest_state_value_for_task_widget("qc_rating", qc_task, rver)
-    notes = _latest_state_value_for_task_widget("qc_notes", qc_task, nver)
-    if notes is None:
-        notes = ""
-    _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
+    _persist_current_task_state(
+        participant_id,
+        session_id,
+        qc_pipeline,
+        qc_task,
+        rver,
+        nver,
+        mark_decision_time=True,
+    )
 
 
 def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
     """Pause autoplay and save the current task state when the user starts entering notes."""
     if SessionManager.is_autoplay_enabled():
         _pause_autoplay_for_notes_edit()
-    _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver)
+    _persist_current_task_state(
+        participant_id,
+        session_id,
+        qc_pipeline,
+        qc_task,
+        rver,
+        nver,
+        mark_decision_time=False,
+    )
 
 
 def _toggle_notes_editing_for_task(qc_task: str) -> None:
@@ -1146,8 +1190,19 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_
     if rating is None:
         return
 
-    now = datetime.now()
+    now_epoch = time.time()
+    now = datetime.fromtimestamp(now_epoch)
     timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    start_time = SessionManager.get_session_start_time()
+    duration = max(0, int(now_epoch - start_time)) if start_time > 0 else 0
+    decision_timestamp = st.session_state.get(_decision_timestamp_key(participant_id, session_id, qc_task))
+    if decision_timestamp is not None and start_time > 0:
+        try:
+            decision_duration = max(0, int(float(decision_timestamp) - start_time))
+        except (TypeError, ValueError):
+            decision_duration = None
+    else:
+        decision_duration = None
     record = QCRecord(
         participant_id=participant_id,
         session_id=session_id,
@@ -1160,5 +1215,7 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_
         rater_screen_size=SessionManager.get_rater_screen_size(),
         final_qc=rating,
         notes=notes,
+        duration=duration,
+        decision_duration=decision_duration,
     )
     SessionManager.add_qc_record(record)

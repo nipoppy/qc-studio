@@ -383,6 +383,30 @@ class TestRecordQcForCurrentParticipant:
         assert saved.rater_screen_size == state["rater_screen_size"]
         assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", saved.timestamp)
 
+    def test_saves_duration_from_session_start_time(self, autoplay_session_state, monkeypatch):
+        """Duration should be computed from the first render time of the active participant/session page."""
+        state, _ = autoplay_session_state
+        state["session_start_time"] = 100.0
+        monkeypatch.setattr(qc_viewer_module.time, "time", lambda: 130.4)
+
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "Looks fine.")
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.duration == 30
+
+    def test_saves_decision_duration_from_last_rating_selection(self, autoplay_session_state, monkeypatch):
+        """Decision duration should be measured from page start to the last rating change timestamp."""
+        state, _ = autoplay_session_state
+        state["session_start_time"] = 100.0
+        state[qc_viewer_module._decision_timestamp_key("sub-CMH0001", "ses-01", "anat_wf_qc")] = 112.8
+        monkeypatch.setattr(qc_viewer_module.time, "time", lambda: 130.4)
+
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "Looks fine.")
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.duration == 30
+        assert saved.decision_duration == 12
+
 
 class TestRecordAllQcTasks:
     def test_saves_every_task_in_one_call_when_all_are_rated(self, autoplay_session_state):
