@@ -5,11 +5,25 @@ import re
 import streamlit as st
 import streamlit.components.v1 as components
 import time
+import pandas as pd
 from datetime import datetime, timedelta
-from constants import MONTAGE_HEIGHT, MESSAGES, ERROR_MESSAGES, QC_RATINGS, NIIVUE_SECONDARY_RATIO, VIEW_MODES, OVERLAY_COLORMAPS
+from html import escape
+from pathlib import Path
+from constants import (
+    MONTAGE_HEIGHT,
+    MESSAGES,
+    ERROR_MESSAGES,
+    QC_RATINGS,
+    NIIVUE_SECONDARY_RATIO,
+    VIEW_MODES,
+    OVERLAY_COLORMAPS,
+    SUCCESS_MESSAGES,
+    INFO_MESSAGES,
+)
 from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
 from utils.cohort import compact_session_label
+from utils.export import save_qc_results_to_csv, normalize_note_value
 from utils.navigation import request_navigation_rerun
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
@@ -17,6 +31,32 @@ from models import QCRecord
 from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
+QC_SAVE_PATH_KEY = "qc_save_path"
+QC_SAVE_PATH_DEFAULT_KEY = "_qc_save_path_default"
+PENDING_QC_SAVE_MSG_KEY = "pending_qc_save_msg"
+
+
+def _should_refresh_qc_save_path_widget(current_value: str | None, previous_default: str | None, new_default: str | None) -> bool:
+    """True when the widget still holds a stale default from a previous run."""
+    if new_default is None or new_default == previous_default:
+        return False
+    if current_value is None:
+        return True
+    current_str = str(current_value).strip()
+    previous_str = str(previous_default or "").strip()
+    if not current_str or not previous_str:
+        return False
+    if current_str == previous_str:
+        return True
+    try:
+        current_path = Path(current_str).expanduser().resolve()
+        previous_path = Path(previous_str).expanduser().resolve()
+        if current_path.name == previous_path.name and current_path.parent == previous_path.parent:
+            return True
+    except Exception:
+        pass
+    return False
+
 
 # Extra wait past the configured autoplay duration before advancing, so a rating click
 # made right at the boundary has time to reach the server and self-save via on_change
@@ -42,6 +82,12 @@ def _clean_filename(filename: str) -> str:
     return clean or filename
 
 
+def _pause_autoplay_for_notes_edit() -> None:
+    """Stop playback and surface a banner when the user explicitly starts note entry."""
+    SessionManager.set_autoplay_enabled(False)
+    SessionManager.set_autoplay_start_time(0.0)
+
+
 def try_autoplay_advance_if_due(
     participant_id: str | None,
     session_id: str | None,
@@ -59,6 +105,9 @@ def try_autoplay_advance_if_due(
     """
     if participant_id is None or not total_participants:
         return
+    tasks = list(qc_tasks or [])
+    if not tasks:
+        tasks = [qc_task] if qc_task else ["anat_wf_qc"]
     if not SessionManager.is_autoplay_enabled():
         return
     start_time = SessionManager.get_autoplay_start_time()
@@ -68,9 +117,6 @@ def try_autoplay_advance_if_due(
     duration = SessionManager.get_autoplay_duration()
     if elapsed < duration + AUTOPLAY_ADVANCE_GRACE_SECONDS:
         return
-    tasks = list(qc_tasks or [])
-    if not tasks:
-        tasks = [qc_task] if qc_task else ["anat_wf_qc"]
 
     current_page = SessionManager.get_current_page()
     _, next_page = _filtered_adjacent_pages(
@@ -428,20 +474,52 @@ def _notes_widget_key(qc_task: str, nver: int) -> str:
     return f"qc_notes_{qc_task}_{nver}"
 
 
+def _notes_edit_mode_key(qc_task: str) -> str:
+    return f"_notes_edit_mode_{qc_task}"
+
+
+def _latest_state_value_for_task_widget(prefix: str, qc_task: str, version: int | None = None):
+    """Return the newest live widget value for a task, even if older versioned keys remain in state."""
+    candidates = []
+    for key, value in st.session_state.items():
+        if not key.startswith(f"{prefix}_{qc_task}_"):
+            continue
+        suffix = key.rsplit("_", 1)[-1]
+        if suffix.isdigit():
+            candidates.append((int(suffix), value))
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+    if version is not None:
+        direct_key = f"{prefix}_{qc_task}_{version}"
+        if direct_key in st.session_state:
+            return st.session_state[direct_key]
+    return None
+
+
 def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
     """Save rating and notes as soon as either widget changes.
 
     Used by both the rating radio and the notes box so a later forced page jump
     (sidebar search, autoplay, subject-list click) cannot drop unsaved notes.
     """
-    rating = st.session_state.get(_rating_widget_key(qc_task, rver))
-    notes = st.session_state.get(_notes_widget_key(qc_task, nver), "")
+    rating = _latest_state_value_for_task_widget("qc_rating", qc_task, rver)
+    notes = _latest_state_value_for_task_widget("qc_notes", qc_task, nver)
+    if notes is None:
+        notes = ""
     _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
 
 
 def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
-    """Same save path as ``_on_rating_change``; named for the notes widget callback."""
+    """Pause autoplay and save the current task state when the user starts entering notes."""
+    if SessionManager.is_autoplay_enabled():
+        _pause_autoplay_for_notes_edit()
     _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver)
+
+
+def _toggle_notes_editing_for_task(qc_task: str) -> None:
+    """Reveal the notes box for editing and pause autoplay until the user resumes manually."""
+    st.session_state[_notes_edit_mode_key(qc_task)] = True
+    _pause_autoplay_for_notes_edit()
 
 
 def _display_qc_rating_for_task(
@@ -476,22 +554,33 @@ def _display_qc_rating_for_task(
         on_change=_on_rating_change,
         args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
     )
-    st.text_area(
-        MESSAGES["qc_notes_prompt"],
-        value=initial_notes,
-        key=_notes_widget_key(qc_task, nver),
-        height=notes_height,
-        on_change=_on_notes_change,
-        args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
-    )
+    notes_editable = st.session_state.get(_notes_edit_mode_key(qc_task), False)
+    action_col, notes_col = st.columns([2, 6])
+    with action_col:
+        st.caption("Autoplay will be paused when you add notes. Notes are saved when you continue with rating or navigation.")
+        if st.button("Add notes" if not notes_editable else "Edit notes", key=f"_toggle_notes_{qc_task}_{nver}", use_container_width=True):
+            _toggle_notes_editing_for_task(qc_task)
+            st.rerun()
+    with notes_col:
+        st.text_area(
+            MESSAGES["qc_notes_prompt"],
+            value=initial_notes,
+            key=_notes_widget_key(qc_task, nver),
+            height=notes_height,
+            disabled=not notes_editable,
+            on_change=_on_notes_change,
+            args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
+        )
 
 
 def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str, qc_tasks: list) -> None:
     rver = SessionManager.get_rating_version()
     nver = SessionManager.get_notes_version()
     for t in qc_tasks:
-        rating = st.session_state.get(_rating_widget_key(t, rver))
-        notes = st.session_state.get(_notes_widget_key(t, nver), "")
+        rating = _latest_state_value_for_task_widget("qc_rating", t, rver)
+        notes = _latest_state_value_for_task_widget("qc_notes", t, nver)
+        if notes is None:
+            notes = ""
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
 
 
@@ -568,6 +657,246 @@ def _filtered_adjacent_pages(
     )
 
 
+def _sanitize_qc_task_slug(qc_task: str | None) -> str:
+    """Build a filepath-safe QC task slug; ``all`` stays explicit in the filename."""
+    task = str(qc_task or "").strip()
+    if not task:
+        return "unknown_task"
+    task_l = task.lower()
+    if task_l == "all":
+        return "all_tasks"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", task).strip("_") or "unknown_task"
+
+
+def _default_qc_status_filename(rater_id: str | None, qc_task: str | None) -> str:
+    """Stable status filename without timestamp/session-id suffixes."""
+    rid = str(rater_id or "rater").strip().lower() or "rater"
+    task_slug = _sanitize_qc_task_slug(qc_task)
+    return f"{rid}_{task_slug}_status.tsv"
+
+
+def _build_qc_session_label(
+    rater_id: str,
+    qc_pipeline: str | None,
+    qc_task: str | None,
+    qc_session_id: str | None = None,
+) -> str:
+    """Human-readable QC session label for file naming and UI state."""
+    rid = str(rater_id or "rater").strip().lower() or "rater"
+    pipe = str(qc_pipeline or "qc").strip().lower() or "qc"
+    task_slug = _sanitize_qc_task_slug(qc_task)
+    if qc_session_id and str(qc_session_id).strip():
+        return f"{rid}_{pipe}_{task_slug}_{str(qc_session_id).strip()}"
+    return f"{rid}_{pipe}_{task_slug}"
+
+
+def _resolve_output_base_dir(out_dir: str | None) -> Path:
+    """Resolve the CLI output directory to a stable absolute path regardless of cwd."""
+    base_dir = Path(str(out_dir).strip()).expanduser() if out_dir and str(out_dir).strip() else Path(".").expanduser()
+    return base_dir.resolve() if base_dir.is_absolute() else (Path.cwd() / base_dir).resolve()
+
+
+def _default_qc_save_path(
+    out_dir: str | None,
+    qc_pipeline: str | None = None,
+    qc_task: str | None = None,
+    qc_session_id: str | None = None,
+) -> str:
+    """Default save path shown to users in the sidebar."""
+    base_dir = _resolve_output_base_dir(out_dir)
+    filename = _default_qc_status_filename(SessionManager.get_rater_id(), qc_task)
+    return str((base_dir / filename).resolve())
+
+
+def _checkpoint_dir_for_session(out_dir: str | None, qc_session_id: str | None = None) -> Path:
+    """Directory for timestamped checkpoint snapshots associated with a QC session."""
+    if out_dir and str(out_dir).strip():
+        base_dir = _resolve_output_base_dir(out_dir)
+        checkpoint_dir = base_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoint_dir.resolve()
+
+    session_dir = SessionManager.get_qc_session_checkpoint_dir()
+    if session_dir:
+        checkpoint_dir = Path(session_dir).expanduser().resolve()
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoint_dir
+
+    base_dir = _resolve_output_base_dir(None)
+    checkpoint_dir = base_dir / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    return checkpoint_dir.resolve()
+
+
+def _default_qc_checkpoint_path(
+    out_dir: str | None,
+    qc_pipeline: str | None = None,
+    qc_task: str | None = None,
+    qc_session_id: str | None = None,
+    timestamp: str | None = None,
+) -> str:
+    """Single-timestamp checkpoint snapshot filename for the current QC session."""
+    stamp = str(timestamp or datetime.now().strftime("%Y%m%dT%H%M%SZ"))
+    rater_id = str(SessionManager.get_rater_id() or "rater").strip().lower() or "rater"
+    task_slug = _sanitize_qc_task_slug(qc_task)
+    checkpoint_dir = _checkpoint_dir_for_session(out_dir, qc_session_id or SessionManager.get_qc_session_id())
+    return str((checkpoint_dir / f"{rater_id}_{task_slug}_checkpoint_{stamp}.tsv").resolve())
+
+
+def _checkpoint_frame_for_records(records: list) -> pd.DataFrame:
+    """Normalize QC records to the checkpoint TSV schema before comparison or export."""
+    columns = [
+        "pipeline",
+        "qc_task",
+        "participant_id",
+        "session_id",
+        "task_id",
+        "run_id",
+        "timestamp",
+        "rater_id",
+        "rater_experience",
+        "rater_fatigue",
+        "final_qc",
+        "notes",
+    ]
+    rows = []
+    for rec in records:
+        if hasattr(rec, "model_dump"):
+            rows.append(rec.model_dump())
+        elif hasattr(rec, "dict"):
+            rows.append(rec.dict())
+        elif isinstance(rec, dict):
+            rows.append(rec)
+    df = pd.DataFrame(rows)
+    if df.empty:
+        df = pd.DataFrame(columns=columns)
+    df = df.reindex(columns=columns, fill_value="")
+    for col in columns:
+        if col == "notes":
+            df[col] = df[col].map(normalize_note_value)
+        else:
+            df[col] = df[col].fillna("").astype(str)
+    return df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
+
+
+def _latest_checkpoint_path_for_session(out_dir: str | None, qc_session_id: str | None = None) -> Path | None:
+    """Latest checkpoint file for the active session, if any exists."""
+    checkpoint_dir = _checkpoint_dir_for_session(out_dir, qc_session_id or SessionManager.get_qc_session_id())
+    checkpoint_files = sorted(checkpoint_dir.glob("*.tsv"), key=lambda p: p.name)
+    return checkpoint_files[-1] if checkpoint_files else None
+
+
+def _checkpoint_contents_match_records(records: list, out_dir: str | None, qc_session_id: str | None = None) -> bool:
+    """True when the current QC records are unchanged from the most recent checkpoint."""
+    latest_path = _latest_checkpoint_path_for_session(out_dir, qc_session_id)
+    if latest_path is None:
+        return False
+    try:
+        latest_df = pd.read_csv(latest_path, sep="\t", dtype=str)
+    except Exception:
+        return False
+    comparison_columns = [
+        "pipeline",
+        "qc_task",
+        "participant_id",
+        "session_id",
+        "task_id",
+        "run_id",
+        "rater_id",
+        "rater_experience",
+        "rater_fatigue",
+        "final_qc",
+        "notes",
+    ]
+    current_df = _checkpoint_frame_for_records(records).reindex(columns=comparison_columns, fill_value="")
+    latest_df = latest_df.reindex(columns=comparison_columns, fill_value="")
+    for col in comparison_columns:
+        if col == "notes":
+            current_df[col] = current_df[col].map(normalize_note_value)
+            latest_df[col] = latest_df[col].map(normalize_note_value)
+        else:
+            current_df[col] = current_df[col].fillna("").astype(str)
+            latest_df[col] = latest_df[col].fillna("").astype(str)
+    current_df = current_df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
+    latest_df = latest_df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
+    return current_df.equals(latest_df)
+
+
+def _create_qc_checkpoint(
+    records: list,
+    out_dir: str | None,
+    qc_pipeline: str | None,
+    qc_task: str | None,
+    *,
+    qc_session_id: str | None = None,
+    timestamp: str | None = None,
+) -> Path:
+    """Create a time-stamped checkpoint file for the current QC session; does not overwrite prior checkpoints."""
+    checkpoint_path = Path(
+        _default_qc_checkpoint_path(
+            out_dir,
+            qc_pipeline=qc_pipeline,
+            qc_task=qc_task,
+            qc_session_id=qc_session_id,
+            timestamp=timestamp,
+        )
+    )
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = _checkpoint_frame_for_records(records)
+    df.to_csv(checkpoint_path, sep="\t", index=False)
+    return checkpoint_path
+
+
+def _require_overwrite_confirmation(file_path: str | Path, label: str) -> bool:
+    """Require a second explicit click before overwriting an existing export file."""
+    target = Path(str(file_path)).expanduser()
+    if not target.exists():
+        st.session_state.pop("_pending_overwrite_path", None)
+        return True
+    current = st.session_state.get("_pending_overwrite_path")
+    if current == str(target):
+        st.session_state.pop("_pending_overwrite_path", None)
+        return True
+    st.session_state["_pending_overwrite_path"] = str(target)
+    st.warning(f"⚠️ {label} will overwrite the existing file: {target}")
+    return False
+
+
+def _resolve_qc_save_file_path(out_dir: str | None, save_file_path: str | None, qc_pipeline: str | None = None, qc_task: str | None = None) -> Path:
+    """Resolve the final export path from optional user input.
+
+    If the user provides a directory-like path (no suffix), append the default file name.
+    """
+    if save_file_path and str(save_file_path).strip():
+        candidate = Path(str(save_file_path).strip()).expanduser()
+        if candidate.suffix:
+            return candidate
+        task_name = qc_task or "all_tasks"
+        return candidate / _default_qc_status_filename(SessionManager.get_rater_id(), task_name)
+    return Path(_default_qc_save_path(out_dir, qc_pipeline=qc_pipeline, qc_task=qc_task, qc_session_id=SessionManager.get_qc_session_id()))
+
+
+def _render_sidebar_status_banner(kind: str, msg: str) -> None:
+    """Render a full-width sidebar status banner for save/checkpoint feedback."""
+    palette = {
+        "success": ("rgba(34, 197, 94, 0.12)", "#16a34a", "#166534"),
+        "info": ("rgba(59, 130, 246, 0.10)", "#3b82f6", "#1d4ed8"),
+    }
+    bg, accent, text = palette.get(kind, palette["info"])
+    safe_text = escape(str(msg)).replace("\n", "<br>")
+    st.markdown(
+        f"""
+        <div style="width:100%; box-sizing:border-box; display:block; background:{bg};
+        border:1px solid {accent}; border-left:4px solid {accent}; border-radius:8px;
+        color:{text}; padding:0.75rem 0.9rem; margin:0.5rem 0; line-height:1.4; white-space:normal;">
+            {safe_text}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _render_previous_page_button(target_page: int) -> None:
     """Sidebar Previous control; no-ops visually when omitted by the caller."""
     if st.button(
@@ -582,23 +911,54 @@ def _render_previous_page_button(target_page: int) -> None:
         request_navigation_rerun(st)
 
 
-def _render_next_page_button(target_page: int) -> None:
-    """Sidebar Next control (does not save ratings)."""
+def _render_next_page_button(
+    target_page: int | None,
+    *,
+    participant_id: str,
+    session_id: str,
+    qc_pipeline: str,
+    qc_tasks: list,
+    participant_ids: list | None = None,
+    qc_cohort: list | None = None,
+    total_participants: int | None = None,
+) -> None:
+    """Sidebar Next control: save current page, then advance only when the page transition is allowed."""
     if st.button(
         MESSAGES["next_button"],
         width="stretch",
         key="pag_next",
         help=MESSAGES["nav_tooltip_next"],
     ):
-        SessionManager.set_current_page(target_page)
+        _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+
+        if target_page is not None:
+            SessionManager.set_current_page(target_page)
+        elif (
+            qc_cohort
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
+            or not qc_cohort
+            and participant_ids
+            and session_id
+            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants or 0)
+            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
+                qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants or 0)
+            )
+        ):
+            SessionManager.set_current_page((total_participants or 0) + 1)
+        elif _has_active_subject_filter() and _filtered_cohort_complete_for_tasks(
+            qc_tasks, qc_cohort, participant_ids, session_id, total_participants or 0
+        ):
+            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
+            st.info(msg)
+            st.session_state["_pending_filtered_subject_msg"] = msg
+
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
         request_navigation_rerun(st)
 
 
 def _display_qc_pagination_header(current_page: int, total_participants: int) -> None:
-    """Sidebar: Navigation title and page counter (call inside ``with st.sidebar:``)."""
-    st.markdown("#### 📄 Navigation")
+    """Sidebar: page counter only; kept compact to save space."""
     st.write(f"**Page {current_page} of {total_participants}**")
 
 
@@ -611,6 +971,8 @@ def _display_qc_pagination_controls(
     qc_tasks: list,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
+    out_dir: str | None = None,
+    drop_duplicates: bool = True,
 ) -> None:
     """Sidebar: autoplay, page buttons, save CSV (call inside ``with st.sidebar:``)."""
     autoplay_col1, autoplay_col2 = st.columns([1, 1])
@@ -635,8 +997,6 @@ def _display_qc_pagination_controls(
     if pending := st.session_state.pop("_pending_filtered_subject_msg", None):
         st.info(pending)
 
-    st.divider()
-
     prev_page, next_page = _filtered_adjacent_pages(
         current_page=current_page,
         total_participants=total_participants,
@@ -644,76 +1004,50 @@ def _display_qc_pagination_controls(
         qc_cohort=qc_cohort,
         session_id=session_id,
     )
-    if prev_page is not None and next_page is not None:
-        prev_col, next_col = st.columns(2)
-        with prev_col:
-            _render_previous_page_button(prev_page)
-        with next_col:
-            _render_next_page_button(next_page)
-    elif prev_page is not None:
-        _render_previous_page_button(prev_page)
-    elif next_page is not None:
-        _render_next_page_button(next_page)
 
-    if st.button(
-        MESSAGES["confirm_next_button"],
-        width="stretch",
-        key="pag_confirm",
-        help=MESSAGES["nav_tooltip_confirm_next"],
-    ):
-        _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
-        if SessionManager.is_autoplay_enabled():
-            SessionManager.set_autoplay_start_time(time.time())
-        elif next_page is not None:
-            SessionManager.set_current_page(next_page)
-        elif (
-            qc_cohort
-            and SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort)
-            or not qc_cohort
-            and participant_ids
-            and session_id
-            and _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-            and SessionManager.all_qc_cohort_pages_complete_for_tasks(
-                qc_tasks, _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
-            )
-        ):
-            SessionManager.set_current_page(total_participants + 1)
-        elif _has_active_subject_filter() and _filtered_cohort_complete_for_tasks(
-            qc_tasks, qc_cohort, participant_ids, session_id, total_participants
-        ):
-            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-            st.info(msg)
-            st.session_state["_pending_filtered_subject_msg"] = msg
-        request_navigation_rerun(st)
-
-    st.divider()
-
-    st.markdown(
-        """
-        <style>
-        section[data-testid="stSidebar"] .st-key-pag_save_csv button {
-            width: 100% !important;
-            white-space: nowrap !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+    _render_next_page_button(
+        next_page,
+        participant_id=participant_id,
+        session_id=session_id,
+        qc_pipeline=qc_pipeline,
+        qc_tasks=qc_tasks,
+        participant_ids=participant_ids,
+        qc_cohort=qc_cohort,
+        total_participants=total_participants,
     )
+
+    if prev_page is not None:
+        _render_previous_page_button(prev_page)
+
+    active_task_label = "all" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else qc_pipeline)
+
+    resolved_out_dir = Path(out_dir).expanduser().resolve() if out_dir else Path.cwd().resolve()
+    st.caption(f"Output dir: {resolved_out_dir}")
+
     if st.button(
-        MESSAGES["save_csv_button"],
+        MESSAGES["create_checkpoint_button"],
         width="stretch",
-        key="pag_save_csv",
-        help=MESSAGES["save_csv_help"],
+        key="create_checkpoint",
+        help=MESSAGES["create_checkpoint_help"],
     ):
-        _save_qc_record(
-            participant_id=participant_id,
-            session_id=session_id,
-            qc_pipeline=qc_pipeline,
-            qc_tasks=qc_tasks,
-            total_participants=total_participants,
-            participant_ids=participant_ids,
-            qc_cohort=qc_cohort,
-        )
+        records = SessionManager.get_latest_qc_records_per_dedup(None)
+        if not records:
+            st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["no_export_records"])
+        elif _checkpoint_contents_match_records(records, out_dir, SessionManager.get_qc_session_id()):
+            st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["checkpoint_unchanged"])
+        else:
+            checkpoint_path = _create_qc_checkpoint(
+                records=records,
+                out_dir=out_dir,
+                qc_pipeline=qc_pipeline,
+                qc_task=active_task_label,
+                qc_session_id=SessionManager.get_qc_session_id(),
+            )
+            st.session_state["_pending_checkpoint_msg"] = ("success", SUCCESS_MESSAGES["checkpoint_saved"].format(path=checkpoint_path))
+
+    if pending := st.session_state.pop("_pending_checkpoint_msg", None):
+        kind, msg = pending
+        _render_sidebar_status_banner(kind, msg)
 
 
 def _display_qc_pagination(
@@ -749,8 +1083,38 @@ def _save_qc_record(
     total_participants: int,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
-) -> None:
+    out_dir: str | None = None,
+    drop_duplicates: bool = True,
+    save_file_path: str | None = None,
+    allow_overwrite: bool = False,
+    trigger_rerun: bool = True,
+    allow_completion_navigation: bool = True,
+) -> str | None:
     _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+
+    export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
+    if export_rows:
+        task_label = "all_tasks" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else "unknown_task")
+        out_file = _resolve_qc_save_file_path(
+            out_dir,
+            save_file_path,
+            qc_pipeline=qc_pipeline,
+            qc_task=task_label,
+        )
+        saved_path, dropped, _ = save_qc_results_to_csv(out_file, export_rows, drop_duplicates)
+        record_count = len(export_rows)
+        unique_participants = len({str(r.participant_id if hasattr(r, "participant_id") else r.get("participant_id", "")) for r in export_rows})
+        msg = SUCCESS_MESSAGES["records_saved"].format(path=Path(out_file).name)
+        msg += f"\n\nSaved {record_count} record(s) across {unique_participants} unique participant(s)."
+        kind = "success"
+    else:
+        msg = INFO_MESSAGES["no_export_records"]
+        kind = "info"
+
+    if trigger_rerun:
+        st.session_state[PENDING_QC_SAVE_MSG_KEY] = (kind, msg)
+    else:
+        st.session_state[PENDING_QC_SAVE_MSG_KEY] = (kind, msg)
 
     cohort_is_complete = False
     if qc_cohort:
@@ -764,22 +1128,15 @@ def _save_qc_record(
             temp_cohort.append({"participant_id": p, "session_id": session_id})
         cohort_is_complete = SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, temp_cohort)
 
-    if cohort_is_complete:
+    if cohort_is_complete and allow_completion_navigation:
         SessionManager.set_current_page(total_participants + 1)
+        if trigger_rerun:
+            request_navigation_rerun(st)
+        return msg
+
+    if trigger_rerun:
         request_navigation_rerun(st)
-        return
-
-    if _has_active_subject_filter():
-        if _filtered_cohort_complete_for_tasks(qc_tasks, qc_cohort, participant_ids, session_id, total_participants):
-            msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-            st.info(msg)
-            st.session_state["_pending_filtered_subject_msg"] = msg
-        else:
-            msg = "✅ QC results saved for the active filtered view."
-            st.info(msg)
-            st.session_state["_pending_filtered_subject_msg"] = msg
-
-    request_navigation_rerun(st)
+    return msg
 
 
 def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:

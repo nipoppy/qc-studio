@@ -2,6 +2,8 @@
 import os
 import sys
 from argparse import ArgumentParser
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -86,6 +88,7 @@ def get_cli_run_context():
     navigation matches the same run configuration.
     """
     args = parse_args()
+    args.out_dir = str(Path(args.out_dir).expanduser().resolve()) if args.out_dir else str(Path(".").expanduser().resolve())
     ui_dir = os.path.dirname(os.path.abspath(__file__))
     qc_config_path = os.path.join(ui_dir, args.qc_json)
     session_ids = parse_session_list(args.session_list)
@@ -148,6 +151,15 @@ def main():
 
     # Initialize session state
     SessionManager.init_session_state()
+    if not SessionManager.get_qc_session_id():
+        SessionManager.set_qc_session_id(datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    qc_session_label = f"{SessionManager.get_rater_id() or 'rater'}_{qc_pipeline.lower()}_{('all_tasks' if str(qc_task).strip().lower() == 'all' else str(qc_task).strip().lower() or 'unknown_task')}_{SessionManager.get_qc_session_id()}"
+    SessionManager.set_qc_session_label(qc_session_label)
+    SessionManager.set_qc_session_checkpoint_dir(str((Path(out_dir).expanduser() / "checkpoints").resolve()))
+    task_slug = "all_tasks" if str(qc_task).strip().lower() == "all" else (str(qc_task).strip().lower() or "unknown_task")
+    SessionManager.set_qc_session_active_path(
+        str((Path(out_dir).expanduser() / f"{(SessionManager.get_rater_id() or 'rater')}_{task_slug}_status.tsv").resolve())
+    )
     SessionManager.compact_duplicate_qc_records_if_needed()
 
     session_id_for_sidebar = qc_cohort[0]["session_id"] if qc_cohort else None
@@ -166,6 +178,8 @@ def main():
 
     participant_id, session_id = _participant_for_page(current_page)
     on_qc_viewer_page = bool(participant_id is not None and qc_cohort and current_page <= total_participants)
+    if not on_qc_viewer_page:
+        st.sidebar.empty()
     render_sidebar_cohort_subjects(
         qc_cohort=qc_cohort,
         total_participants=total_participants,
@@ -183,10 +197,13 @@ def main():
                 "qc_tasks": qc_tasks,
                 "participant_ids": participant_ids,
                 "qc_cohort": qc_cohort,
+                "out_dir": out_dir,
             }
             if on_qc_viewer_page
             else None
         ),
+        show_subject_filter=on_qc_viewer_page,
+        show_subject_list=on_qc_viewer_page,
     )
 
     # Sidebar filter may have moved the page; use that for the viewer.

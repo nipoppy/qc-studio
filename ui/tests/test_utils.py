@@ -564,6 +564,46 @@ class TestSaveQcResultsToCsv:
         assert list(df["session_id"]) == ["ses-01", "ses-01", "ses-02", "ses-01"]
         assert list(df["qc_task"]) == ["anat_wf_qc", "b_task", "a_task", "z_task"]
 
+    def test_save_qc_records_trims_notes_whitespace_and_newlines(self, temp_dir, qc_record_sample):
+        """Exported notes should be normalized to avoid whitespace-only drift creating duplicate row values."""
+        output_file = temp_dir / "notes_trimmed.tsv"
+        record = qc_record_sample.model_copy(update={"notes": "\n  Motion artifact\n  "})
+
+        save_qc_results_to_csv(output_file, [record], drop_duplicates=False)
+
+        df = pd.read_csv(output_file, sep="\t", dtype=str)
+        assert list(df["notes"]) == ["Motion artifact"]
+
+    def test_save_qc_records_preserves_zero_padded_subject_ids_when_appending_existing_file(self, temp_dir, qc_record_sample):
+        """Existing TSV exports must keep leading zeros in subject IDs instead of coercing them to integers."""
+        output_file = temp_dir / "zero_padded.tsv"
+        existing = pd.DataFrame(
+            [
+                {
+                    "pipeline": "fmriprep",
+                    "qc_task": "anat_wf_qc",
+                    "participant_id": "000123",
+                    "session_id": "ses-01",
+                    "task_id": "",
+                    "run_id": "",
+                    "timestamp": "2024-01-01T00:00:00",
+                    "rater_id": "rater1",
+                    "rater_experience": "Beginner (< 1 year experience)",
+                    "rater_fatigue": "Not at all",
+                    "rater_screen_size": "14in or less",
+                    "final_qc": "PASS",
+                    "notes": "",
+                }
+            ]
+        )
+        existing.to_csv(output_file, sep="\t", index=False)
+
+        new_record = qc_record_sample.model_copy(update={"participant_id": "000124"})
+        save_qc_results_to_csv(output_file, [new_record], drop_duplicates=False)
+
+        df = pd.read_csv(output_file, sep="\t", dtype=str)
+        assert list(df["participant_id"]) == ["000123", "000124"]
+
 
 class TestInferBidsFolderFromPath:
     """Test _infer_bids_folder_from_path - shared by load_scanner_metadata

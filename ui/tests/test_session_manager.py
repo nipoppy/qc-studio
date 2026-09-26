@@ -59,6 +59,14 @@ class TestRaterMethods:
         SessionManager.set_rater_id("test_rater")
         assert SessionManager.get_rater_id() == "test_rater"
 
+    def test_set_and_get_rater_id_normalizes_to_lowercase(self, mock_session_state):
+        """Rater IDs should be normalized to lowercase to avoid case-colliding exports."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        SessionManager.set_rater_id("Niusha")
+        assert SessionManager.get_rater_id() == "niusha"
+
     def test_set_and_get_rater_experience(self, mock_session_state):
         """Test setting and getting rater experience level."""
         st.session_state = mock_session_state.data

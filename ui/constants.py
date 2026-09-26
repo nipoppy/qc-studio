@@ -1,15 +1,15 @@
 """Constants used throughout the QC-Studio UI application."""
 
 # Rater experience levels
-EXPERIENCE_LEVELS = ["Beginner (< 1 year experience)", "Intermediate (1-5 year experience)", "Expert (>5 year experience)"]
+EXPERIENCE_LEVELS = ["Beginner (< 1 year)", "Intermediate (1-5 years)", "Expert (>5 years)"]
 
 # Rater fatigue levels
 FATIGUE_LEVELS = ["Not at all", "A bit tired ☕", "Very tired ☕☕"]
 
 # Rater monitor screen sizes (diagonal)
 SCREEN_SIZES = [
-    "14in or less",
-    "15-20in",
+    "14 or less",
+    "15-20",
     "21-25",
     "26-30",
     "31 or above",
@@ -124,17 +124,16 @@ MESSAGES = {
     "panels_validation_warning": "⚠️ You must select at least one panel to proceed!",
     "panels_success": "✅ {count} panel(s) selected",
     "upload_header": "📤 Upload Existing QC File (Optional)",
-    "upload_help": "Upload a previously saved QC_status.csv file to resume your QC session or review previous results.",
-    "csv_uploader_label": "Choose a QC_status.csv file",
+    "upload_help": "Upload a previously saved <QC_status>.tsv file / checkpoint to resume your QC session or review previous results.",
+    "csv_uploader_label": "Choose a QC_status.tsv file",
     "continue_button": "✅ Continue to QC",
     "rater_form_button": "✅ Continue to QC",
     "congratulations_title": "🎉 QC Complete! Congratulations! 🎉",
     "export_results_button": "💾 Export Final Results",
     "previous_button": "◀️ Previous",
     "nav_tooltip_previous": ("Previous: navigates to the previous subject or session without saving any rating changes."),
-    "nav_tooltip_next": ("Next: navigates to the next subject or session without saving any rating changes."),
-    "nav_tooltip_confirm_next": (
-        "Confirm and Next: saves QC ratings for this page and advances to the next subject or "
+    "nav_tooltip_next": (
+        "Next: saves the current page's QC ratings and notes, then advances to the next subject or "
         "session. When more than one QC task is shown, set PASS, FAIL, or UNCERTAIN for every "
         "task before continuing."
     ),
@@ -143,14 +142,13 @@ MESSAGES = {
     "qc_rating_header": "QC Rating",
     "qc_rating_prompt": "Rate this qc-task:",
     "qc_notes_prompt": "Notes (optional):",
-    "save_csv_button": "💾 Save QC",
-    "save_csv_help": "Save QC results to a CSV file",
-    "confirm_next_button": "Confirm ✅️ and Next ▶️",
+    "create_checkpoint_button": "🏁 Create checkpoint",
+    "create_checkpoint_help": "Create a timestamped snapshot of the current QC records.",
     "next_button": "Next ▶️",
     "play_button": "▶️ Play",
     "pause_button": "⏸️ Pause",
     "back_landing_button": "🏠 Back to Landing Page",
-    "sidebar_subjects_header": "Subjects",
+    "sidebar_subjects_header": "QC subject list",
     "sidebar_subjects_search": "Search subjects",
     "sidebar_subjects_search_placeholder": "Filter by subject or session",
     "sidebar_subjects_search_empty": "No subjects match this search.",
@@ -176,8 +174,8 @@ MESSAGES = {
 ERROR_MESSAGES = {
     "invalid_rater_id": "Please enter a valid Rater ID (no spaces).",
     "no_panel_selected": "⚠️ You must select at least one display panel to proceed!",
-    "no_participants": "❌ Error: The uploaded CSV contains {count} participant(s) not in the participant list: {participants}",
-    "too_many_participants": "❌ Error: The uploaded CSV has {csv_count} unique participants, but the participant list only has {list_count}.",
+    "no_participants": "❌ Error: The uploaded TSV contains {count} participant(s) not in the participant list: {participants}",
+    "too_many_participants": "❌ Error: The uploaded TSV has {csv_count} unique participants, but the participant list only has {list_count}.",
     "file_load_error": "❌ Error loading file: {error}",
     "csv_comparison_error": "Could not display comparison: {error}",
     "mri_load_error": "Failed to load base MRI in Niivue viewer: {error}",
@@ -201,13 +199,15 @@ SUCCESS_MESSAGES = {
     "csv_loaded": "✅ Loaded {count} QC records from {filename}",
     "records_exported": "✅ All QC results exported to: {path}",
     "records_loaded": "✅ Loaded {count} QC records into session!",
-    "records_saved": "✅ QC results saved to: {path}",
+    "records_saved": "✅ QC results saved to output_dir: {path}",
+    "checkpoint_saved": "✅ Checkpoint saved to user specified <output_dir>/checkpoints",
 }
 
 # Info messages
 INFO_MESSAGES = {
     "proceed_with_form": "You can now proceed with the rater form on the left to continue QC.",
     "no_export_records": "No QC records to export.",
+    "checkpoint_unchanged": "No QC changes since the last checkpoint were detected, so no new checkpoint was created.",
     "rater_info_extracted": "📋 Rater information extracted:",
     "rater_id_prefix": "- **Rater ID:** {id}",
     "experience_prefix": "- **Experience:** {exp}",

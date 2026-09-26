@@ -8,6 +8,18 @@ from pathlib import Path
 from constants import QC_DEDUP_KEYS
 
 
+def normalize_note_value(value):
+    """Strip leading/trailing whitespace and line endings from note text."""
+    if value is None:
+        return ""
+    if pd.isna(value):
+        return ""
+    text = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    if text.lower() == "nan":
+        return ""
+    return text.strip()
+
+
 def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
     """Save QC results from Streamlit session state to a CSV file.
 
@@ -52,6 +64,9 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
         if session_id is not None:
             session_id = str(session_id)
 
+        raw_notes = rec_dict.get("notes")
+        normalized_notes = normalize_note_value(raw_notes)
+
         row = {
             "pipeline": rec_dict.get("pipeline"),
             "qc_task": rec_dict.get("qc_task"),
@@ -65,7 +80,7 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
             "rater_fatigue": rec_dict.get("rater_fatigue"),
             "rater_screen_size": rec_dict.get("rater_screen_size"),
             "final_qc": rec_dict.get("final_qc"),
-            "notes": rec_dict.get("notes"),
+            "notes": normalized_notes,
         }
         rows.append(row)
 
@@ -93,7 +108,7 @@ def save_qc_results_to_csv(out_file, qc_records, drop_duplicates=True):
         df = pd.DataFrame(columns=expected_columns)
 
     if out_file.exists():
-        df_existing = pd.read_csv(out_file, sep="\t")
+        df_existing = pd.read_csv(out_file, sep="\t", dtype=str)
         df = pd.concat([df_existing, df], ignore_index=True)
 
     # Align column order and fill missing cells (e.g. legacy files with different column order).

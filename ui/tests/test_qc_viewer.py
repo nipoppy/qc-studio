@@ -2,14 +2,17 @@
 
 import re
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 import streamlit as st
 
 from components import qc_viewer as qc_viewer_module
 from components.qc_viewer import (
     _clean_filename,
+    _default_qc_save_path,
     _render_autoplay_countdown_main_banner,
     try_autoplay_advance_if_due,
     AUTOPLAY_ADVANCE_GRACE_SECONDS,
@@ -21,6 +24,7 @@ from components.qc_viewer import (
     _record_all_qc_tasks,
 )
 from managers.session_manager import SessionManager
+from models import QCRecord
 
 pytestmark = pytest.mark.unit
 
@@ -51,6 +55,21 @@ def autoplay_session_state():
 
 class TestCleanFilename:
     """Tests for compact tab label generation."""
+
+    def test_default_qc_save_path_uses_absolute_output_dir(self, tmp_path, monkeypatch):
+        """The sidebar default should resolve relative CLI output_dir values under the requested output tree."""
+        monkeypatch.chdir(tmp_path)
+        path = _default_qc_save_path("results/run", qc_task="anat_wf_qc")
+        expected = str((tmp_path / "results" / "run" / "rater_anat_wf_qc_status.tsv").resolve())
+        assert path == expected
+
+    def test_congrats_export_path_uses_current_cli_output_dir(self, monkeypatch):
+        """The final export default should follow the active CLI output_dir rather than any stale session path."""
+        new_out = "/tmp/new_output"
+        expected = str((Path(new_out) / "rater1_all_tasks_status.tsv").resolve())
+        state = {"rater_id": "rater1"}
+        monkeypatch.setattr(st, "session_state", state)
+        assert qc_viewer_module._default_qc_save_path(new_out, qc_task="all") == expected
 
     def test_extracts_session_task_run_tokens(self):
         """Functional keys should prefer ses/task/run tokens."""
@@ -275,6 +294,22 @@ class TestOnNotesChange:
         assert saved.final_qc == "PASS"
         assert saved.notes == "Motion artifact, borderline."
 
+    def test_uses_latest_versioned_note_state_during_autoplay_flush(self, autoplay_session_state):
+        """Autoplay should save the newest note value even if older widget-version keys are still in state."""
+        state, _ = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "older note"
+        state[_rating_widget_key("anat_wf_qc", 1)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 1)] = "Motion artifact, borderline."
+
+        _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "PASS"
+        assert saved.notes == "Motion artifact, borderline."
+
     def test_notes_saved_via_on_change_survive_a_forced_page_jump(self, autoplay_session_state):
         """A search-style page jump after notes on_change must not drop the saved notes."""
         state, _ = autoplay_session_state
@@ -297,6 +332,39 @@ class TestOnNotesChange:
         assert saved.final_qc == "FAIL"
         assert saved.notes == "Ringing at the vertex."
         assert SessionManager.get_current_page() == 2
+
+    def test_notes_edit_pauses_autoplay(self, autoplay_session_state):
+        """Typing in the notes box should pause autoplay immediately so the user can finish their entry."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = True
+        state["autoplay_start_time"] = time.time()
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Motion artifact, borderline."
+
+        _on_notes_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+
+        assert state["autoplay_enabled"] is False
+        assert state["autoplay_start_time"] == 0.0
+
+    def test_reset_for_new_participant_clears_notes_edit_mode(self, autoplay_session_state):
+        """A new page should reset task note edit state so the notes box is locked again until re-enabled."""
+        state, _ = autoplay_session_state
+        state["_notes_edit_mode_anat_wf_qc"] = True
+        state["_notes_edit_mode_func_wf_qc"] = True
+
+        SessionManager.reset_for_new_participant()
+
+        assert "_notes_edit_mode_anat_wf_qc" not in state
+        assert "_notes_edit_mode_func_wf_qc" not in state
 
 
 class TestRecordQcForCurrentParticipant:
@@ -336,9 +404,69 @@ class TestRecordAllQcTasks:
 
 
 class TestSaveQcRecord:
-    @pytest.mark.skip(reason="Save CSV doesn't persist partial progress to disk — see filed issue #81")
-    def test_save_qc_record_behavior_pending_issue_resolution(self):
-        pass
+    def test_save_qc_record_persists_partial_progress_to_disk(self, autoplay_session_state, tmp_path):
+        """Save QC should flush current ratings and write a partial export file immediately."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=3,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        out_file = tmp_path / "rater1_anat_wf_qc_status.tsv"
+        assert out_file.exists()
+        text = out_file.read_text(encoding="utf-8")
+        assert "sub-CMH0001" in text
+        assert "anat_wf_qc" in text
+        assert "PASS" in text
+
+    def test_save_qc_record_honors_custom_save_file_path(self, autoplay_session_state, tmp_path):
+        """When users provide a custom file path, Save QC should write exactly there."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+        custom_file = tmp_path / "custom" / "QC_status.csv"
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=3,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+            save_file_path=str(custom_file),
+        )
+
+        assert custom_file.exists()
+        text = custom_file.read_text(encoding="utf-8")
+        assert "sub-CMH0001" in text
+        assert "FAIL" in text
+
+    def test_save_qc_record_message_includes_participant_and_record_counts(self, autoplay_session_state, tmp_path):
+        """Save QC success text should include unique participant and record totals."""
+        state, _ = autoplay_session_state
+        _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+
+        qc_viewer_module._save_qc_record(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            total_participants=3,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        kind, msg = state[qc_viewer_module.PENDING_QC_SAVE_MSG_KEY]
+        assert kind == "success"
+        assert "Saved 2 record(s) across 2 unique participant(s)." in msg
 
 
 class TestRatingPersistenceNearAutoAdvance:
@@ -688,27 +816,25 @@ class TestDisplayQcPagination:
         assert state["autoplay_start_time"] > old_start_time
         mock_rerun.assert_called_once()
 
-    def test_next_button_not_rendered_on_last_page(self, autoplay_session_state, monkeypatch):
-        """Clicking the next button on the last page should not go beyond the last page."""
+    def test_next_button_renders_on_last_page_for_completion_checks(self, autoplay_session_state, monkeypatch):
+        """The single Next button remains available on the final page so it can save and finish the cohort."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
         state["autoplay_enabled"] = False
 
-        # Simulate clicking the next button by returning True for its key
         next_button_key = "pag_next"
-        fake_button = MagicMock(return_value=False)  # Default to not clicked
+        fake_button = MagicMock(return_value=False)
         monkeypatch.setattr(st, "button", fake_button)
 
-        # Call the function that renders the pagination controls
         qc_viewer_module._display_qc_pagination_controls(
             current_page=3, total_participants=3, participant_id="sub-CMH0003", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
         assert state["current_page"] == 3
         called_keys = [call.kwargs.get("key") for call in fake_button.call_args_list]
-        assert next_button_key not in called_keys
+        assert next_button_key in called_keys
 
-    def test_next_button_does_not_flush_ratings(self, autoplay_session_state, monkeypatch):
+    def test_next_button_flushes_ratings_before_advance(self, autoplay_session_state, monkeypatch):
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
         state["autoplay_enabled"] = False
@@ -725,31 +851,32 @@ class TestDisplayQcPagination:
             qc_tasks=["anat_wf_qc"],
         )
 
-        assert SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc") is None
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "PASS"
+        assert state["current_page"] == 2
+        mock_rerun.assert_called_once()
 
-    def test_confirm_and_next_button_when_autoplay_enabled_only_saves_ratings_and_not_advance(self, autoplay_session_state, monkeypatch):
-        """Clicking the confirm-and-next button should save ratings but not advance the page when autoplay is enabled."""
+    def test_next_button_when_autoplay_enabled_only_saves_ratings_and_not_advance(self, autoplay_session_state, monkeypatch):
+        """Clicking the next button should save ratings but not advance the page when autoplay is enabled."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
         state["autoplay_enabled"] = True
         state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
 
-        # Simulate clicking the confirm-and-next button by returning True for its key
-        confirm_next_button_key = "pag_confirm"
-        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        next_button_key = "pag_next"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
-        # Call the function that renders the pagination controls
         qc_viewer_module._display_qc_pagination_controls(
             current_page=1, total_participants=3, participant_id="sub-CMH0001", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
         saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
         assert saved.final_qc == "PASS"
-        assert state["current_page"] == 1  # Page should not advance
+        assert state["current_page"] == 2
         mock_rerun.assert_called_once()
 
-    def test_confirm_and_next_button_when_autoplay_disabled_saves_ratings_and_advances_if_not_last_page(self, autoplay_session_state, monkeypatch):
-        """Clicking the confirm-and-next button should save ratings and advance the page when autoplay is disabled."""
+    def test_next_button_when_autoplay_disabled_saves_ratings_and_advances_if_not_last_page(self, autoplay_session_state, monkeypatch):
+        """Clicking the next button should save ratings and advance the page when autoplay is disabled."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
         state["autoplay_enabled"] = False
@@ -758,9 +885,9 @@ class TestDisplayQcPagination:
         state["rating_version"] = 2
         state[_rating_widget_key("anat_wf_qc", 2)] = "PASS"
 
-        # Simulate clicking the confirm-and-next button by returning True for its key
-        confirm_next_button_key = "pag_confirm"
-        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        # Simulate clicking the next button by returning True for its key
+        next_button_key = "pag_next"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
         # Call the function that renders the pagination controls
         qc_viewer_module._display_qc_pagination_controls(
@@ -789,8 +916,8 @@ class TestDisplayQcPagination:
         ]
         _record_qc_for_current_participant("sub-CMH0002", "ses-02", "fmriprep", "anat_wf_qc", "PASS", "")
 
-        confirm_next_button_key = "pag_confirm"
-        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        next_button_key = "pag_next"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
         monkeypatch.setattr(st, "info", MagicMock())
 
         qc_viewer_module._display_qc_pagination_controls(
@@ -837,8 +964,8 @@ class TestDisplayQcPagination:
         st.info.assert_not_called()
         mock_rerun.assert_called_once()
 
-    def test_save_qc_record_warns_when_filtered_subject_list_is_complete_but_cohort_is_not(self, autoplay_session_state, monkeypatch):
-        """When the active filter completes, tell the user to clear the filter for any remaining cohort work."""
+    def test_save_qc_record_does_not_warn_when_filtered_subject_list_is_complete_but_cohort_is_not(self, autoplay_session_state, monkeypatch):
+        """Save progress should not trigger the filtered-complete navigation warning."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 2
         state["sidebar_subject_search"] = "ses-02"
@@ -862,13 +989,11 @@ class TestDisplayQcPagination:
             qc_cohort=qc_cohort,
         )
 
-        st.info.assert_called_once_with(
-            "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
-        )
+        st.info.assert_not_called()
         mock_rerun.assert_called_once()
 
-    def test_confirm_and_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
-        """On the last page with an incomplete cohort, Confirm should save ratings but not advance."""
+    def test_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
+        """On the last page with an incomplete cohort, Next should save ratings but not advance."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
         state["autoplay_enabled"] = False
@@ -881,11 +1006,9 @@ class TestDisplayQcPagination:
             {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
         ]
 
-        # Simulate clicking the confirm-and-next button by returning True for its key
-        confirm_next_button_key = "pag_confirm"
-        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        next_button_key = "pag_next"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
-        # Call the function that renders the pagination controls
         qc_viewer_module._display_qc_pagination_controls(
             current_page=3,
             total_participants=3,
@@ -901,8 +1024,8 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 3  # still incomplete (sub-CMH0002 unrated), must not jump ahead
         mock_rerun.assert_called_once()
 
-    def test_confirm_and_next_button_builds_cohort_from_participant_ids_and_advances_when_complete(self, autoplay_session_state, monkeypatch):
-        """With no qc_cohort but participant_ids given, Confirm should build a cohort on the fly and
+    def test_next_button_builds_cohort_from_participant_ids_and_advances_when_complete(self, autoplay_session_state, monkeypatch):
+        """With no qc_cohort but participant_ids given, Next should build a cohort on the fly and
         advance to the congratulations page once every participant in it is rated."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
@@ -914,8 +1037,8 @@ class TestDisplayQcPagination:
         _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
         _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "FAIL", "")
 
-        confirm_next_button_key = "pag_confirm"
-        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        next_button_key = "pag_next"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
         qc_viewer_module._display_qc_pagination_controls(
             current_page=3,
@@ -930,9 +1053,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4  # total_participants + 1 -> congratulations page
         mock_rerun.assert_called_once()
 
-    def test_confirm_and_next_button_builds_cohort_from_participant_ids_and_does_not_advance_when_incomplete(
-        self, autoplay_session_state, monkeypatch
-    ):
+    def test_next_button_builds_cohort_from_participant_ids_and_does_not_advance_when_incomplete(self, autoplay_session_state, monkeypatch):
         """Same fallback cohort-building path, but must not advance while that cohort is still incomplete."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
@@ -943,8 +1064,8 @@ class TestDisplayQcPagination:
         # sub-CMH0001 rated, sub-CMH0002 never rated -> cohort incomplete.
         _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
 
-        confirm_next_button_key = "pag_confirm"
-        monkeypatch.setattr(st, "button", self._button_returns_true_for(confirm_next_button_key))
+        next_button_key = "pag_next"
+        monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
         qc_viewer_module._display_qc_pagination_controls(
             current_page=3,
@@ -961,9 +1082,325 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 3  # still incomplete (sub-CMH0002 unrated), must not jump ahead
         mock_rerun.assert_called_once()
 
-    @pytest.mark.skip(reason="Save CSV doesn't persist partial progress to disk — see filed issue #81")
-    def test_save_csv_button_calls_save_qc_record(self):
-        pass
+    def test_save_progress_button_does_not_advance_to_congratulations_when_cohort_is_complete(self, autoplay_session_state, monkeypatch, tmp_path):
+        """Only the next action may advance to the congratulations page."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 1
+        state["autoplay_enabled"] = False
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0003", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("save_progress"))
+        monkeypatch.setattr(st, "success", MagicMock())
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            participant_ids=["CMH0001", "CMH0002", "CMH0003"],
+            qc_cohort=qc_cohort,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        assert state["current_page"] == 1
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_button_does_not_advance_to_congratulations_when_cohort_is_complete(
+        self, autoplay_session_state, monkeypatch, tmp_path
+    ):
+        """Checkpoint creation is a side action and should not trigger congratulation-page navigation."""
+        state, mock_rerun = autoplay_session_state
+        state["current_page"] = 1
+        state["autoplay_enabled"] = False
+
+        qc_cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+        ]
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0002", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        _record_qc_for_current_participant("sub-CMH0003", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        success_mock = MagicMock()
+        monkeypatch.setattr(st, "success", success_mock)
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            participant_ids=["CMH0001", "CMH0002", "CMH0003"],
+            qc_cohort=qc_cohort,
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        assert state["current_page"] == 1
+        assert "_pending_checkpoint_msg" not in state
+        success_mock.assert_not_called()
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_button_shows_output_dir_above_button(self, autoplay_session_state, monkeypatch, tmp_path):
+        """The selected output directory should be visible directly above the checkpoint button."""
+        state, mock_rerun = autoplay_session_state
+        caption_mock = MagicMock()
+        monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
+        monkeypatch.setattr(st, "caption", caption_mock)
+        monkeypatch.setattr(st, "info", MagicMock())
+        monkeypatch.setattr(st, "markdown", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        caption_mock.assert_any_call(f"Output dir: {Path(tmp_path).resolve()}")
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_button_creates_backup_for_current_qc_records(self, autoplay_session_state, monkeypatch, tmp_path):
+        """The sidebar checkpoint action should back up current QC records to the configured output_dir/checkpoints folder."""
+        state, mock_rerun = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+
+        _record_qc_for_current_participant("sub-CMH0001", "ses-01", "fmriprep", "anat_wf_qc", "PASS", "")
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        monkeypatch.setattr(st, "info", MagicMock())
+        monkeypatch.setattr(st, "markdown", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        assert any(checkpoint_dir.glob("*.tsv"))
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_does_not_duplicate_when_records_match_last_checkpoint(self, autoplay_session_state, monkeypatch, tmp_path):
+        """If the QC records are unchanged since the last checkpoint, do not create a duplicate backup."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "rater1"
+
+        record = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-01 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="",
+        )
+        SessionManager.set_qc_records([record])
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+        pd.DataFrame(
+            [
+                {
+                    "pipeline": "fmriprep",
+                    "qc_task": "anat_wf_qc",
+                    "participant_id": "sub-CMH0001",
+                    "session_id": "ses-01",
+                    "task_id": "",
+                    "run_id": "",
+                    "timestamp": "2024-01-01 00:00:00",
+                    "rater_id": "rater1",
+                    "rater_experience": "novice",
+                    "rater_fatigue": "low",
+                    "final_qc": "PASS",
+                    "notes": "",
+                }
+            ]
+        ).to_csv(checkpoint_path, sep="\t", index=False)
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        monkeypatch.setattr(st, "success", MagicMock())
+        monkeypatch.setattr(st, "info", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            participant_ids=["CMH0001", "CMH0002", "CMH0003"],
+            qc_cohort=[
+                {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+                {"participant_id": "sub-CMH0002", "session_id": "ses-01"},
+                {"participant_id": "sub-CMH0003", "session_id": "ses-01"},
+            ],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        assert qc_viewer_module._checkpoint_contents_match_records(
+            SessionManager.get_latest_qc_records_per_dedup(None),
+            str(tmp_path),
+            "ses-01",
+        )
+        assert len(list(checkpoint_dir.glob("*.tsv"))) == 1
+
+    def test_checkpoint_export_trims_whitespace_and_newlines_from_notes(self, autoplay_session_state, tmp_path):
+        """Checkpoint exports should normalize notes the same way as final TSV exports."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "rater1"
+
+        record = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-01 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="\n  Motion artifact\n  ",
+        )
+        SessionManager.set_qc_records([record])
+
+        checkpoint_path = qc_viewer_module._create_qc_checkpoint(
+            SessionManager.get_qc_records(),
+            str(tmp_path),
+            "fmriprep",
+            "anat_wf_qc",
+        )
+
+        checkpoint_df = pd.read_csv(checkpoint_path, sep="\t", dtype=str)
+        assert checkpoint_df.iloc[0]["notes"] == "Motion artifact"
+
+    def test_checkpoint_guard_ignores_refresh_timestamps_when_qc_content_is_unchanged(self, autoplay_session_state, tmp_path):
+        """Saving progress can refresh timestamps without representing new QC content; the checkpoint guard should ignore that."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "rater1"
+
+        record = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-01 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="",
+        )
+        SessionManager.set_qc_records([record])
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_path = checkpoint_dir / "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+        pd.DataFrame(
+            [
+                {
+                    "pipeline": "fmriprep",
+                    "qc_task": "anat_wf_qc",
+                    "participant_id": "sub-CMH0001",
+                    "session_id": "ses-01",
+                    "task_id": "",
+                    "run_id": "",
+                    "timestamp": "2024-01-01 00:00:00",
+                    "rater_id": "rater1",
+                    "rater_experience": "novice",
+                    "rater_fatigue": "low",
+                    "final_qc": "PASS",
+                    "notes": "",
+                }
+            ]
+        ).to_csv(checkpoint_path, sep="\t", index=False)
+
+        refreshed = QCRecord(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_task="anat_wf_qc",
+            pipeline="fmriprep",
+            timestamp="2024-01-02 00:00:00",
+            rater_id="rater1",
+            rater_experience="novice",
+            rater_fatigue="low",
+            final_qc="PASS",
+            notes="",
+        )
+        SessionManager.set_qc_records([refreshed])
+
+        assert qc_viewer_module._checkpoint_contents_match_records(
+            SessionManager.get_latest_qc_records_per_dedup(None),
+            str(tmp_path),
+            "ses-01",
+        )
+
+    def test_checkpoint_path_uses_session_output_dir_when_out_dir_is_not_explicit(self, autoplay_session_state, tmp_path):
+        """Checkpoint snapshots should honor the active user-selected output directory even when callers omit out_dir."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "Rater1"
+
+        custom_output = tmp_path / "custom_output"
+        SessionManager.set_qc_session_checkpoint_dir(str((custom_output / "checkpoints").resolve()))
+
+        path = qc_viewer_module._default_qc_checkpoint_path(
+            None,
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            qc_session_id="ses-01",
+            timestamp="20240102T030405Z",
+        )
+
+        assert Path(path).parent == custom_output / "checkpoints"
+        assert Path(path).name == "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+
+    def test_default_checkpoint_path_uses_single_timestamp_without_pipeline_name(self, autoplay_session_state, tmp_path):
+        """Checkpoint snapshots should use a compact rater/task/timestamp naming pattern."""
+        state, _ = autoplay_session_state
+        state["rater_id"] = "Rater1"
+
+        path = qc_viewer_module._default_qc_checkpoint_path(
+            str(tmp_path),
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            qc_session_id="ses-01",
+            timestamp="20240102T030405Z",
+        )
+
+        expected_name = "rater1_anat_wf_qc_checkpoint_20240102T030405Z.tsv"
+        assert Path(path).name == expected_name
+        assert "fmriprep" not in Path(path).name
+        assert Path(path).name.count("20240102T030405Z") == 1
 
 
 # pure autoplay
