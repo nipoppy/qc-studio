@@ -3,7 +3,7 @@
 # doesn't have to install browsers.
 #
 #   pip install -r e2e/requirements-e2e.txt
-#   playwright install chromium
+#   playwright install chromium firefox
 
 -r ../requirements-test.txt
 

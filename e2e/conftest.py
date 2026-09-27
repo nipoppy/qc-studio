@@ -67,6 +67,25 @@ def qc_config() -> QCAppConfig:
 
 
 @pytest.fixture(scope="module")
+def two_subject_qc_config(tmp_path_factory: pytest.TempPathFactory) -> QCAppConfig:
+    """Two fmriprep subjects (both have anat_wf_qc derivatives under sample_data).
+
+    The default `qc_config` above has exactly one participant
+    (sample_data/qc_participants_demo.tsv), which is too small for specs that
+    need real navigation or need to tell a genuine bug apart from a
+    one-subject-cohort edge case (e.g. autoplay auto-stopping at the end of a
+    single-subject cohort looks identical to a pause actually working).
+
+    Rebind as `qc_config` in a test module to use it:
+
+        from conftest import two_subject_qc_config as qc_config
+    """
+    participants = tmp_path_factory.mktemp("two_subject_participants") / "participants.tsv"
+    participants.write_text("participant_id\nsub-CMH0001\nsub-ED01\n")
+    return QCAppConfig(participant_list=str(participants))
+
+
+@pytest.fixture(scope="module")
 def app_port() -> int:
     """An unused TCP port, chosen by the OS."""
     with socket.socket() as sock:

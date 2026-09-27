@@ -501,7 +501,7 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
 
         # Autoplay countdown duration
         autoplay_duration = st.slider(
-            "⏱️ Autoplay duration (seconds)", min_value=5, max_value=15, value=SessionManager.get_autoplay_duration(), step=1
+            MESSAGES["autoplay_duration_label"], min_value=5, max_value=15, value=SessionManager.get_autoplay_duration(), step=1
         )
 
         submit_rater = st.form_submit_button(MESSAGES["rater_form_button"], width="stretch")
