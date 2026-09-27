@@ -71,8 +71,15 @@ def get_radio_group(page: Page, label: LabelType) -> Locator:
 
 
 def get_radio_option(page: Page, option_label: LabelType) -> Locator:
-    """A single option inside a radio group (e.g. an EXPERIENCE_LEVELS entry)."""
-    element = page.get_by_test_id("stRadioOption").filter(has_text=option_label)
+    """A single option inside a radio group (e.g. an EXPERIENCE_LEVELS entry).
+
+    UNVERIFIED test id, corrected: the installed Streamlit version renders
+    each option as a BaseWeb `<label data-baseweb="radio">`, not with a
+    `stRadioOption` test id -- there's no such test id anywhere in this
+    version's DOM. Re-check against the installed Streamlit if this stops
+    matching.
+    """
+    element = page.locator('[data-baseweb="radio"]').filter(has_text=option_label)
     expect(element).to_be_visible()
     return element
 
@@ -84,9 +91,22 @@ def get_checkbox(page: Page, label: LabelType) -> Locator:
     return element
 
 
+def get_slider(page: Page, label: LabelType) -> Locator:
+    """A slider, located by its label (e.g. the autoplay duration slider)."""
+    element = page.get_by_test_id("stSlider").filter(has_text=label)
+    expect(element).to_be_visible()
+    return element
+
+
 def get_button(page: Page, label: LabelType) -> Locator:
-    """A standalone button (not a form submit button)."""
-    element = page.get_by_test_id("stButton").filter(has_text=label).locator("button")
+    """A standalone button (not a form submit button).
+
+    A button with a `help=` tooltip (e.g. Next, Previous) renders a second,
+    hidden `<button>` alongside the real one -- part of Streamlit's tooltip
+    positioning, not two widgets. ``:visible`` keeps this a single-element
+    locator so strict mode (and `.click()`) still works for those buttons.
+    """
+    element = page.get_by_test_id("stButton").filter(has_text=label).locator("button:visible")
     expect(element).to_be_visible()
     return element
 
@@ -140,6 +160,20 @@ def fill_text_input(page: Page, label: LabelType, value: str) -> None:
     get_text_input(page, label).locator("input").fill(value)
 
 
+def fill_text_area_and_blur(page: Page, label: LabelType, value: str) -> None:
+    """Type into a text area and commit the value, then wait for the rerun.
+
+    `st.text_area`'s `on_change` fires on blur or Ctrl+Enter, not on every
+    keystroke -- `fill()` alone changes the DOM value but never notifies
+    Streamlit. Tab moves focus to the next element, which blurs this one and
+    triggers the commit.
+    """
+    box = get_text_area(page, label).locator("textarea")
+    box.fill(value)
+    box.press("Tab")
+    wait_for_app_run(page)
+
+
 def check_checkbox(page: Page, label: LabelType) -> None:
     """Tick a checkbox if it isn't already ticked, then wait for the rerun.
 
@@ -166,6 +200,23 @@ def uncheck_checkbox(page: Page, label: LabelType) -> None:
         wait_for_app_run(page)
 
 
+def set_slider_value(page: Page, label: LabelType, value: int, minimum: int, maximum: int) -> None:
+    """Set a slider to an exact value with the keyboard, regardless of its current one.
+
+    No rerun wait: like `fill_text_input`, this is meant for a slider still
+    inside an `st.form` -- nothing reruns until the form is submitted. Drives
+    the handle all the way to `minimum` first (ArrowLeft `maximum - minimum`
+    times covers the whole range, so this works from any starting value, not
+    just the widget's default), then steps up to `value` with ArrowRight.
+    """
+    handle = get_slider(page, label).get_by_role("slider")
+    handle.focus()
+    for _ in range(maximum - minimum):
+        handle.press("ArrowLeft")
+    for _ in range(value - minimum):
+        handle.press("ArrowRight")
+
+
 def choose_radio_option(page: Page, option_label: LabelType) -> None:
     get_radio_option(page, option_label).click()
     wait_for_app_run(page)
@@ -187,6 +238,19 @@ def upload_file(page: Page, file_path: Path) -> None:
 #: node -- so a constant like ERROR_MESSAGES["no_panel_selected"] (which is
 #: authored with that emoji baked in) never appears verbatim in the DOM.
 _LEADING_EMOJI_RE = re.compile(r"^[\U0001F300-\U0001FAFF☀-➿←-⇿️‍]+\s*")
+
+
+def get_current_subject_label(page: Page) -> Locator:
+    """The participant/session heading atop the QC viewer (e.g. "sub-01 · ses-01").
+
+    Matches the format of ``utils.cohort.compact_session_label``, which is the
+    only copy in the app that joins participant and session with "·" -- a
+    stable marker for "which subject is currently on screen" without
+    depending on any specific dataset's IDs.
+    """
+    element = page.get_by_text(re.compile(r"^sub-.*·.*$"))
+    expect(element).to_be_visible()
+    return element
 
 
 def expect_text_visible(page: Page, text: LabelType) -> None:

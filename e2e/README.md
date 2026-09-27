@@ -12,7 +12,7 @@ to a mocked unit test.
 
 ```bash
 pip install -r e2e/requirements-e2e.txt
-playwright install chromium
+playwright install chromium firefox
 ```
 
 ## Running
@@ -20,16 +20,34 @@ playwright install chromium
 From the repository root, with `streamlit` on your PATH (activate your venv):
 
 ```bash
-pytest e2e/                                   # everything
+pytest e2e/                                   # everything, in both browsers
 pytest e2e/ -m smoke                          # just the harness check
 pytest e2e/tests/test_smoke.py -v             # one file
 pytest e2e/tests/test_smoke.py::test_app_boots -v   # one test
 
 pytest e2e/ --headed                          # watch it run
 pytest e2e/ --headed --slowmo 500             # watch it slowly
+
+pytest e2e/ --video=retain-on-failure         # record failures to test-results/
+pytest e2e/ --screenshot=only-on-failure      # what the page looked like when it broke
 ```
 
 No need to start the app yourself -- the fixtures launch and stop it.
+
+## Browsers
+
+Every test runs twice, once in Chromium and once in Firefox -- the test id in
+the report says which (`test_app_boots[firefox]`). Different engines catch
+different things, and this suite leans hard on Streamlit's DOM, so a selector
+that works in one is not proof it works in the other.
+
+```bash
+pytest e2e/ --browser chromium                # just one, while developing
+pytest e2e/ --browser firefox
+```
+
+Running a single browser is the faster loop when writing a test; let both run
+before you push.
 
 ## Start here
 
