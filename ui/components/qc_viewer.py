@@ -156,6 +156,11 @@ def _render_autoplay_countdown_main_banner() -> None:
     duration = float(SessionManager.get_autoplay_duration())
     deadline_ms = int((t0 + duration) * 1000)
     secs_now = max(0, int(math.ceil(duration - (time.time() - t0) - 1e-9)))
+    with st.container(key="autoplay_countdown_banner"):
+        _render_autoplay_countdown_html(deadline_ms, secs_now)
+
+
+def _render_autoplay_countdown_html(deadline_ms: int, secs_now: int) -> None:
     components.html(
         f"""
 		<div style="font-family:system-ui,sans-serif;padding:10px 14px;background:#153448;
@@ -558,7 +563,11 @@ def _display_qc_rating_for_task(
     action_col, notes_col = st.columns([2, 6])
     with action_col:
         st.caption("Autoplay will be paused when you add notes. Notes are saved when you continue with rating or navigation.")
-        if st.button("Add notes" if not notes_editable else "Edit notes", key=f"_toggle_notes_{qc_task}_{nver}", use_container_width=True):
+        if st.button(
+            MESSAGES["add_notes_button"] if not notes_editable else MESSAGES["edit_notes_button"],
+            key=f"_toggle_notes_{qc_task}_{nver}",
+            use_container_width=True,
+        ):
             _toggle_notes_editing_for_task(qc_task)
             st.rerun()
     with notes_col:
