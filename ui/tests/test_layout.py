@@ -20,6 +20,7 @@ from constants import (
     DEFAULT_MONTAGE_MAX_ROWS,
     DEFAULT_MONTAGE_MAX_COLS,
     EXPERIENCE_LEVELS,
+    SCREEN_SIZES,
     MESSAGES,
     PENDING_SIDEBAR_RERUN_KEY,
     SIDEBAR_SEARCH_HOLD_KEY,
@@ -39,6 +40,7 @@ def _session_state_dict():
         SESSION_KEYS["rater_id"]: "",
         SESSION_KEYS["rater_experience"]: None,
         SESSION_KEYS["rater_fatigue"]: None,
+        SESSION_KEYS["rater_screen_size"]: None,
         SESSION_KEYS["notes"]: "",
         SESSION_KEYS["notes_version"]: 0,
         SESSION_KEYS["rating_version"]: 0,
@@ -154,6 +156,44 @@ class TestShowLandingPage:
         assert any("Cohort pages:**" in text for text in markdown_calls)
         mock_st.header.assert_any_call("fmriprep")
         assert not any("QC Pipeline:" in text and "|" in text for text in markdown_calls)
+
+    @patch("views.landing_page.pd.read_csv")
+    def test_landing_page_counts_both_pages_and_qc_records(self, mock_read_csv, tmp_path):
+        """Multi-task pages should show separate page and record counts, with records able to exceed pages."""
+        from views.landing_page import show_landing_page
+
+        participant_df = pd.DataFrame({"participant_id": ["sub-CMH0001", "sub-CMH0002"]})
+        upload_df = pd.DataFrame(
+            {
+                "participant_id": ["sub-CMH0001", "sub-CMH0001", "sub-CMH0002", "sub-CMH0002"],
+                "session_id": ["ses-01", "ses-01", "ses-01", "ses-01"],
+                "qc_task": ["anat_wf_qc", "func_wf_qc", "anat_wf_qc", "func_wf_qc"],
+                "final_qc": ["PASS", "PASS", "PASS", "PASS"],
+            }
+        )
+        mock_read_csv.side_effect = [participant_df, upload_df]
+
+        mock_st = MagicMock()
+        upload_file = MagicMock()
+        upload_file.name = "results.csv"
+
+        with _patch_streamlit_for_landing(mock_st):
+            mock_st.file_uploader.return_value = upload_file
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="all",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path, task="anat_wf_qc"),
+            )
+
+        metric_calls = [call.kwargs for call in mock_st.metric.call_args_list if call.kwargs]
+        assert any(call.get("label") == "Cohort pages reviewed" for call in metric_calls)
+        assert any(call.get("label") == "QC records reviewed" for call in metric_calls)
+        caption_text = "\n".join(str(call.args[0]) for call in mock_st.caption.call_args_list)
+        assert "records can exceed pages" in caption_text
+        progress_text = "\n".join(str(call.kwargs.get("text", "")) for call in mock_st.progress.call_args_list)
+        assert "QC records complete" in progress_text
 
     def test_landing_run_summary_uses_subject_page_task_names(self):
         from views.landing_page import _landing_run_summary_lines
@@ -297,6 +337,27 @@ class TestLandingPageRaterInfo:
         assert len(experience_options) == 3
         assert any("Expert" in opt for opt in experience_options)
 
+    @patch("views.landing_page.pd.read_csv")
+    def test_screen_size_options(self, mock_read_csv, tmp_path):
+        """Test that screen size options are presented."""
+        from views.landing_page import show_landing_page
+
+        mock_df = pd.DataFrame({"participant_id": ["sub-CMH0001"]})
+        mock_read_csv.return_value = mock_df
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path),
+            )
+
+        assert len(SCREEN_SIZES) >= 1
+        assert all(isinstance(opt, str) and opt.strip() for opt in SCREEN_SIZES)
+
 
 class TestLandingPagePanelSelection:
     """Test panel selection functionality."""
@@ -368,6 +429,97 @@ class TestLandingPageCsvUpload:
         assert "participant_id" in df.columns
         assert "rater_id" in df.columns
         assert "final_qc" in df.columns
+
+    @patch("views.landing_page.pd.read_csv")
+    def test_loading_complete_uploaded_results_does_not_raise_next_page_error(self, mock_read_csv, tmp_path):
+        """Uploading a complete cohort file should not hit an unbound ``next_page`` path."""
+        from views.landing_page import show_landing_page
+
+        participants_df = pd.DataFrame(
+            {
+                "participant_id": ["sub-CMH0001", "sub-CMH0002"],
+                "session_id": ["ses-01", "ses-01"],
+            }
+        )
+        uploaded_df = pd.DataFrame(
+            {
+                "pipeline": ["fmriprep", "fmriprep"],
+                "qc_task": ["anat_wf_qc", "anat_wf_qc"],
+                "participant_id": ["sub-CMH0001", "sub-CMH0002"],
+                "session_id": ["ses-01", "ses-01"],
+                "timestamp": ["2026-09-03 10:00:00", "2026-09-03 10:01:00"],
+                "rater_id": ["tester", "tester"],
+                "rater_experience": ["Expert (>5 year experience)", "Expert (>5 year experience)"],
+                "rater_fatigue": ["Not at all", "Not at all"],
+                "final_qc": ["PASS", "FAIL"],
+                "notes": ["", ""],
+            }
+        )
+        mock_read_csv.side_effect = [participants_df, uploaded_df]
+
+        uploaded_file = MagicMock()
+        uploaded_file.name = "saved_qc.tsv"
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            mock_st.file_uploader.return_value = uploaded_file
+            mock_st.button.return_value = True
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path),
+            )
+
+        # 2 cohort pages complete -> move to congratulations page at index 3.
+        assert mock_st.session_state[SESSION_KEYS["current_page"]] == 3
+
+    @patch("views.landing_page.pd.read_csv")
+    def test_upload_accepts_zero_padded_participant_ids(self, mock_read_csv, tmp_path):
+        """Upload validation should treat sub-00153 as a known participant when list contains sub-00153."""
+        from views.landing_page import show_landing_page
+
+        participants_df = pd.DataFrame(
+            {
+                "participant_id": ["sub-00153"],
+                "session_id": ["ses-01"],
+            }
+        )
+        uploaded_df = pd.DataFrame(
+            {
+                "pipeline": ["fmriprep"],
+                "qc_task": ["anat_wf_qc"],
+                "participant_id": ["sub-00153"],
+                "session_id": ["ses-01"],
+                "timestamp": ["2026-09-24 13:57:25"],
+                "rater_id": ["nik"],
+                "rater_experience": ["Beginner (< 1 year)"],
+                "rater_fatigue": ["Not at all"],
+                "rater_screen_size": ["14 inches or less"],
+                "final_qc": ["UNCERTAIN"],
+                "notes": [""],
+            }
+        )
+        mock_read_csv.side_effect = [participants_df, uploaded_df]
+
+        uploaded_file = MagicMock()
+        uploaded_file.name = "nik_sdc_wf_qc_status.tsv"
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            mock_st.file_uploader.return_value = uploaded_file
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path),
+            )
+
+        error_texts = [str(call.args[0]) for call in mock_st.error.call_args_list if call.args]
+        assert not any("not in the participant list" in text for text in error_texts)
+        mock_st.stop.assert_not_called()
 
 
 class TestApp:
@@ -492,6 +644,7 @@ class TestSessionStateManagement:
         assert sample_session_state["rater_id"] == "test_rater"
         assert sample_session_state["rater_experience"] is not None
         assert sample_session_state["rater_fatigue"] is not None
+        assert sample_session_state["rater_screen_size"] is not None
 
     def test_qc_records_in_session(self, sample_session_state):
         """Test QC records stored in session state."""
@@ -578,7 +731,7 @@ class TestSidebarCohortNavOrder:
 
         def controls(**kwargs):
             order.append(("controls", None))
-            assert mock_st.session_state[SESSION_KEYS["sidebar_subject_search"]] == "ses-01"
+            assert mock_st.session_state.get(SESSION_KEYS["sidebar_subject_search"], "") == ""
 
         with (
             patch("views.sidebar_cohort_nav.st", mock_st),
@@ -600,7 +753,7 @@ class TestSidebarCohortNavOrder:
             )
 
         names = [name for name, _ in order]
-        assert names[:4] == ["header", "caption", "search", "controls"]
+        assert names[:4] == ["header", "controls", "caption", "search"]
         mock_st.container.assert_any_call(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True)
         mock_st.caption.assert_called_with(MESSAGES["sidebar_subjects_header"])
         mock_st.text_input.assert_called_once_with(
@@ -913,7 +1066,7 @@ class TestSidebarSubjectSearch:
         mock_st = MagicMock()
         mock_st.sidebar = _sidebar_ctx()
         mock_st.container.return_value = _sidebar_ctx()
-        mock_st.session_state = {}
+        mock_st.session_state = {SESSION_KEYS["sidebar_subject_search"]: "ses-01"}
         mock_st.text_input.return_value = "ses-01"
         mock_st.button.return_value = False
 
@@ -933,6 +1086,62 @@ class TestSidebarSubjectSearch:
             )
 
         mock_sm.set_current_page.assert_called_once_with(1)
+        mock_st.rerun.assert_called_once()
+
+    def test_filter_jump_flushes_notes_before_changing_page(self):
+        """Search snap must save the current subject's notes before jumping (issue #84)."""
+        from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
+
+        cohort = [
+            {"participant_id": "sub-CMH0001", "session_id": "ses-01"},
+            {"participant_id": "sub-CMH0001", "session_id": "ses-02"},
+        ]
+        nav_kwargs = {
+            "current_page": 2,
+            "total_participants": 2,
+            "participant_id": "sub-CMH0001",
+            "session_id": "ses-02",
+            "qc_pipeline": "fmriprep",
+            "qc_tasks": ["sdc_wf_qc"],
+            "participant_ids": ["sub-CMH0001"],
+            "qc_cohort": cohort,
+        }
+        mock_st = MagicMock()
+        mock_st.sidebar = _sidebar_ctx()
+        mock_st.container.return_value = _sidebar_ctx()
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = "ses-01"
+        mock_st.button.return_value = False
+        flush_order = []
+
+        def flush(*args, **kwargs):
+            flush_order.append("flush")
+
+        def set_page(page):
+            flush_order.append(("page", page))
+
+        with (
+            patch("views.sidebar_cohort_nav.st", mock_st),
+            patch("views.sidebar_cohort_nav.SessionManager") as mock_sm,
+            patch("components.qc_viewer._display_qc_pagination_header"),
+            patch("components.qc_viewer._display_qc_pagination_controls"),
+            patch("components.qc_viewer._record_all_qc_tasks", side_effect=flush),
+        ):
+            mock_sm.is_landing_page_complete.return_value = True
+            mock_sm.get_current_page.return_value = 2
+            mock_sm.set_current_page.side_effect = set_page
+            mock_sm.participant_has_decided_qc.return_value = False
+            mock_sm.is_autoplay_enabled.return_value = False
+            render_sidebar_cohort_subjects(
+                qc_cohort=cohort,
+                total_participants=2,
+                qc_task="sdc_wf_qc",
+                qc_tasks=["sdc_wf_qc"],
+                prepend_navigation=True,
+                navigation_kwargs=nav_kwargs,
+            )
+
+        assert flush_order == ["flush", ("page", 1)]
         mock_st.rerun.assert_called_once()
 
     def test_clear_subject_search_empties_filter(self):

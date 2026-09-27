@@ -4,6 +4,7 @@ import pytest
 from constants import (
     EXPERIENCE_LEVELS,
     FATIGUE_LEVELS,
+    SCREEN_SIZES,
     PANEL_CONFIG,
     QC_RATINGS,
     NIIVUE_HEIGHT,
@@ -52,6 +53,20 @@ class TestFatigueLevels:
         for level in FATIGUE_LEVELS:
             assert isinstance(level, str)
             assert len(level) > 0
+
+
+class TestScreenSizes:
+    """Tests for screen size constants."""
+
+    def test_screen_sizes_not_empty(self):
+        """Test that screen sizes are defined."""
+        assert len(SCREEN_SIZES) > 0
+
+    def test_screen_sizes_are_strings(self):
+        """Test that all screen sizes are strings."""
+        for size in SCREEN_SIZES:
+            assert isinstance(size, str)
+            assert len(size) > 0
 
 
 class TestPanelConfiguration:
@@ -223,6 +238,7 @@ class TestConstantsConsistency:
         """Test that experience and fatigue levels are populated."""
         assert len(EXPERIENCE_LEVELS) >= 1
         assert len(FATIGUE_LEVELS) >= 1
+        assert len(SCREEN_SIZES) >= 1
 
     def test_qc_ratings_include_pass_fail(self):
         """Test that QC ratings include standard options."""

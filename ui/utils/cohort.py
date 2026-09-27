@@ -155,7 +155,7 @@ def first_incomplete_cohort_page(
 def invalid_upload_cohort_pairs(
     df_task: pd.DataFrame,
     qc_cohort: list[dict],
-    allowed_participant_bare_ids: set[str],
+    allowed_participant_ids: set[str],
 ) -> list[tuple[str, str | None]]:
     """(participant_id, session_id) pairs in upload that are not in the cohort or participant list."""
     valid_pages = cohort_page_keys(qc_cohort)
@@ -164,7 +164,9 @@ def invalid_upload_cohort_pairs(
     if df_task.empty:
         return invalid
     for _, row in df_task.iterrows():
-        pid_bare = bare_bids_id(str(row.get("participant_id", "")), "sub-")
+        pid_raw = str(row.get("participant_id", "")).strip()
+        pid_norm = pid_raw[4:] if pid_raw.startswith("sub-") else pid_raw
+        pid_bare = bare_bids_id(pid_raw, "sub-")
         sid_raw = row.get("session_id")
         if sid_raw:
             sid = normalize_session_id_bids(str(sid_raw))
@@ -172,7 +174,7 @@ def invalid_upload_cohort_pairs(
         else:
             sid = None
             sid_bare = None
-        if pid_bare not in allowed_participant_bare_ids:
+        if pid_norm not in allowed_participant_ids:
             continue
         key = (pid_bare, sid_bare)
         if key not in valid_pages and key not in seen_invalid:

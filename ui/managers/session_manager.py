@@ -24,6 +24,7 @@ class SessionManager:
             SESSION_KEYS["rater_id"]: "",
             SESSION_KEYS["rater_experience"]: None,
             SESSION_KEYS["rater_fatigue"]: None,
+            SESSION_KEYS["rater_screen_size"]: None,
             SESSION_KEYS["notes"]: "",
             SESSION_KEYS["notes_version"]: 0,
             SESSION_KEYS["rating_version"]: 0,
@@ -39,6 +40,11 @@ class SessionManager:
             "autoplay_duration": 5,
             SESSION_KEYS["iqm_view_selection"]: "Overview",
             SESSION_KEYS["iqm_display_mode_selection"]: "Dataset",
+            "qc_session_id": "",
+            "qc_session_label": "",
+            "qc_session_started_at": "",
+            "qc_session_active_path": "",
+            "qc_session_checkpoint_dir": "",
         }
 
         for key, value in defaults.items():
@@ -54,7 +60,48 @@ class SessionManager:
     @staticmethod
     def set_rater_id(rater_id: str):
         """Set rater ID."""
-        st.session_state[SESSION_KEYS["rater_id"]] = rater_id
+        clean_rater_id = str(rater_id or "").strip().lower()
+        st.session_state[SESSION_KEYS["rater_id"]] = clean_rater_id
+
+    @staticmethod
+    def get_qc_session_id() -> str:
+        """Get the active QC rating-session identifier."""
+        return str(st.session_state.get("qc_session_id", "")).strip()
+
+    @staticmethod
+    def set_qc_session_id(qc_session_id: str):
+        """Set the active QC rating-session identifier."""
+        st.session_state["qc_session_id"] = str(qc_session_id or "").strip()
+
+    @staticmethod
+    def get_qc_session_label() -> str:
+        """Get the human-readable QC session label."""
+        return str(st.session_state.get("qc_session_label", "")).strip()
+
+    @staticmethod
+    def set_qc_session_label(label: str):
+        """Set the human-readable QC session label."""
+        st.session_state["qc_session_label"] = str(label or "").strip()
+
+    @staticmethod
+    def get_qc_session_active_path() -> str:
+        """Get the active session export path."""
+        return str(st.session_state.get("qc_session_active_path", "")).strip()
+
+    @staticmethod
+    def set_qc_session_active_path(path: str):
+        """Set the active session export path."""
+        st.session_state["qc_session_active_path"] = str(path or "").strip()
+
+    @staticmethod
+    def get_qc_session_checkpoint_dir() -> str:
+        """Get the checkpoint directory for the current QC session."""
+        return str(st.session_state.get("qc_session_checkpoint_dir", "")).strip()
+
+    @staticmethod
+    def set_qc_session_checkpoint_dir(path: str):
+        """Set the checkpoint directory for the current QC session."""
+        st.session_state["qc_session_checkpoint_dir"] = str(path or "").strip()
 
     @staticmethod
     def get_rater_experience() -> str:
@@ -75,6 +122,16 @@ class SessionManager:
     def set_rater_fatigue(fatigue: str):
         """Set rater fatigue level."""
         st.session_state[SESSION_KEYS["rater_fatigue"]] = fatigue
+
+    @staticmethod
+    def get_rater_screen_size() -> str:
+        """Get current rater monitor screen size."""
+        return st.session_state.get(SESSION_KEYS["rater_screen_size"], "")
+
+    @staticmethod
+    def set_rater_screen_size(screen_size: str):
+        """Set rater monitor screen size."""
+        st.session_state[SESSION_KEYS["rater_screen_size"]] = screen_size
 
     # Panel Selection Methods
     @staticmethod
@@ -249,6 +306,7 @@ class SessionManager:
             "rater_id": SessionManager.get_rater_id(),
             "experience": SessionManager.get_rater_experience(),
             "fatigue": SessionManager.get_rater_fatigue(),
+            "screen_size": SessionManager.get_rater_screen_size(),
         }
 
     @staticmethod
@@ -385,6 +443,9 @@ class SessionManager:
     @staticmethod
     def reset_for_new_participant():
         """Reset session state for next participant."""
+        for key in list(st.session_state.keys()):
+            if key.startswith("_notes_edit_mode_"):
+                del st.session_state[key]
         st.session_state[SESSION_KEYS["notes"]] = ""
         st.session_state[SESSION_KEYS["notes_version"]] = SessionManager.get_notes_version() + 1
         st.session_state[SESSION_KEYS["rating_version"]] = SessionManager.get_rating_version() + 1

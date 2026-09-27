@@ -5,6 +5,7 @@ import streamlit as st
 from constants import (
     EXPERIENCE_LEVELS,
     FATIGUE_LEVELS,
+    SCREEN_SIZES,
     PANEL_CONFIG,
     UPLOAD_FILE_TYPES,
     MESSAGES,
@@ -23,7 +24,6 @@ from managers.panel_layout_manager import PanelLayoutManager
 from managers.niivue_viewer_manager import NiivueViewerManager
 from utils.config import list_qc_tasks_from_json, parse_qc_config
 from utils.cohort import (
-    bare_bids_id,
     build_qc_cohort,
     count_complete_cohort_pages,
     decided_rating_keys_from_df,
@@ -34,7 +34,7 @@ from utils.cohort import (
 
 def _normalize_participant_id(pid: str) -> str:
     """Normalize participant IDs for CSV/list comparisons."""
-    pid_str = str(pid)
+    pid_str = str(pid).strip()
     return pid_str[4:] if pid_str.startswith("sub-") else pid_str
 
 
@@ -237,8 +237,8 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
         # Rater name/ID
         rater_id = st.text_input(MESSAGES["rater_id_prompt"], value=SessionManager.get_rater_id())
 
-        # Remove spaces from rater_id
-        rater_id_clean = "".join(rater_id.split())
+        # Remove spaces and normalize to lowercase so exported filenames do not collide by case.
+        rater_id_clean = "".join(rater_id.split()).lower()
 
         # Experience level
         default_exp_idx = 0
@@ -251,6 +251,12 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
         if SessionManager.get_rater_fatigue() in FATIGUE_LEVELS:
             default_fatigue_idx = FATIGUE_LEVELS.index(SessionManager.get_rater_fatigue())
         rater_fatigue = st.radio(MESSAGES["fatigue_prompt"], FATIGUE_LEVELS, index=default_fatigue_idx)
+
+        # Screen size
+        default_screen_idx = 0
+        if SessionManager.get_rater_screen_size() in SCREEN_SIZES:
+            default_screen_idx = SCREEN_SIZES.index(SessionManager.get_rater_screen_size())
+        rater_screen_size = st.radio(MESSAGES["screen_size_prompt"], SCREEN_SIZES, index=default_screen_idx)
 
         # Autoplay countdown duration
         autoplay_duration = st.slider(
@@ -268,6 +274,7 @@ def _display_rater_form(entrypoint_rel_path: str | None = None) -> None:
                 SessionManager.set_rater_id(rater_id_clean)
                 SessionManager.set_rater_experience(rater_experience)
                 SessionManager.set_rater_fatigue(rater_fatigue)
+                SessionManager.set_rater_screen_size(rater_screen_size)
                 SessionManager.set_autoplay_duration(autoplay_duration)
                 SessionManager.set_landing_page_complete(True)
                 if entrypoint_rel_path:
@@ -285,7 +292,7 @@ def _display_csv_upload(
     """Render CSV upload section in the landing page.
 
     Args:
-            participant_ids_in_ds: Set of bare participant IDs in dataset
+            participant_ids_in_ds: Set of normalized participant IDs in dataset
             total_cohort_pages: Total (participant, session) pages in this run
             qc_cohort: Ordered cohort rows for pagination
             qc_task: Current QC task name (used to filter uploaded CSV)
@@ -299,8 +306,8 @@ def _display_csv_upload(
 
     if uploaded_file is not None:
         try:
-            # Read the uploaded file
-            df = pd.read_csv(uploaded_file, sep=None, engine="python")
+            # Read the uploaded file while preserving zero-padded subject IDs.
+            df = pd.read_csv(uploaded_file, sep=None, engine="python", dtype=str)
 
             # Deduplicate rows by QC_DEDUP_KEYS (keeping most recent record per participant)
             dedup_cols = [k for k in QC_DEDUP_KEYS if k in df.columns]
@@ -316,7 +323,10 @@ def _display_csv_upload(
             filter_label = _upload_filter_label(qc_task, qc_config_path)
             decided = decided_rating_keys_from_df(df_task, qc_tasks)
             pages_reviewed = count_complete_cohort_pages(qc_cohort, qc_tasks, decided)
-            participant_ids_in_csv = {bare_bids_id(str(pid), "sub-") for pid in df_task["_participant_id_norm"].unique()}
+            records_reviewed = len(decided)
+            total_qc_records = len(qc_cohort) * len(qc_tasks) if qc_cohort and qc_tasks else 0
+            participant_ids_in_csv = {str(pid).strip() for pid in df_task["_participant_id_norm"].unique()}
+            preview_df = df_task.drop(columns=["_participant_id_norm"], errors="ignore")
 
             st.success(SUCCESS_MESSAGES["csv_loaded"].format(count=len(df), filename=uploaded_file.name))
             st.caption(f"Current workflow filter: **{filter_label}**")
@@ -340,13 +350,17 @@ def _display_csv_upload(
                 # Create comparison display
                 col_comp1, col_comp2 = st.columns(2)
                 with col_comp1:
-                    st.metric("Cohort pages reviewed", pages_reviewed)
+                    st.metric(label="Cohort pages reviewed", value=pages_reviewed)
                 with col_comp2:
-                    st.metric("Total cohort pages", total_cohort_pages)
+                    st.metric(label="QC records reviewed", value=records_reviewed)
+                st.caption(
+                    f"Totals: {total_cohort_pages} cohort pages · {total_qc_records} QC records "
+                    f"across this workflow. When a page includes multiple tasks, records can exceed pages."
+                )
 
-                # Progress percentage
-                progress_pct = (pages_reviewed / total_cohort_pages) * 100 if total_cohort_pages > 0 else 0
-                st.progress(min(progress_pct / 100, 1.0), text=f"{progress_pct:.1f}% complete")
+                # Progress percentage is based on QC records, which reflects the actual per-task data points.
+                progress_pct = (records_reviewed / total_qc_records) * 100 if total_qc_records > 0 else 0
+                st.progress(min(progress_pct / 100, 1.0), text=f"{progress_pct:.1f}% of QC records complete")
 
             except Exception as e:
                 st.warning(ERROR_MESSAGES["csv_comparison_error"].format(error=e))
@@ -358,24 +372,27 @@ def _display_csv_upload(
                 extracted_rater_id = str(first_record.get("rater_id", ""))
                 extracted_experience = str(first_record.get("rater_experience", ""))
                 extracted_fatigue = str(first_record.get("rater_fatigue", ""))
+                extracted_screen_size = str(first_record.get("rater_screen_size", ""))
 
                 # Update session state with extracted rater info
                 SessionManager.set_rater_id(extracted_rater_id)
                 SessionManager.set_rater_experience(extracted_experience)
                 SessionManager.set_rater_fatigue(extracted_fatigue)
+                SessionManager.set_rater_screen_size(extracted_screen_size)
 
                 st.info(INFO_MESSAGES["rater_info_extracted"])
                 st.write(INFO_MESSAGES["rater_id_prefix"].format(id=extracted_rater_id))
                 st.write(INFO_MESSAGES["experience_prefix"].format(exp=extracted_experience))
                 st.write(INFO_MESSAGES["fatigue_prefix"].format(fatigue=extracted_fatigue))
+                st.write(INFO_MESSAGES["screen_size_prefix"].format(size=extracted_screen_size))
 
             # Display preview (filtered to current qc_task)
             st.subheader(INFO_MESSAGES["preview_header"])
-            if df_task.empty:
+            if preview_df.empty:
                 st.warning(f"No records found for workflow **{filter_label}** in the uploaded file. " f"All {len(df)} records are for other tasks.")
             else:
                 st.caption(f"Showing records for workflow: **{filter_label}**")
-                st.dataframe(df_task.head(10), width="stretch")
+                st.dataframe(preview_df.head(10), width="stretch")
 
             # Option to load these records
             if st.button(INFO_MESSAGES["load_records_button"], width="stretch"):
@@ -391,6 +408,7 @@ def _display_csv_upload(
                         rater_id=str(row.get("rater_id", "")),
                         rater_experience=str(row.get("rater_experience", "")),
                         rater_fatigue=str(row.get("rater_fatigue", "")),
+                        rater_screen_size=str(row.get("rater_screen_size", "")),
                         final_qc=str(row.get("final_qc", "")),
                         notes=str(row.get("notes", "")) if pd.notna(row.get("notes")) else "",
                     )
@@ -400,11 +418,11 @@ def _display_csv_upload(
                 SessionManager.set_qc_cohort_order(qc_cohort)
                 SessionManager.set_participant_ids(participant_ids_in_cohort_order(qc_cohort))
                 if SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, qc_cohort):
-                    SessionManager.set_current_page(total_cohort_pages + 1)
+                    target_page = total_cohort_pages + 1
                 else:
                     next_page = SessionManager.first_qc_cohort_page_missing_for_tasks(qc_tasks, qc_cohort)
-                    SessionManager.set_current_page(next_page)
-                SessionManager.set_current_page(min(next_page, total_cohort_pages))
+                    target_page = min(next_page, total_cohort_pages)
+                SessionManager.set_current_page(target_page)
                 st.success(SUCCESS_MESSAGES["records_loaded"].format(count=len(loaded_records)))
                 st.info(INFO_MESSAGES["proceed_with_form"])
 
