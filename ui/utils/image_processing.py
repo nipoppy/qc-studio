@@ -73,9 +73,6 @@ def create_grid_montage(images, padding=10, bg_color=(255, 255, 255), max_rows=N
     max_width = max(img.width for img in images)
     max_height = max(img.height for img in images)
 
-    # Calculate individual image aspect ratio
-    img_aspect_ratio = max_width / max_height if max_height > 0 else 1.0
-
     # Calculate optimal grid dimensions for aspect ratio close to 1
     # considering both the number of images AND their inherent aspect ratio
     num_images = len(images)
@@ -108,10 +105,7 @@ def create_grid_montage(images, padding=10, bg_color=(255, 255, 255), max_rows=N
             best_cols = test_cols
 
     rows, cols = best_rows, best_cols
-    constraint_str = ""
-    if max_rows or max_cols:
-        constraint_str = f" (constraints: max_rows={max_rows}, max_cols={max_cols})"
-    # print(f"Creating {rows}x{cols} grid montage for {num_images} images with aspect ratio {img_aspect_ratio:.2f} (montage ratio diff: {best_ratio_diff:.3f}){constraint_str}")
+    # print(f"Creating {rows}x{cols} grid montage for {num_images} images (montage ratio diff: {best_ratio_diff:.3f})")
 
     # Resize all images to uniform size
     resized_images = []

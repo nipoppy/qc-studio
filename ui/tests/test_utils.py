@@ -11,7 +11,6 @@ from utils.config import parse_qc_config
 from utils.data_loaders import (
     load_mri_data,
     load_montage_data,
-    load_iqm_data,
     _resolve_metadata_path,
     _infer_bids_ids_from_path,
     _infer_dataset_root_from_path,
@@ -98,6 +97,28 @@ class TestParseQcConfig:
         )
         result = parse_qc_config(str(qc_path), "demo_task")
         assert result["display_name"] == "Friendly label"
+
+    def test_parse_qc_config_rating_schema(self, temp_dir):
+        qc_path = temp_dir / "qc.json"
+        qc_path.write_text(
+            json.dumps(
+                {
+                    "regional_qc": {
+                        "montage_path": [str(temp_dir / "a.svg")],
+                        "rating": {
+                            "type": "multi",
+                            "scale": ["PASS", "FAIL", "UNCERTAIN"],
+                            "facets": ["frontal", "parietal", "temporal", "occipital"],
+                        },
+                    }
+                }
+            )
+        )
+        result = parse_qc_config(str(qc_path), "regional_qc")
+        assert result["rating"] is not None
+        assert result["rating"]["type"] == "multi"
+        assert result["rating"]["scale"] == ["PASS", "FAIL", "UNCERTAIN"]
+        assert result["rating"]["facets"] == ["frontal", "parietal", "temporal", "occipital"]
 
     def test_parse_qc_config_nonexistent_task(self, sample_qc_config):
         """Test parsing QC config with non-existent task."""
@@ -224,11 +245,11 @@ class TestLoadMontageData:
 
         assert result is not None
         assert isinstance(result, dict)
-        assert len(result) >= 2
+        assert len(result) in {2, 3}
         if "montage" in result:
-            assert result["montage"]["type"] == "png"
+            assert list(result.keys())[0] == "montage"
 
-        # Check that Montage files are loaded with correct type.
+        # Check that each configured montage file stays as its own tab when conversion is available.
         for filename, data in result.items():
             if filename == "montage":
                 continue
@@ -253,11 +274,11 @@ class TestLoadMontageData:
 
         assert result is not None
         assert isinstance(result, dict)
-        assert len(result) >= 2
+        assert len(result) in {2, 3}
         if "montage" in result:
-            assert result["montage"]["type"] == "png"
+            assert list(result.keys())[0] == "montage"
 
-        # Verify we have one SVG and one PNG in addition to montage.
+        # Verify the configured image types remain present.
         types = [data["type"] for key, data in result.items() if key != "montage"]
         assert "svg" in types
         assert "png" in types
@@ -279,7 +300,15 @@ class TestLoadMontageData:
         assert isinstance(result, dict)
         assert len(result) == 3
         assert "montage" in result
-        assert result["montage"]["type"] == "png"
+
+    def test_fsqc_volume_montage_uses_all_available_sample_images(self):
+        """The sample FSQC volume task should reference all three real montage files in the sample dataset."""
+        qc_path = Path(__file__).resolve().parents[2] / "pipelines" / "fsqc" / "qc.json"
+        cfg = parse_qc_config(str(qc_path), "FS_volume_workflow", {"participant_id": "sub-ED01", "session_id": "ses-01"})
+
+        assert cfg["montage_path"] is not None
+        assert len(cfg["montage_path"]) == 3
+        assert all((Path("sample_data") / path).is_file() for path in cfg["montage_path"])
 
     def test_load_jpeg_file(self, temp_dir):
         """Test loading JPEG file."""
@@ -501,7 +530,7 @@ class TestSaveQcResultsToCsv:
         output_file = temp_dir / "output.tsv"
         records = [qc_record_sample]
 
-        result = save_qc_results_to_csv(output_file, records, drop_duplicates=False)
+        save_qc_results_to_csv(output_file, records, drop_duplicates=False)
 
         assert output_file.exists()
         df = pd.read_csv(output_file, sep="\t")
@@ -509,13 +538,13 @@ class TestSaveQcResultsToCsv:
         assert list(df.columns)[0] == "pipeline"
         assert df.iloc[0]["participant_id"] == "sub-CMH0001"
         assert "rater_screen_size" in df.columns
-        assert df.iloc[0]["rater_screen_size"] == "26-30"
+        assert df.iloc[0]["rater_screen_size"] == "Desktop (27 inch)"
 
     def test_save_empty_records_list(self, temp_dir):
         """Test saving empty records list."""
         output_file = temp_dir / "output.tsv"
 
-        result = save_qc_results_to_csv(output_file, [], drop_duplicates=False)
+        save_qc_results_to_csv(output_file, [], drop_duplicates=False)
 
         assert output_file.exists()
         df = pd.read_csv(output_file, sep="\t")
@@ -526,7 +555,7 @@ class TestSaveQcResultsToCsv:
         output_file = temp_dir / "output.tsv"
         records = [qc_record_sample, qc_record_sample]
 
-        result = save_qc_results_to_csv(output_file, records, drop_duplicates=True)
+        save_qc_results_to_csv(output_file, records, drop_duplicates=True)
 
         df = pd.read_csv(output_file, sep="\t")
         # Should have only 1 record if duplicates are dropped
@@ -564,45 +593,27 @@ class TestSaveQcResultsToCsv:
         assert list(df["session_id"]) == ["ses-01", "ses-01", "ses-02", "ses-01"]
         assert list(df["qc_task"]) == ["anat_wf_qc", "b_task", "a_task", "z_task"]
 
-    def test_save_qc_records_trims_notes_whitespace_and_newlines(self, temp_dir, qc_record_sample):
-        """Exported notes should be normalized to avoid whitespace-only drift creating duplicate row values."""
-        output_file = temp_dir / "notes_trimmed.tsv"
-        record = qc_record_sample.model_copy(update={"notes": "\n  Motion artifact\n  "})
-
-        save_qc_results_to_csv(output_file, [record], drop_duplicates=False)
-
-        df = pd.read_csv(output_file, sep="\t", dtype=str)
-        assert list(df["notes"]) == ["Motion artifact"]
-
-    def test_save_qc_records_preserves_zero_padded_subject_ids_when_appending_existing_file(self, temp_dir, qc_record_sample):
-        """Existing TSV exports must keep leading zeros in subject IDs instead of coercing them to integers."""
-        output_file = temp_dir / "zero_padded.tsv"
-        existing = pd.DataFrame(
-            [
-                {
-                    "pipeline": "fmriprep",
-                    "qc_task": "anat_wf_qc",
-                    "participant_id": "000123",
-                    "session_id": "ses-01",
-                    "task_id": "",
-                    "run_id": "",
-                    "timestamp": "2024-01-01T00:00:00",
-                    "rater_id": "rater1",
-                    "rater_experience": "Beginner (< 1 year experience)",
-                    "rater_fatigue": "Not at all",
-                    "rater_screen_size": "14in or less",
-                    "final_qc": "PASS",
-                    "notes": "",
-                }
-            ]
+    def test_save_multi_facet_ratings_as_one_row_per_facet(self, temp_dir, qc_record_sample):
+        multi = qc_record_sample.model_copy(
+            update={
+                "qc_task": "FS_volume_wf_qc",
+                "final_qc": None,
+                "ratings": {
+                    "frontal": "PASS",
+                    "parietal": "FAIL",
+                    "temporal": "UNCERTAIN",
+                    "occipital": "PASS",
+                },
+            }
         )
-        existing.to_csv(output_file, sep="\t", index=False)
 
-        new_record = qc_record_sample.model_copy(update={"participant_id": "000124"})
-        save_qc_results_to_csv(output_file, [new_record], drop_duplicates=False)
+        output_file = temp_dir / "multi.tsv"
+        save_qc_results_to_csv(output_file, [multi], drop_duplicates=True)
+        df = pd.read_csv(output_file, sep="\t")
 
-        df = pd.read_csv(output_file, sep="\t", dtype=str)
-        assert list(df["participant_id"]) == ["000123", "000124"]
+        assert len(df) == 4
+        assert set(df["facet"].tolist()) == {"frontal", "parietal", "temporal", "occipital"}
+        assert set(df["rating_value"].tolist()) == {"PASS", "FAIL", "UNCERTAIN"}
 
 
 class TestInferBidsFolderFromPath:

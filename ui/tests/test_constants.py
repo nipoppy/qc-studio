@@ -1,6 +1,5 @@
 """Unit tests for constants module."""
 
-import pytest
 from constants import (
     EXPERIENCE_LEVELS,
     FATIGUE_LEVELS,
@@ -12,14 +11,11 @@ from constants import (
     IQM_HEIGHT,
     VIEW_MODES,
     OVERLAY_COLORMAPS,
-    DEFAULT_OVERLAY_OPACITY,
     NIIVUE_SECONDARY_RATIO,
     EQUAL_RATIO,
     RATING_IQM_RATIO,
     RATER_INFO_RATIO,
-    DEFAULT_BATCH_SIZE,
     SESSION_KEYS,
-    UPLOAD_FILE_TYPES,
     MESSAGES,
     ERROR_MESSAGES,
     SUCCESS_MESSAGES,

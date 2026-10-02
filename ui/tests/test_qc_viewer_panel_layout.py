@@ -43,6 +43,36 @@ def _call(selected_panels):
         )
 
 
+def test_qc_page_no_longer_repeats_sidebar_context_on_main_page(patched_layout):
+    """The main QC page should not duplicate the sidebar metadata now that it lives in the sidebar."""
+    _call({"niivue": False, "montage": True, "iqm": False})
+
+    patched_layout.st.subheader.assert_not_called()
+
+
+def test_niivue_secondary_panel_renders_panel_caption():
+    """The side-by-side Niivue panel should include its own visible title caption."""
+    mock_st = MagicMock()
+    mock_st.columns.return_value = (MagicMock(), MagicMock())
+
+    with (
+        patch.object(qc_viewer, "st", mock_st),
+        patch.object(qc_viewer, "_get_or_render_niivue_config", return_value=MagicMock()),
+        patch.object(qc_viewer.NiivueViewerManager, "render_viewer", MagicMock()),
+    ):
+        qc_viewer._display_niivue_with_secondary_panel(
+            dataset_dir="/data",
+            selected_panels={"montage": True, "iqm": False},
+            qc_config={"base_mri_image_path": "/tmp/base.nii.gz", "overlay_mri_image_path": None},
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            task_suffix="",
+            qc_config_path="/tmp/qc.json",
+        )
+
+    assert any(call.args[0] == "3D MRI (Niivue)" for call in mock_st.caption.call_args_list)
+
+
 def test_montage_and_iqm_both_render_when_no_niivue_image(patched_layout):
     """A task with no base_mri_image_path (so task_has_niivue is False) and
     both Montage and IQM panels selected should render both, not just Montage.

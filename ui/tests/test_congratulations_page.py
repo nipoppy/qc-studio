@@ -1,6 +1,5 @@
 """Tests for congratulations page export path helpers and export behavior."""
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

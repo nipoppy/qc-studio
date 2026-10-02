@@ -35,4 +35,4 @@ streamlit run "$qc_launch_script" --server.port="$port_number" -- \
   --dataset_dir "$dataset_dir" \
   --participant_list "$participant_list" \
   --session_list "$session_list" \
-  --output_dir "$output_dir"
+  --output_dir "$output_dir" 

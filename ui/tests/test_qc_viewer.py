@@ -18,13 +18,20 @@ from components.qc_viewer import (
     AUTOPLAY_ADVANCE_GRACE_SECONDS,
     _on_rating_change,
     _on_notes_change,
+    _toggle_notes_editing_for_task,
+    _save_and_toggle_notes_editing_for_task,
+    _save_and_start_autoplay,
     _record_qc_for_current_participant,
     _rating_widget_key,
+    _facet_rating_widget_key,
     _notes_widget_key,
+    _notes_edit_mode_key,
     _record_all_qc_tasks,
 )
 from managers.session_manager import SessionManager
 from models import QCRecord
+from utils.data_loaders import _build_montage_display_data
+from utils.export import save_qc_results_to_csv
 
 pytestmark = pytest.mark.unit
 
@@ -85,6 +92,83 @@ class TestCleanFilename:
         """Fallback path should remove synthetic image-type suffixes."""
         filename = "summary_plot_png"
         assert _clean_filename(filename) == "summary_plot"
+
+    def test_display_montage_panel_uses_clean_image_tabs(self, monkeypatch):
+        """Multi-image montages should render one tab per configured image labeled by the cleaned filename."""
+        fake_tabs = [MagicMock(), MagicMock(), MagicMock()]
+        with (
+            patch.object(qc_viewer_module.st, "tabs", return_value=fake_tabs) as mock_tabs,
+            patch.object(
+                qc_viewer_module,
+                "_load_montage_data_cached",
+                return_value={
+                    "figures_sub-CMH0001_ses-01_task-rest_run-01_svg": {"type": "svg", "content": "<svg></svg>"},
+                    "images_sub-CMH0001_overlay_png": {"type": "png", "content": MagicMock()},
+                    "summary_plot_png": {"type": "png", "content": MagicMock()},
+                },
+            ),
+            patch.object(qc_viewer_module.st, "header"),
+            patch.object(qc_viewer_module, "_render_image") as mock_render,
+        ):
+            qc_viewer_module._display_montage_panel("/tmp", {"montage_path": ["a", "b", "c"]})
+
+        assert mock_tabs.call_args.args[0] == [
+            "ses-01_task-rest_run-01",
+            "overlay",
+            "summary_plot",
+        ]
+        assert mock_render.call_count == 3
+
+    def test_unique_montage_tab_names_disambiguate_collisions(self):
+        """Different montage files with the same cleaned basename should still get unique visible tab names."""
+        keys = [
+            "screenshots_sub-CMH0001_sub-CMH0001_png",
+            "skullstrip_sub-CMH0001_sub-CMH0001_png",
+            "surfaces_sub-CMH0001_sub-CMH0001_png",
+        ]
+        assert qc_viewer_module._unique_montage_tab_names(keys) == [
+            "sub-CMH0001",
+            "sub-CMH0001 (2)",
+            "sub-CMH0001 (3)",
+        ]
+
+    def test_build_montage_display_data_keeps_combined_and_individual_tabs(self, tmp_path):
+        """The loader should add a combined montage grid first while preserving one tab per original image."""
+        img_a = tmp_path / "a.png"
+        img_a.write_bytes(b"fake")
+        img_b = tmp_path / "b.png"
+        img_b.write_bytes(b"fake")
+
+        with (
+            patch("utils.data_loaders._load_image_from_file", side_effect=lambda p, dpi=96: MagicMock()),
+            patch("utils.image_processing.create_grid_montage", return_value=MagicMock()),
+        ):
+            result = _build_montage_display_data((str(img_a), str(img_b)))
+
+        assert list(result.keys())[0] == "montage"
+        assert len(result) == 3
+        assert "montage" in result
+        assert any(key.endswith("_a_png") for key in result)
+        assert any(key.endswith("_b_png") for key in result)
+
+    def test_display_montage_panel_uses_overview_first_tab_when_combined_montage_exists(self):
+        """The overview grid should appear as an explicit first tab before the per-image views."""
+        fake_tabs = [MagicMock(), MagicMock(), MagicMock()]
+        image_data = {
+            "montage": {"type": "png", "content": MagicMock()},
+            "surfaces_sub-ED01_lh.pial.superior_png": {"type": "png", "content": MagicMock()},
+            "surfaces_sub-ED01_lh.pial.inferior_png": {"type": "png", "content": MagicMock()},
+        }
+        with (
+            patch.object(qc_viewer_module.st, "tabs", return_value=fake_tabs) as mock_tabs,
+            patch.object(qc_viewer_module, "_load_montage_data_cached", return_value=image_data),
+            patch.object(qc_viewer_module.st, "header"),
+            patch.object(qc_viewer_module, "_render_image") as mock_render,
+        ):
+            qc_viewer_module._display_montage_panel("/tmp", {"montage_path": ["a", "b", "c"]})
+
+        assert mock_tabs.call_args.args[0][0] == "Overview"
+        assert mock_render.call_count == 3
 
 
 # critical
@@ -238,6 +322,7 @@ class TestTryAutoplayAdvanceIfDue:
         assert state["current_page"] == 4
         assert state["autoplay_enabled"] is False
         assert state["autoplay_start_time"] == 0.0
+        assert "_pending_incomplete_cohort_msg" in state
         mock_rerun.assert_called_once()
 
 
@@ -261,6 +346,36 @@ class TestOnRatingChange:
         saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
         assert saved.final_qc == "PASS"
         assert saved.notes == ""
+
+    def test_saves_multi_facet_ratings(self, autoplay_session_state):
+        state, _ = autoplay_session_state
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "frontal", 0)] = "PASS"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "parietal", 0)] = "FAIL"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "temporal", 0)] = "UNCERTAIN"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "occipital", 0)] = "PASS"
+
+        _on_rating_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fsqc",
+            qc_task="FS_volume_wf_qc",
+            rver=0,
+            nver=0,
+            rating_config={
+                "type": "multi",
+                "scale": ["PASS", "FAIL", "UNCERTAIN"],
+                "facets": ["frontal", "parietal", "temporal", "occipital"],
+            },
+        )
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "FS_volume_wf_qc")
+        assert saved.final_qc == "Partial-Pass"
+        assert saved.ratings == {
+            "frontal": "PASS",
+            "parietal": "FAIL",
+            "temporal": "UNCERTAIN",
+            "occipital": "PASS",
+        }
 
 
 class TestOnNotesChange:
@@ -355,6 +470,121 @@ class TestOnNotesChange:
         assert state["autoplay_enabled"] is False
         assert state["autoplay_start_time"] == 0.0
 
+    def test_toggle_notes_editing_pauses_autoplay(self, autoplay_session_state):
+        """Clicking Add notes should pause autoplay before the notes field becomes editable."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = True
+        state["autoplay_start_time"] = time.time()
+
+        _toggle_notes_editing_for_task("anat_wf_qc")
+
+        assert state["autoplay_enabled"] is False
+        assert state["autoplay_start_time"] == 0.0
+        assert state[_notes_edit_mode_key("anat_wf_qc")] is True
+
+    def test_add_notes_path_saves_current_rating_and_notes_before_toggling(self, autoplay_session_state):
+        """The Add notes flow should persist the in-progress task state before rerunning the page."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = True
+        state["autoplay_start_time"] = time.time()
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Motion artifact, borderline."
+
+        _save_and_toggle_notes_editing_for_task(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "PASS"
+        assert saved.notes == "Motion artifact, borderline."
+        assert state["autoplay_enabled"] is False
+        assert state["autoplay_start_time"] == 0.0
+        assert state[_notes_edit_mode_key("anat_wf_qc")] is True
+
+    def test_play_resume_saves_current_page_before_autoplay_restarts(self, autoplay_session_state):
+        """Resuming autoplay should flush the edited page state before the timer restarts."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = False
+        state["autoplay_start_time"] = 0.0
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Updated after reviewing notes."
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "frontal", 0)] = "PASS"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "parietal", 0)] = "FAIL"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "temporal", 0)] = "UNCERTAIN"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "occipital", 0)] = "PASS"
+        state["_qc_rating_cfg_by_task"] = {
+            "anat_wf_qc": {"type": "single", "scale": ["PASS", "FAIL", "UNCERTAIN"]},
+            "FS_volume_wf_qc": {
+                "type": "multi",
+                "scale": ["PASS", "FAIL", "UNCERTAIN"],
+                "facets": ["frontal", "parietal", "temporal", "occipital"],
+            },
+        }
+
+        _save_and_start_autoplay(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc", "FS_volume_wf_qc"],
+        )
+
+        saved_single = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        saved_multi = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "FS_volume_wf_qc")
+        assert saved_single.final_qc == "FAIL"
+        assert saved_single.notes == "Updated after reviewing notes."
+        assert saved_multi.final_qc == "Partial-Pass"
+        assert saved_multi.ratings == {
+            "frontal": "PASS",
+            "parietal": "FAIL",
+            "temporal": "UNCERTAIN",
+            "occipital": "PASS",
+        }
+        assert state["autoplay_enabled"] is True
+        assert state["autoplay_start_time"] > 0
+
+    def test_play_resume_saves_multifacet_state_even_without_seeded_rating_config(self, autoplay_session_state):
+        """Sidebar-triggered flush should preserve multifacet ratings even if config seeding has not run yet."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = False
+        state["autoplay_start_time"] = 0.0
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "frontal", 0)] = "PASS"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "parietal", 0)] = "FAIL"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "temporal", 0)] = "UNCERTAIN"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "occipital", 0)] = "PASS"
+        state[_notes_widget_key("FS_volume_wf_qc", 0)] = "Unsaved sidebar flush note"
+        state.pop("_qc_rating_cfg_by_task", None)
+
+        _save_and_start_autoplay(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fsqc",
+            qc_tasks=["FS_volume_wf_qc"],
+        )
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "FS_volume_wf_qc")
+        assert saved is not None
+        assert saved.final_qc == "Partial-Pass"
+        assert saved.ratings == {
+            "frontal": "PASS",
+            "parietal": "FAIL",
+            "temporal": "UNCERTAIN",
+            "occipital": "PASS",
+        }
+        assert saved.notes == "Unsaved sidebar flush note"
+        assert state["autoplay_enabled"] is True
+        assert state["autoplay_start_time"] > 0
+
     def test_reset_for_new_participant_clears_notes_edit_mode(self, autoplay_session_state):
         """A new page should reset task note edit state so the notes box is locked again until re-enabled."""
         state, _ = autoplay_session_state
@@ -365,6 +595,63 @@ class TestOnNotesChange:
 
         assert "_notes_edit_mode_anat_wf_qc" not in state
         assert "_notes_edit_mode_func_wf_qc" not in state
+
+    def test_stale_notes_callback_does_not_pause_autoplay(self, autoplay_session_state):
+        """A delayed notes callback from the previous page should not pause autoplay on the new page."""
+        state, _ = autoplay_session_state
+        state["autoplay_enabled"] = True
+        state["autoplay_start_time"] = time.time()
+        state["rating_version"] = 2
+        state["notes_version"] = 2
+
+        # Simulate a delayed callback arriving with stale widget versions from the prior page.
+        _on_notes_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=1,
+            nver=1,
+        )
+
+        assert state["autoplay_enabled"] is True
+        assert state["autoplay_start_time"] > 0
+
+    def test_stale_rating_callback_does_not_overwrite_saved_record(self, autoplay_session_state):
+        """A delayed rating callback from a prior page must not replace an already-saved record."""
+        state, _ = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_rating_widget_key("anat_wf_qc", 0)] = "FAIL"
+        state[_notes_widget_key("anat_wf_qc", 0)] = "Saved note"
+
+        _on_rating_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+
+        # Move to a new page generation and trigger an old callback payload.
+        state["rating_version"] = 1
+        state["notes_version"] = 1
+        state[_rating_widget_key("anat_wf_qc", 0)] = None
+        state[_notes_widget_key("anat_wf_qc", 0)] = ""
+
+        _on_rating_change(
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_task="anat_wf_qc",
+            rver=0,
+            nver=0,
+        )
+
+        saved = SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc")
+        assert saved.final_qc == "FAIL"
+        assert saved.notes == "Saved note"
 
 
 class TestRecordQcForCurrentParticipant:
@@ -467,6 +754,52 @@ class TestSaveQcRecord:
         kind, msg = state[qc_viewer_module.PENDING_QC_SAVE_MSG_KEY]
         assert kind == "success"
         assert "Saved 2 record(s) across 2 unique participant(s)." in msg
+
+    def test_checkpoint_matches_final_export_for_single_and_multi_facet_records(self, autoplay_session_state, tmp_path):
+        """Checkpoint TSVs should match the final qc_status.tsv export row-for-row and column-for-column."""
+        state, _ = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+
+        _record_qc_for_current_participant(
+            "sub-CMH0001",
+            "ses-01",
+            "fmriprep",
+            "anat_wf_qc",
+            "PASS",
+            "Single-task note",
+        )
+        _record_qc_for_current_participant(
+            "sub-CMH0002",
+            "ses-01",
+            "fsqc",
+            "FS_volume_wf_qc",
+            None,
+            "Facet note",
+            ratings={
+                "frontal": "PASS",
+                "parietal": "FAIL",
+                "temporal": "UNCERTAIN",
+                "occipital": "PASS",
+            },
+        )
+
+        records = SessionManager.get_qc_records()
+        checkpoint_path = qc_viewer_module._create_qc_checkpoint(
+            records=records,
+            out_dir=str(tmp_path),
+            qc_pipeline="fmriprep",
+            qc_task="all",
+            qc_session_id="ses-01",
+            timestamp="20240101T000000Z",
+        )
+        export_path = tmp_path / "final_qc_status.tsv"
+        save_qc_results_to_csv(export_path, records, drop_duplicates=True)
+
+        checkpoint_df = pd.read_csv(checkpoint_path, sep="\t", dtype=str, keep_default_na=False)
+        export_df = pd.read_csv(export_path, sep="\t", dtype=str, keep_default_na=False)
+
+        pd.testing.assert_frame_equal(checkpoint_df, export_df)
 
 
 class TestRatingPersistenceNearAutoAdvance:
@@ -1022,6 +1355,7 @@ class TestDisplayQcPagination:
         saved = SessionManager.get_qc_record_for_participant("sub-CMH0003", "ses-01", "anat_wf_qc")
         assert saved.final_qc == "PASS"
         assert state["current_page"] == 3  # still incomplete (sub-CMH0002 unrated), must not jump ahead
+        assert "_pending_incomplete_cohort_msg" in state
         mock_rerun.assert_called_once()
 
     def test_next_button_builds_cohort_from_participant_ids_and_advances_when_complete(self, autoplay_session_state, monkeypatch):
@@ -1204,6 +1538,48 @@ class TestDisplayQcPagination:
 
         checkpoint_dir = tmp_path / "checkpoints"
         assert any(checkpoint_dir.glob("*.tsv"))
+        mock_rerun.assert_not_called()
+
+    def test_create_checkpoint_button_flushes_live_facet_ratings_before_saving(self, autoplay_session_state, monkeypatch, tmp_path):
+        """Checkpoint creation should persist the current page's unsaved facet ratings before writing the TSV."""
+        state, mock_rerun = autoplay_session_state
+        state["rating_version"] = 0
+        state["notes_version"] = 0
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "frontal", 0)] = "PASS"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "parietal", 0)] = "FAIL"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "temporal", 0)] = "UNCERTAIN"
+        state[_facet_rating_widget_key("FS_volume_wf_qc", "occipital", 0)] = "PASS"
+        state[_notes_widget_key("FS_volume_wf_qc", 0)] = "Facet note from current page"
+        state["_qc_rating_cfg_by_task"] = {
+            "FS_volume_wf_qc": {
+                "type": "multi",
+                "scale": ["PASS", "FAIL", "UNCERTAIN"],
+                "facets": ["frontal", "parietal", "temporal", "occipital"],
+            }
+        }
+
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        monkeypatch.setattr(st, "info", MagicMock())
+        monkeypatch.setattr(st, "markdown", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fsqc",
+            qc_tasks=["FS_volume_wf_qc"],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        checkpoint_files = list(checkpoint_dir.glob("*.tsv"))
+        assert len(checkpoint_files) == 1
+        checkpoint_df = pd.read_csv(checkpoint_files[0], sep="\t", dtype=str, keep_default_na=False)
+        assert set(checkpoint_df["facet"]) == {"frontal", "parietal", "temporal", "occipital"}
+        assert set(checkpoint_df["rating_value"]) == {"PASS", "FAIL", "UNCERTAIN"}
+        assert set(checkpoint_df["notes"]) == {"Facet note from current page"}
         mock_rerun.assert_not_called()
 
     def test_create_checkpoint_does_not_duplicate_when_records_match_last_checkpoint(self, autoplay_session_state, monkeypatch, tmp_path):

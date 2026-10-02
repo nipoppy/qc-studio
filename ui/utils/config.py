@@ -71,6 +71,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
             "montage_max_rows": None,
             "montage_max_cols": None,
             "display_name": None,
+            "rating": None,
         }
 
     # qcconf.root is a dict: qc_task -> QCTask (RootModel)
@@ -84,6 +85,7 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
             "montage_max_rows": None,
             "montage_max_cols": None,
             "display_name": None,
+            "rating": None,
         }
 
     # qctask is a QCTask model; its fields are Path or None already
@@ -98,4 +100,5 @@ def parse_qc_config(qc_json, qc_task, substitution_values=None) -> dict:
         "montage_max_rows": qctask.montage_max_rows,
         "montage_max_cols": qctask.montage_max_cols,
         "display_name": display_label,
+        "rating": qctask.rating.model_dump() if qctask.rating is not None else None,
     }

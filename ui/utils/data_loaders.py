@@ -10,7 +10,7 @@ import pandas as pd
 
 from pathlib import Path
 
-from typing import Optional, Dict, List, Union, Tuple
+from typing import Optional, Union, Tuple
 
 from constants import NIIVUE_MAX_FILE_BYTES
 
@@ -304,7 +304,8 @@ def _add_montage_if_available(
     max_montage_cols=None,
 ) -> dict:
     if len(images_for_montage) <= 1:
-        # Return individual images (no montage for single image)
+        # Keep individual images for single-image montages, without injecting a
+        # synthetic combined montage tab.
         return image_data_dict
 
     try:
@@ -315,12 +316,10 @@ def _add_montage_if_available(
             max_rows=max_montage_rows,
             max_cols=max_montage_cols,
         )
-        # Insert montage at the beginning of result dict
         result_dict = {"montage": {"type": "png", "content": montage_img}}
         result_dict.update(image_data_dict)
         return result_dict
     except Exception:
-        # Return individual images if montage creation fails
         return image_data_dict
 
 

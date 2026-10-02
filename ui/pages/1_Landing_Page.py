@@ -6,6 +6,7 @@ so Streamlit can run the page when selected from the left navigation.
 
 import streamlit as st
 
+from constants import DEFAULT_QC_RATING
 from main import get_cli_run_context
 from managers.session_manager import SessionManager
 from views.landing_page import show_landing_page
@@ -13,6 +14,11 @@ from views.landing_page import show_landing_page
 st.set_page_config(layout="wide")
 ctx = get_cli_run_context()
 SessionManager.init_session_state()
+if ctx.get("rater_id"):
+    SessionManager.set_rater_id(ctx["rater_id"])
+    SessionManager.set_rater_id_display(ctx["rater_id"])
+if not SessionManager.is_landing_page_complete():
+    SessionManager.set_default_qc_rating(ctx.get("default_qc_rating", DEFAULT_QC_RATING))
 SessionManager.compact_duplicate_qc_records_if_needed()
 show_landing_page(
     ctx["qc_pipeline"],

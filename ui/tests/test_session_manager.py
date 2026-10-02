@@ -4,7 +4,7 @@ import pytest
 import streamlit as st
 from unittest.mock import MagicMock, patch
 from managers.session_manager import SessionManager
-from constants import SESSION_KEYS, DEFAULT_PANELS
+from constants import SESSION_KEYS
 
 pytestmark = pytest.mark.unit
 
@@ -93,6 +93,22 @@ class TestRaterMethods:
         screen_size = "26-30"
         SessionManager.set_rater_screen_size(screen_size)
         assert SessionManager.get_rater_screen_size() == screen_size
+
+    def test_set_rater_screen_size_normalizes_export_label(self, mock_session_state):
+        """Exported labels should map back to canonical radio options for landing form defaults."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        SessionManager.set_rater_screen_size("Desktop (27 inch)")
+        assert SessionManager.get_rater_screen_size() == "26-30"
+
+    def test_set_rater_screen_size_normalizes_legacy_variant(self, mock_session_state):
+        """Legacy TSV values should still select the expected screen-size radio option."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        SessionManager.set_rater_screen_size("14 inches or less")
+        assert SessionManager.get_rater_screen_size() == "14 or less"
 
     def test_get_rater_id_default_empty_string(self, mock_session_state):
         """Test that get_rater_id returns empty string when not set."""
@@ -212,6 +228,26 @@ class TestQCRecordsMethods:
         assert SessionManager.participant_has_decided_qc("sub-01", "ses-01", "anat_wf_qc") is True
         assert SessionManager.participant_has_decided_qc("sub-02", "ses-01", "anat_wf_qc") is False
         assert SessionManager.participant_has_decided_qc("sub-01", "ses-01", "other_task") is False
+
+    def test_participant_has_decided_qc_multi_facet(self, mock_session_state):
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        rec = MagicMock()
+        rec.participant_id = "sub-01"
+        rec.session_id = "ses-01"
+        rec.pipeline = "fsqc"
+        rec.qc_task = "FS_volume_wf_qc"
+        rec.final_qc = None
+        rec.ratings = {
+            "frontal": "PASS",
+            "parietal": "FAIL",
+            "temporal": "UNCERTAIN",
+            "occipital": "PASS",
+        }
+
+        SessionManager.add_qc_record(rec)
+        assert SessionManager.participant_has_decided_qc("sub-01", "ses-01", "FS_volume_wf_qc") is True
 
     def test_set_qc_records(self, mock_session_state):
         """Test setting multiple QC records at once."""

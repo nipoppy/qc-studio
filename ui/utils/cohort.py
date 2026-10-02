@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-from constants import QC_RATINGS
-
 
 def bare_bids_id(val: str, prefix: str) -> str:
     val = str(val)
@@ -93,22 +91,48 @@ def participant_ids_in_cohort_order(qc_cohort: list[dict]) -> list[str]:
 
 
 def decided_rating_keys_from_df(df: pd.DataFrame, qc_tasks: list[str]) -> set[tuple[str, str | None, str]]:
-    """(bare_pid, bare_sid, task) tuples with PASS/FAIL/UNCERTAIN in ``df``."""
+    """(bare_pid, bare_sid, task) tuples that are decided in ``df``.
+
+    For single-scale rows, any non-empty ``final_qc`` marks the task as decided.
+    For multi-facet rows (``facet`` + ``rating_value``), all facet rows in a
+    participant/session/task group must have non-empty ``rating_value``.
+    """
     if df is None or df.empty or not qc_tasks:
         return set()
     allowed = {str(t) for t in qc_tasks}
     out: set[tuple[str, str | None, str]] = set()
+
+    def _norm_key(row) -> tuple[str, str | None, str]:
+        task = str(row.get("qc_task", ""))
+        pid = bare_bids_id(str(row.get("participant_id", "")), "sub-")
+        sid_raw = row.get("session_id")
+        sid = bare_bids_id(normalize_session_id_bids(str(sid_raw)), "ses-") if sid_raw else None
+        return (pid, sid, task)
+
+    has_facet_cols = "facet" in df.columns and "rating_value" in df.columns
+    facet_ratings_by_key: dict[tuple[str, str | None, str], list[str]] = {}
+
     for _, row in df.iterrows():
         task = str(row.get("qc_task", ""))
         if task not in allowed:
             continue
-        final_qc = str(row.get("final_qc", ""))
-        if final_qc not in QC_RATINGS:
-            continue
-        pid = bare_bids_id(str(row.get("participant_id", "")), "sub-")
-        sid_raw = row.get("session_id")
-        sid = bare_bids_id(normalize_session_id_bids(str(sid_raw)), "ses-") if sid_raw else None
-        out.add((pid, sid, task))
+
+        key = _norm_key(row)
+        if has_facet_cols:
+            facet = str(row.get("facet", "")).strip()
+            if facet:
+                rating_val = str(row.get("rating_value", "")).strip()
+                facet_ratings_by_key.setdefault(key, []).append(rating_val)
+                continue
+
+        final_qc = str(row.get("final_qc", "")).strip()
+        if final_qc.lower() not in {"", "none", "nan"}:
+            out.add(key)
+
+    for key, vals in facet_ratings_by_key.items():
+        if vals and all(str(v).strip().lower() not in {"", "none", "nan"} for v in vals):
+            out.add(key)
+
     return out
 
 

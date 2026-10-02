@@ -3,7 +3,7 @@
 Defines all Pydantic models used throughout QC-Studio.
 """
 
-from datetime import datetime, date
+from datetime import date
 from typing import List, Optional, Dict
 from pathlib import Path
 
@@ -12,9 +12,9 @@ try:
 except ImportError:
     from typing_extensions import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
+from pydantic import BaseModel, Field, RootModel, field_validator
 
-from constants import MAX_MONTAGE_GRID_SIZE, MIN_MONTAGE_GRID_SIZE
+from constants import MAX_MONTAGE_GRID_SIZE, MIN_MONTAGE_GRID_SIZE, QC_RATINGS
 
 
 # Future plans:
@@ -39,7 +39,45 @@ class QCRecord(BaseModel):
     rater_fatigue: Annotated[Optional[str], Field(description="Rater fatigue level")] = None
     rater_screen_size: Annotated[Optional[str], Field(description="Rater monitor screen size")] = None
     final_qc: Optional[str] = None
+    ratings: Optional[Dict[str, Optional[str]]] = None
     notes: Annotated[Optional[str], Field(description="Additional comment")] = None
+
+
+class RatingConfig(BaseModel):
+    """Task-level rating schema for single or multi-facet QC."""
+
+    type: Annotated[
+        Literal["single", "multi"],
+        Field(description="Rating mode: one value for the task or one value per facet"),
+    ] = "single"
+    scale: Annotated[
+        List[str],
+        Field(description="Shared rating options used by the task (and by all facets when type=multi)"),
+    ] = Field(default_factory=lambda: list(QC_RATINGS))
+    facets: Annotated[
+        List[str],
+        Field(description="Facet names for type=multi; empty for type=single"),
+    ] = Field(default_factory=list)
+
+    @field_validator("scale", mode="before")
+    @classmethod
+    def _coerce_scale(cls, v):
+        if v is None:
+            return list(QC_RATINGS)
+        if isinstance(v, (list, tuple)):
+            return [str(x).strip() for x in v if str(x).strip()]
+        s = str(v).strip()
+        return [s] if s else list(QC_RATINGS)
+
+    @field_validator("facets", mode="before")
+    @classmethod
+    def _coerce_facets(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, (list, tuple)):
+            return [str(x).strip() for x in v if str(x).strip()]
+        s = str(v).strip()
+        return [s] if s else []
 
 
 class QCTask(BaseModel):
@@ -83,6 +121,14 @@ class QCTask(BaseModel):
             ge=MIN_MONTAGE_GRID_SIZE,
             le=MAX_MONTAGE_GRID_SIZE,
             description="Default max columns for montage grid; omit for auto layout",
+        ),
+    ] = None
+
+    rating: Annotated[
+        Optional[RatingConfig],
+        Field(
+            default=None,
+            description="Optional task-level rating schema. If omitted, defaults to legacy single PASS/FAIL/UNCERTAIN.",
         ),
     ] = None
 

@@ -2,12 +2,10 @@
 
 import json
 from contextlib import contextmanager
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
 import pytest
-from pydantic import ValidationError
 
 # Mock streamlit and dependencies before importing layout
 import sys
@@ -114,7 +112,7 @@ class TestShowLandingPage:
 
     @patch("views.landing_page.pd.read_csv")
     def test_landing_page_displays_title(self, mock_read_csv, tmp_path):
-        """Test that landing page displays correct title."""
+        """Test that landing page displays the welcome greeting and default title."""
         from views.landing_page import show_landing_page
 
         mock_df = pd.DataFrame({"participant_id": ["sub-CMH0001", "sub-CMH0002", "sub-CMH0003"]})
@@ -130,7 +128,33 @@ class TestShowLandingPage:
                 qc_config_path=_stub_qc_config_path(tmp_path),
             )
 
-        mock_st.title.assert_called_once()
+        mock_st.markdown.assert_any_call("# Welcome to Nipoppy QC-Studio! 🚀")
+
+    @patch("views.landing_page.pd.read_csv")
+    def test_landing_page_personalizes_greeting_with_rater_id(self, mock_read_csv, tmp_path):
+        """A provided rater ID should be used in the landing-page greeting and the rater form."""
+        from views.landing_page import show_landing_page
+
+        mock_df = pd.DataFrame({"participant_id": ["sub-CMH0001", "sub-CMH0002"]})
+        mock_read_csv.return_value = mock_df
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            SessionManager = __import__("managers.session_manager", fromlist=["SessionManager"]).SessionManager
+            SessionManager.set_rater_id("abc123")
+            SessionManager.set_rater_id_display("odysseus")
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=_stub_qc_config_path(tmp_path),
+            )
+
+        mock_st.markdown.assert_any_call("# :blue[Salut odysseus!] Welcome to Nipoppy QC-Studio! 🚀")
+        rater_call = mock_st.text_input.call_args_list[0]
+        assert rater_call.args[0] == "Enter your Rater Name or ID:"
+        assert rater_call.kwargs["value"] == "odysseus"
 
     @patch("views.landing_page.pd.read_csv")
     def test_landing_page_displays_pipeline_info(self, mock_read_csv, tmp_path):
@@ -150,12 +174,77 @@ class TestShowLandingPage:
                 qc_config_path=_stub_qc_config_path(tmp_path),
             )
 
-        markdown_calls = [str(c.args[0]) for c in mock_st.markdown.call_args_list if c.args]
-        assert any("Task:** anat_wf_qc" in text for text in markdown_calls)
-        assert any("Subjects:**" in text for text in markdown_calls)
-        assert any("Cohort pages:**" in text for text in markdown_calls)
-        mock_st.header.assert_any_call("fmriprep")
-        assert not any("QC Pipeline:" in text and "|" in text for text in markdown_calls)
+        subheader_calls = [str(c.args[0]) for c in mock_st.subheader.call_args_list if c.args]
+        assert any("Pipeline: fmriprep" in text and "Subjects:** 2" in text for text in subheader_calls)
+        assert not any("Task:**" in text for text in subheader_calls)
+        assert not any("Cohort pages:**" in text for text in subheader_calls)
+        assert not any("QC Pipeline:" in text and "|" in text for text in subheader_calls)
+
+    @patch("views.landing_page.pd.read_csv")
+    def test_landing_page_exposes_qc_task_selector_in_sidebar(self, mock_read_csv, tmp_path):
+        """The landing-page sidebar should offer the available qc.json tasks as a single-choice selector."""
+        from views.landing_page import show_landing_page
+
+        qc_path = tmp_path / "qc_config.json"
+        qc_path.write_text(
+            json.dumps(
+                {
+                    "anat_wf_qc": {"base_mri_image_path": "/tmp/base.nii.gz", "montage_path": "/tmp/montage.svg"},
+                    "func_wf_qc": {"base_mri_image_path": "/tmp/base2.nii.gz", "montage_path": "/tmp/montage2.svg"},
+                }
+            )
+        )
+
+        mock_df = pd.DataFrame({"participant_id": ["sub-CMH0001", "sub-CMH0002"]})
+        mock_read_csv.return_value = mock_df
+
+        mock_st = MagicMock()
+        with _patch_streamlit_for_landing(mock_st):
+            show_landing_page(
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                out_dir="/output",
+                participant_list="participants.tsv",
+                qc_config_path=str(qc_path),
+            )
+
+        radio_calls = [c for c in mock_st.sidebar.radio.call_args_list if c.kwargs.get("label") == "Choose QC task"]
+        assert len(radio_calls) == 1
+        radio_call = radio_calls[0]
+        assert radio_call.kwargs["options"] == ["anat_wf_qc", "func_wf_qc"]
+        assert radio_call.kwargs["index"] == 0
+
+    @patch("app.display_qc_viewers")
+    def test_app_uses_selected_qc_task_for_viewer_images(self, mock_display_qc_viewers, tmp_path):
+        """The selected landing-page task should override the original CLI/default task in the QC viewer."""
+        from app import app
+
+        qc_path = _stub_qc_config_path(tmp_path)
+        mock_st = MagicMock()
+        mock_st.session_state = _session_state_dict()
+        mock_st.session_state[SESSION_KEYS["landing_page_complete"]] = True
+        mock_st.session_state[SESSION_KEYS["selected_qc_task"]] = "func_wf_qc"
+        qc_cohort = [{"participant_id": "sub-CMH0001", "session_id": "ses-01"}]
+
+        with patch("app.st", mock_st), patch("managers.session_manager.st", mock_st):
+            app(
+                dataset_dir="/dataset",
+                participant_id="sub-CMH0001",
+                session_id="ses-01",
+                qc_pipeline="fmriprep",
+                qc_task="anat_wf_qc",
+                qc_config_path=qc_path,
+                out_dir="/output",
+                total_participants=1,
+                drop_duplicates=True,
+                participant_list="participants.tsv",
+                participant_ids=["sub-CMH0001"],
+                qc_cohort=qc_cohort,
+                qc_tasks=["anat_wf_qc"],
+            )
+
+        assert mock_display_qc_viewers.call_args.kwargs["qc_task"] == "func_wf_qc"
+        assert mock_display_qc_viewers.call_args.kwargs["qc_tasks"] == ["func_wf_qc"]
 
     @patch("views.landing_page.pd.read_csv")
     def test_landing_page_counts_both_pages_and_qc_records(self, mock_read_csv, tmp_path):
@@ -188,36 +277,20 @@ class TestShowLandingPage:
             )
 
         metric_calls = [call.kwargs for call in mock_st.metric.call_args_list if call.kwargs]
-        assert any(call.get("label") == "Cohort pages reviewed" for call in metric_calls)
+        assert any(call.get("label") == "QC pages reviewed" for call in metric_calls)
         assert any(call.get("label") == "QC records reviewed" for call in metric_calls)
         caption_text = "\n".join(str(call.args[0]) for call in mock_st.caption.call_args_list)
         assert "records can exceed pages" in caption_text
         progress_text = "\n".join(str(call.kwargs.get("text", "")) for call in mock_st.progress.call_args_list)
         assert "QC records complete" in progress_text
 
-    def test_landing_run_summary_uses_subject_page_task_names(self):
+    def test_landing_run_summary_uses_pipeline_and_subject_count_only(self):
         from views.landing_page import _landing_run_summary_lines
 
-        line1, line2 = _landing_run_summary_lines(
-            "noddireg",
-            ["Tissue density distributions"],
-            1,
-            2,
-        )
-        assert line1 == "noddireg"
-        assert "Task:** Tissue density distributions" in line2
-        assert "noddireg_density" not in line2
-        assert "Subjects:** 1" in line2 and "Cohort pages:** 2" in line2
-
-        _, all_line = _landing_run_summary_lines(
-            "fmriprep",
-            ["Susceptibility distortion correction (SDC)", "BOLD-T1w coregistration"],
-            1,
-            2,
-            all_tasks=True,
-        )
-        assert "Task:** all tasks (2 tasks)" in all_line
-        assert "Susceptibility distortion correction" not in all_line
+        summary = _landing_run_summary_lines("noddireg", 1)
+        assert summary == "Pipeline: noddireg | **Subjects:** 1"
+        assert "Task:**" not in summary
+        assert "Cohort pages:**" not in summary
 
     def test_compact_session_label_omits_pipeline_and_task_count(self):
         from utils.cohort import compact_session_label
@@ -662,8 +735,6 @@ class TestNavigationControls:
     @patch("app.st")
     def test_previous_button_updates_page(self, mock_st):
         """Test that previous button updates current page."""
-        from app import app
-
         mock_st.session_state = {"landing_page_complete": True, "current_page": 2, "rater_id": "test_rater"}
         mock_st.set_page_config = MagicMock()
 
@@ -753,9 +824,13 @@ class TestSidebarCohortNavOrder:
             )
 
         names = [name for name, _ in order]
-        assert names[:4] == ["header", "controls", "caption", "search"]
+        assert names[:5] == ["caption", "header", "controls", "caption", "search"]
         mock_st.container.assert_any_call(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True)
-        mock_st.caption.assert_called_with(MESSAGES["sidebar_subjects_header"])
+        assert any(call.args[0] == "QC task: sdc_wf_qc" for call in mock_st.caption.call_args_list)
+        assert any(
+            call.args[0] == f"Participant ID: {nav_kwargs['participant_id']} | Session ID: {nav_kwargs['session_id']}"
+            for call in mock_st.caption.call_args_list
+        )
         mock_st.text_input.assert_called_once_with(
             MESSAGES["sidebar_subjects_search"],
             key=SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY,

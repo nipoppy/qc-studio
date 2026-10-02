@@ -1,6 +1,6 @@
 """Tests for ui.py module."""
 
-from argparse import ArgumentParser
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
@@ -18,7 +18,11 @@ class TestParseArgs:
         duration of each test here only, via monkeypatch, so the swap can't leak into
         other test files' collection or execution (unlike a bare module-level assignment).
         """
-        monkeypatch.setitem(sys.modules, "streamlit", MagicMock())
+        streamlit_stub = MagicMock()
+        streamlit_stub.__path__ = []
+        monkeypatch.setitem(sys.modules, "streamlit", streamlit_stub)
+        monkeypatch.setitem(sys.modules, "streamlit.components", MagicMock())
+        monkeypatch.setitem(sys.modules, "streamlit.components.v1", MagicMock())
         monkeypatch.setitem(sys.modules, "layout", MagicMock())
         monkeypatch.delitem(sys.modules, "main", raising=False)
 
@@ -53,6 +57,31 @@ class TestParseArgs:
         assert args.out_dir == "/output"
         assert args.qc_json == "/path/to/qc_config.json"
 
+    def test_parse_args_with_optional_rater_id(self):
+        """The CLI should accept an optional rater ID that pre-fills the landing page."""
+        from main import parse_args
+
+        args = parse_args(
+            [
+                "--dataset_dir",
+                "/path/to/dataset",
+                "--participant_list",
+                "/path/to/participants.tsv",
+                "--qc_pipeline",
+                "fmriprep",
+                "--qc_task",
+                "anat_wf_qc",
+                "--output_dir",
+                "/output",
+                "--qc_json",
+                "/path/to/qc_config.json",
+                "--rater_id",
+                "abc123",
+            ]
+        )
+
+        assert args.rater_id == "abc123"
+
     def test_parse_args_default_session_list(self):
         """Test parsing with default session_list."""
         from main import parse_args
@@ -75,6 +104,98 @@ class TestParseArgs:
         )
 
         assert args.session_list is None
+        assert args.default_qc_rating == "PASS"
+
+    def test_parse_args_with_default_qc_rating_override(self):
+        """CLI should accept overriding the default preselected QC rating."""
+        from main import parse_args
+
+        args = parse_args(
+            [
+                "--dataset_dir",
+                "/path/to/dataset",
+                "--participant_list",
+                "/path/to/participants.tsv",
+                "--qc_pipeline",
+                "fmriprep",
+                "--qc_task",
+                "anat_wf_qc",
+                "--output_dir",
+                "/output",
+                "--qc_json",
+                "/path/to/qc_config.json",
+                "--default_qc_rating",
+                "FAIL",
+            ]
+        )
+
+        assert args.default_qc_rating == "FAIL"
+
+    def test_parse_args_with_default_qc_rating_none(self):
+        """CLI should accept an explicit unrated default (None)."""
+        from main import parse_args
+
+        args = parse_args(
+            [
+                "--dataset_dir",
+                "/path/to/dataset",
+                "--participant_list",
+                "/path/to/participants.tsv",
+                "--qc_pipeline",
+                "fmriprep",
+                "--qc_task",
+                "anat_wf_qc",
+                "--output_dir",
+                "/output",
+                "--qc_json",
+                "/path/to/qc_config.json",
+                "--default_qc_rating",
+                "None",
+            ]
+        )
+
+        assert args.default_qc_rating == "None"
+
+    def test_landing_page_entrypoint_applies_cli_rater_id_to_session(self, monkeypatch):
+        """The multipage landing-page entrypoint should seed the session with the CLI rater ID."""
+        import runpy
+
+        import main
+        import managers.session_manager
+        import views.landing_page
+
+        ctx = {
+            "dataset_dir": "/data",
+            "participant_list": "/participants.tsv",
+            "session_list": "ses-01",
+            "qc_pipeline": "fmriprep",
+            "qc_task": "anat_wf_qc",
+            "qc_tasks": ["anat_wf_qc"],
+            "qc_config_path": "/tmp/qc.json",
+            "out_dir": "/tmp/output",
+            "total_participants": 1,
+            "drop_duplicates": True,
+            "participant_ids": ["CMH0001"],
+            "qc_cohort": [{"participant_id": "sub-CMH0001", "session_id": "ses-01"}],
+            "rater_id": "Eva",
+        }
+
+        calls = {}
+
+        monkeypatch.setattr(main, "get_cli_run_context", lambda: ctx)
+        monkeypatch.setattr(managers.session_manager.SessionManager, "init_session_state", lambda: None)
+        monkeypatch.setattr(managers.session_manager.SessionManager, "compact_duplicate_qc_records_if_needed", lambda: None)
+        monkeypatch.setattr(managers.session_manager.SessionManager, "set_rater_id", lambda value: calls.setdefault("rater_id", value))
+        monkeypatch.setattr(
+            managers.session_manager.SessionManager, "set_rater_id_display", lambda value: calls.setdefault("rater_id_display", value)
+        )
+        monkeypatch.setattr(views.landing_page, "show_landing_page", lambda *args, **kwargs: None)
+
+        landing_page_path = Path(__file__).resolve().parents[2] / "ui" / "pages" / "1_Landing_Page.py"
+        runpy.run_path(str(landing_page_path))
+
+        assert calls["rater_id"] == "Eva"
+        assert calls["rater_id_display"] == "Eva"
 
     def test_main_passes_output_dir_to_sidebar_navigation(self, monkeypatch):
         """The sidebar default path should receive the CLI output_dir when the QC page is rendered."""

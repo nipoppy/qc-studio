@@ -72,6 +72,8 @@ def render_sidebar_cohort_subjects(
                 _display_qc_pagination_header,
             )
 
+            task_label = "all" if len(tasks_eff) > 1 else (tasks_eff[0] if tasks_eff else qc_task)
+            st.caption(f"QC task: {task_label}")
             _display_qc_pagination_header(kw["current_page"], kw["total_participants"])
 
         if kw:
@@ -79,6 +81,14 @@ def render_sidebar_cohort_subjects(
 
         if show_subject_filter:
             st.session_state.setdefault(SESSION_KEYS["sidebar_subject_search"], "")
+            current_pid = kw.get("participant_id") if kw else None
+            current_sid = kw.get("session_id") if kw else None
+            if current_pid is None or current_sid is None:
+                current_index = min(max(SessionManager.get_current_page() - 1, 0), max(len(entries) - 1, 0))
+                current_entry = entries[current_index] if entries else {}
+                current_pid = current_pid or str(current_entry.get("participant_id", "—"))
+                current_sid = current_sid or str(current_entry.get("session_id", session_id or "—"))
+            st.caption(f"Participant ID: {current_pid or '—'} | Session ID: {current_sid or '—'}")
         else:
             query = get_subject_search_query()
 
@@ -231,7 +241,6 @@ def _render_subject_list(
     current_page = SessionManager.get_current_page()
     with st.container(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True):
         if show_filter:
-            st.caption(MESSAGES["sidebar_subjects_header"])
             query = _render_subject_search()
             snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
             if snap_to is not None:

@@ -2,10 +2,11 @@
 
 import math
 import re
+from typing import Any
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 import time
-import pandas as pd
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -13,50 +14,25 @@ from constants import (
     MONTAGE_HEIGHT,
     MESSAGES,
     ERROR_MESSAGES,
-    QC_RATINGS,
-    NIIVUE_SECONDARY_RATIO,
-    VIEW_MODES,
-    OVERLAY_COLORMAPS,
     SUCCESS_MESSAGES,
     INFO_MESSAGES,
+    QC_RATINGS,
+    VIEW_MODES,
+    OVERLAY_COLORMAPS,
+    RATING_FACET_COLUMNS,
+    DEFAULT_QC_RATING_NONE,
 )
 from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
-from utils.cohort import compact_session_label
-from utils.export import save_qc_results_to_csv, normalize_note_value
 from utils.navigation import request_navigation_rerun
+from utils.export import build_qc_results_dataframe, save_qc_results_to_csv, normalize_note_value
 from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
 from managers.session_manager import SessionManager
 from models import QCRecord
 from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
 
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
-QC_SAVE_PATH_KEY = "qc_save_path"
-QC_SAVE_PATH_DEFAULT_KEY = "_qc_save_path_default"
 PENDING_QC_SAVE_MSG_KEY = "pending_qc_save_msg"
-
-
-def _should_refresh_qc_save_path_widget(current_value: str | None, previous_default: str | None, new_default: str | None) -> bool:
-    """True when the widget still holds a stale default from a previous run."""
-    if new_default is None or new_default == previous_default:
-        return False
-    if current_value is None:
-        return True
-    current_str = str(current_value).strip()
-    previous_str = str(previous_default or "").strip()
-    if not current_str or not previous_str:
-        return False
-    if current_str == previous_str:
-        return True
-    try:
-        current_path = Path(current_str).expanduser().resolve()
-        previous_path = Path(previous_str).expanduser().resolve()
-        if current_path.name == previous_path.name and current_path.parent == previous_path.parent:
-            return True
-    except Exception:
-        pass
-    return False
-
 
 # Extra wait past the configured autoplay duration before advancing, so a rating click
 # made right at the boundary has time to reach the server and self-save via on_change
@@ -83,9 +59,70 @@ def _clean_filename(filename: str) -> str:
 
 
 def _pause_autoplay_for_notes_edit() -> None:
-    """Stop playback and surface a banner when the user explicitly starts note entry."""
+    """Stop autoplay when the user explicitly starts editing notes."""
     SessionManager.set_autoplay_enabled(False)
     SessionManager.set_autoplay_start_time(0.0)
+
+
+def _notes_edit_mode_key(qc_task: str) -> str:
+    return f"_notes_edit_mode_{qc_task}"
+
+
+def _toggle_notes_editing_for_task(qc_task: str) -> None:
+    """Reveal the notes box and pause autoplay until the user is done."""
+    st.session_state[_notes_edit_mode_key(qc_task)] = True
+    _pause_autoplay_for_notes_edit()
+
+
+def _save_and_toggle_notes_editing_for_task(
+    participant_id: str | None,
+    session_id: str | None,
+    qc_pipeline: str | None,
+    qc_task: str,
+    rver: int,
+    nver: int,
+    rating_config: dict[str, Any] | None = None,
+) -> None:
+    """Persist the current task state before enabling note editing."""
+    _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver, rating_config)
+    _toggle_notes_editing_for_task(qc_task)
+
+
+def _save_and_start_autoplay(
+    participant_id: str | None,
+    session_id: str | None,
+    qc_pipeline: str | None,
+    qc_tasks: list,
+) -> None:
+    """Persist the current page before enabling autoplay."""
+    _save_current_page_qc_state(participant_id, session_id, qc_pipeline, qc_tasks)
+    SessionManager.set_autoplay_enabled(True)
+    SessionManager.set_autoplay_start_time(time.time())
+
+
+def _save_current_page_qc_state(
+    participant_id: str | None,
+    session_id: str | None,
+    qc_pipeline: str | None,
+    qc_tasks: list,
+) -> None:
+    """Flush the current page widgets into session records without changing navigation."""
+    _record_all_qc_tasks(participant_id, session_id, qc_pipeline, qc_tasks)
+
+
+def _unique_montage_tab_names(image_keys: list[str]) -> list[str]:
+    """Ensure each montage tab label is unique even when several image keys normalize to the same cleaned basename."""
+    labels: list[str] = []
+    counts: dict[str, int] = {}
+    for key in image_keys:
+        label = _clean_filename(key)
+        count = counts.get(label, 0)
+        counts[label] = count + 1
+        if count == 0:
+            labels.append(label)
+        else:
+            labels.append(f"{label} ({count + 1})")
+    return labels
 
 
 def try_autoplay_advance_if_due(
@@ -105,9 +142,6 @@ def try_autoplay_advance_if_due(
     """
     if participant_id is None or not total_participants:
         return
-    tasks = list(qc_tasks or [])
-    if not tasks:
-        tasks = [qc_task] if qc_task else ["anat_wf_qc"]
     if not SessionManager.is_autoplay_enabled():
         return
     start_time = SessionManager.get_autoplay_start_time()
@@ -117,6 +151,9 @@ def try_autoplay_advance_if_due(
     duration = SessionManager.get_autoplay_duration()
     if elapsed < duration + AUTOPLAY_ADVANCE_GRACE_SECONDS:
         return
+    tasks = list(qc_tasks or [])
+    if not tasks:
+        tasks = [qc_task] if qc_task else ["anat_wf_qc"]
 
     current_page = SessionManager.get_current_page()
     _, next_page = _filtered_adjacent_pages(
@@ -129,7 +166,13 @@ def try_autoplay_advance_if_due(
         SessionManager.set_autoplay_start_time(time.time())
     else:
         _record_all_qc_tasks(participant_id, session_id, qc_pipeline, tasks)
-        if not _has_active_subject_filter() and (
+        if _has_active_subject_filter() and not _filtered_cohort_complete_for_tasks(
+            tasks, qc_cohort, participant_ids, session_id, total_participants
+        ):
+            msg = "⚠️ Some subjects remain unrated. Remove the filter to continue autoplay through the remaining subjects."
+            st.info(msg)
+            st.session_state["_pending_incomplete_cohort_msg"] = msg
+        elif not _has_active_subject_filter() and (
             qc_cohort
             and SessionManager.all_qc_cohort_pages_complete_for_tasks(tasks, qc_cohort)
             or not qc_cohort
@@ -246,14 +289,16 @@ def display_qc_viewers(
 
     _render_autoplay_countdown_main_banner()
 
-    st.markdown(f"**{compact_session_label(participant_id, session_id)}**")
+    # st.markdown(f"**{compact_session_label(participant_id, session_id)}**")
 
     for i, tname in enumerate(tasks):
         qc_config = parse_qc_config(qc_config_path, tname, substitution_values)
         display_label = qc_config.get("display_name") or tname
+        rating_cfg = _task_rating_config(qc_config.get("rating"))
+        st.session_state.setdefault("_qc_rating_cfg_by_task", {})[tname] = rating_cfg
         if multi_task and i > 0:
             st.divider()
-        st.subheader(display_label)
+        # st.subheader(display_label)
         task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
         if task_has_niivue and show_montage and show_iqm:
             _display_niivue_with_secondary_panel(
@@ -303,6 +348,7 @@ def display_qc_viewers(
             qc_task=tname,
             display_label=display_label,
             notes_height=88 if multi_task else 120,
+            rating_config=rating_cfg,
         )
 
 
@@ -332,6 +378,7 @@ def _display_niivue_with_secondary_panel(
 
     # Left column: Niivue viewer with hidden controls at bottom
     with viewer_col:
+        st.caption(MESSAGES["niivue_header"])
         # Get niivue config from session state or render_controls_panel
         niivue_config = _get_or_render_niivue_config(
             task_suffix,
@@ -375,6 +422,8 @@ def _display_niivue_full_width(dataset_dir, qc_config, participant_id: str = Non
         task_suffix,
         has_overlay=bool(qc_config.get("overlay_mri_image_path")),
     )
+
+    st.subheader(MESSAGES["niivue_header"])
 
     # Render viewer at top
     NiivueViewerManager.render_viewer(dataset_dir, qc_config, niivue_config, participant_id, session_id, task_suffix=task_suffix)
@@ -422,7 +471,7 @@ def _display_montage_panel(dataset_dir, qc_config) -> None:
             dataset_dir: Root dataset directory
             qc_config: QC configuration object
     """
-    st.header(MESSAGES["montage_header"])
+    st.caption(MESSAGES["montage_header"])
 
     # Get montage grid settings from session manager
     max_montage_rows = SessionManager.get_montage_max_rows()
@@ -431,16 +480,29 @@ def _display_montage_panel(dataset_dir, qc_config) -> None:
     image_data = _load_montage_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
 
     if image_data:
-        # If multiple images, create tabs
-        if len(image_data) > 1:
-            tab_names = [_clean_filename(f) for f in image_data.keys()]
+        ordered_items = list(image_data.items())
+        if len(image_data) > 1 and "montage" in image_data:
+            overview_entry = ("montage", image_data["montage"])
+            individual_entries = [(key, value) for key, value in ordered_items if key != "montage"]
+            ordered_items = [overview_entry, *individual_entries]
+
+        if len(ordered_items) > 1:
+            tab_names = []
+            iter_items = ordered_items
+            if "montage" in image_data:
+                tab_names.append("Overview")
+                iter_items = [("montage", image_data["montage"])] + [item for item in ordered_items if item[0] != "montage"]
+                remaining_keys = [key for key, _ in iter_items[1:]]
+            else:
+                remaining_keys = [key for key, _ in ordered_items]
+            tab_names.extend(_unique_montage_tab_names(remaining_keys))
             tabs = st.tabs(tab_names)
-            for tab, (filename, data) in zip(tabs, image_data.items()):
+            for tab, (filename, data) in zip(tabs, iter_items):
                 with tab:
                     _render_image(data, filename)
         else:
             # Single image - display directly
-            filename, data = list(image_data.items())[0]
+            filename, data = ordered_items[0]
             _render_image(data, filename)
     else:
         st.info(ERROR_MESSAGES["montage_not_found"])
@@ -470,56 +532,137 @@ def _rating_widget_key(qc_task: str, rver: int) -> str:
     return f"qc_rating_{qc_task}_{rver}"
 
 
+def _facet_rating_widget_key(qc_task: str, facet: str, rver: int) -> str:
+    facet_token = re.sub(r"[^A-Za-z0-9]+", "_", str(facet).strip()).strip("_").lower() or "facet"
+    return f"qc_rating_{qc_task}_{facet_token}_{rver}"
+
+
 def _notes_widget_key(qc_task: str, nver: int) -> str:
     return f"qc_notes_{qc_task}_{nver}"
 
 
-def _notes_edit_mode_key(qc_task: str) -> str:
-    return f"_notes_edit_mode_{qc_task}"
+def _task_rating_config(rating_config: dict[str, Any] | None) -> dict[str, Any]:
+    cfg = rating_config if isinstance(rating_config, dict) else {}
+    mode = str(cfg.get("type") or "single").strip().lower()
+    mode = mode if mode in {"single", "multi"} else "single"
+
+    raw_scale = cfg.get("scale")
+    if isinstance(raw_scale, (list, tuple)):
+        scale = [str(v).strip() for v in raw_scale if str(v).strip()]
+    else:
+        raw_single = str(raw_scale).strip() if raw_scale is not None else ""
+        scale = [raw_single] if raw_single else []
+    if not scale:
+        scale = list(QC_RATINGS)
+
+    raw_facets = cfg.get("facets")
+    if isinstance(raw_facets, (list, tuple)):
+        facets = [str(v).strip() for v in raw_facets if str(v).strip()]
+    else:
+        facets = []
+
+    if mode == "multi" and not facets:
+        # Fallback to single mode if facets are not defined.
+        mode = "single"
+
+    return {"type": mode, "scale": scale, "facets": facets}
 
 
-def _latest_state_value_for_task_widget(prefix: str, qc_task: str, version: int | None = None):
-    """Return the newest live widget value for a task, even if older versioned keys remain in state."""
-    candidates = []
-    for key, value in st.session_state.items():
-        if not key.startswith(f"{prefix}_{qc_task}_"):
+def _latest_widget_version_for_task(qc_task: str, prefix: str, fallback: int | None = 0) -> int:
+    """Prefer the newest versioned widget key still resident in session state."""
+    latest = int(fallback or 0)
+    task_prefix = f"{prefix}{qc_task}_"
+    for key in list(st.session_state.keys()):
+        if not isinstance(key, str) or not key.startswith(task_prefix):
             continue
-        suffix = key.rsplit("_", 1)[-1]
-        if suffix.isdigit():
-            candidates.append((int(suffix), value))
-    if candidates:
-        return max(candidates, key=lambda item: item[0])[1]
-    if version is not None:
-        direct_key = f"{prefix}_{qc_task}_{version}"
-        if direct_key in st.session_state:
-            return st.session_state[direct_key]
+        suffix = key[len(task_prefix) :]
+        if not suffix:
+            continue
+        last_token = suffix.rsplit("_", 1)[-1]
+        if last_token.isdigit():
+            latest = max(latest, int(last_token))
+    return latest
+
+
+def _collect_task_rating_payload(qc_task: str, rver: int, rating_config: dict[str, Any] | None) -> tuple[str | None, dict[str, str | None] | None]:
+    cfg = _task_rating_config(rating_config)
+    effective_rver = _latest_widget_version_for_task(qc_task, "qc_rating_", rver)
+    if cfg["type"] == "single":
+        return st.session_state.get(_rating_widget_key(qc_task, effective_rver)), None
+
+    ratings: dict[str, str | None] = {}
+    for facet in cfg["facets"]:
+        ratings[facet] = st.session_state.get(_facet_rating_widget_key(qc_task, facet, effective_rver))
+    return None, ratings
+
+
+def _is_stale_widget_callback(rver: int, nver: int) -> bool:
+    """True when a callback belongs to an older participant/page widget generation."""
+    return int(rver) != SessionManager.get_rating_version() or int(nver) != SessionManager.get_notes_version()
+
+
+def _fallback_rating_config_for_task(
+    participant_id: str,
+    session_id: str,
+    qc_task: str,
+    rver: int,
+) -> dict[str, Any] | None:
+    """Best-effort config inference for save paths invoked before viewer render.
+
+    Sidebar actions (Play/Checkpoint) run before the main viewer on each rerun.
+    If ``_qc_rating_cfg_by_task`` is not populated yet, infer multi-facet shape
+    from the latest saved record or from live widget keys so current page edits
+    are not dropped.
+    """
+    existing = SessionManager.get_qc_record_for_participant(participant_id, session_id, qc_task)
+    if existing is not None:
+        existing_ratings = existing.ratings if hasattr(existing, "ratings") else existing.get("ratings")
+        if isinstance(existing_ratings, dict) and existing_ratings:
+            facets = [str(f).strip() for f in existing_ratings.keys() if str(f).strip()]
+            if facets:
+                return {"type": "multi", "scale": list(QC_RATINGS), "facets": facets}
+
+    effective_rver = _latest_widget_version_for_task(qc_task, "qc_rating_", rver)
+    prefix = f"qc_rating_{qc_task}_"
+    facet_tokens: list[str] = []
+    for key in list(st.session_state.keys()):
+        if not isinstance(key, str) or not key.startswith(prefix):
+            continue
+        suffix = key[len(prefix) :]
+        if suffix == str(effective_rver):
+            # Single-scale key: qc_rating_<task>_<version>
+            continue
+        tail = f"_{effective_rver}"
+        if suffix.endswith(tail):
+            token = suffix[: -len(tail)].strip()
+            if token and token not in facet_tokens:
+                facet_tokens.append(token)
+
+    if facet_tokens:
+        return {"type": "multi", "scale": list(QC_RATINGS), "facets": facet_tokens}
     return None
 
 
-def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
+def _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver, rating_config=None):
     """Save rating and notes as soon as either widget changes.
 
     Used by both the rating radio and the notes box so a later forced page jump
     (sidebar search, autoplay, subject-list click) cannot drop unsaved notes.
     """
-    rating = _latest_state_value_for_task_widget("qc_rating", qc_task, rver)
-    notes = _latest_state_value_for_task_widget("qc_notes", qc_task, nver)
-    if notes is None:
-        notes = ""
-    _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes)
+    if _is_stale_widget_callback(rver, nver):
+        return
+    rating, ratings = _collect_task_rating_payload(qc_task, rver, rating_config)
+    notes = st.session_state.get(_notes_widget_key(qc_task, nver), "")
+    _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, qc_task, rating, notes, ratings=ratings)
 
 
-def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver):
-    """Pause autoplay and save the current task state when the user starts entering notes."""
+def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver, rating_config=None):
+    """Same save path as ``_on_rating_change``; named for the notes widget callback."""
+    if _is_stale_widget_callback(rver, nver):
+        return
     if SessionManager.is_autoplay_enabled():
         _pause_autoplay_for_notes_edit()
-    _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver)
-
-
-def _toggle_notes_editing_for_task(qc_task: str) -> None:
-    """Reveal the notes box for editing and pause autoplay until the user resumes manually."""
-    st.session_state[_notes_edit_mode_key(qc_task)] = True
-    _pause_autoplay_for_notes_edit()
+    _on_rating_change(participant_id, session_id, qc_pipeline, qc_task, rver, nver, rating_config)
 
 
 def _display_qc_rating_for_task(
@@ -530,37 +673,91 @@ def _display_qc_rating_for_task(
     *,
     display_label: str | None = None,
     notes_height: int = 120,
+    rating_config: dict[str, Any] | None = None,
 ) -> None:
     """PASS/FAIL/UNCERTAIN and notes for one task (shown under that task's viewers)."""
     label = (display_label or qc_task).strip()
+    cfg = _task_rating_config(rating_config)
     st.markdown(f"#### 📊 Rate **{label}**")
     rver = SessionManager.get_rating_version()
     nver = SessionManager.get_notes_version()
+    default_rating = SessionManager.get_default_qc_rating()
+    default_is_unrated = str(default_rating).strip().lower() == str(DEFAULT_QC_RATING_NONE).lower()
     existing_record = SessionManager.get_qc_record_for_participant(participant_id, session_id, qc_task)
     if existing_record:
         existing_rating = existing_record.final_qc if hasattr(existing_record, "final_qc") else existing_record.get("final_qc")
-        initial_rating = existing_rating if existing_rating in QC_RATINGS else None
+        initial_rating = existing_rating if existing_rating in cfg["scale"] else None
+        existing_ratings = existing_record.ratings if hasattr(existing_record, "ratings") else existing_record.get("ratings")
+        existing_ratings = existing_ratings if isinstance(existing_ratings, dict) else {}
         initial_notes = existing_record.notes if hasattr(existing_record, "notes") else existing_record.get("notes", "")
         initial_notes = initial_notes or ""
     else:
-        initial_rating = None
+        if default_is_unrated:
+            initial_rating = None
+        else:
+            initial_rating = default_rating if default_rating in cfg["scale"] else cfg["scale"][0]
+        existing_ratings = {}
         initial_notes = ""
-    st.radio(
-        " ",
-        options=QC_RATINGS,
-        index=QC_RATINGS.index(initial_rating) if initial_rating else None,
-        key=_rating_widget_key(qc_task, rver),
-        label_visibility="collapsed",
-        on_change=_on_rating_change,
-        args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
-    )
+
+    if cfg["type"] == "single":
+        options = cfg["scale"]
+        st.radio(
+            " ",
+            options=options,
+            index=options.index(initial_rating) if initial_rating in options else None,
+            key=_rating_widget_key(qc_task, rver),
+            label_visibility="collapsed",
+            on_change=_on_rating_change,
+            args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver, cfg),
+        )
+    else:
+        # st.caption("Rate each facet using the same task-level scale")
+
+        # Render each facet in its own column, wrapping to new rows as needed
+        num_facets = len(cfg["facets"])
+
+        for i in range(0, num_facets, RATING_FACET_COLUMNS):
+            cols = st.columns(RATING_FACET_COLUMNS)
+            for j in range(RATING_FACET_COLUMNS):
+                if i + j < num_facets:
+                    facet = cfg["facets"][i + j]
+                    options = cfg["scale"]
+
+                    # print(f"Existing ratings for task '{qc_task}': {existing_ratings}")
+
+                    if not existing_ratings:
+                        if default_is_unrated:
+                            facet_initial = None
+                        else:
+                            facet_initial = default_rating if default_rating in options else options[0]
+                    else:
+                        facet_initial = existing_ratings.get(facet)
+                        if facet_initial not in options:
+                            if default_is_unrated:
+                                facet_initial = None
+                            else:
+                                facet_initial = default_rating if default_rating in options else options[0]
+
+                    # print(f"Rendering facet '{facet}' with initial value '{facet_initial}' and options {options}")
+
+                    with cols[j]:
+                        st.radio(
+                            facet,
+                            options=options,
+                            index=options.index(facet_initial) if facet_initial in options else None,
+                            key=_facet_rating_widget_key(qc_task, facet, rver),
+                            on_change=_on_rating_change,
+                            args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver, cfg),
+                        )
+
     notes_editable = st.session_state.get(_notes_edit_mode_key(qc_task), False)
     action_col, notes_col = st.columns([2, 6])
     with action_col:
         st.caption("Autoplay will be paused when you add notes. Notes are saved when you continue with rating or navigation.")
         if st.button("Add notes" if not notes_editable else "Edit notes", key=f"_toggle_notes_{qc_task}_{nver}", use_container_width=True):
-            _toggle_notes_editing_for_task(qc_task)
+            _save_and_toggle_notes_editing_for_task(participant_id, session_id, qc_pipeline, qc_task, rver, nver, cfg)
             st.rerun()
+
     with notes_col:
         st.text_area(
             MESSAGES["qc_notes_prompt"],
@@ -569,19 +766,22 @@ def _display_qc_rating_for_task(
             height=notes_height,
             disabled=not notes_editable,
             on_change=_on_notes_change,
-            args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver),
+            args=(participant_id, session_id, qc_pipeline, qc_task, rver, nver, cfg),
         )
 
 
 def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str, qc_tasks: list) -> None:
     rver = SessionManager.get_rating_version()
     nver = SessionManager.get_notes_version()
+    rating_cfg_by_task = st.session_state.get("_qc_rating_cfg_by_task", {})
     for t in qc_tasks:
-        rating = _latest_state_value_for_task_widget("qc_rating", t, rver)
-        notes = _latest_state_value_for_task_widget("qc_notes", t, nver)
-        if notes is None:
-            notes = ""
-        _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes)
+        rating_cfg = rating_cfg_by_task.get(t)
+        if rating_cfg is None:
+            rating_cfg = _fallback_rating_config_for_task(participant_id, session_id, t, rver)
+        rating, ratings = _collect_task_rating_payload(t, rver, rating_cfg)
+        latest_nver = _latest_widget_version_for_task(t, "qc_notes_", nver)
+        notes = st.session_state.get(_notes_widget_key(t, latest_nver), "")
+        _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes, ratings=ratings)
 
 
 def _cohort_entries_for_filter(
@@ -745,38 +945,7 @@ def _default_qc_checkpoint_path(
 
 def _checkpoint_frame_for_records(records: list) -> pd.DataFrame:
     """Normalize QC records to the checkpoint TSV schema before comparison or export."""
-    columns = [
-        "pipeline",
-        "qc_task",
-        "participant_id",
-        "session_id",
-        "task_id",
-        "run_id",
-        "timestamp",
-        "rater_id",
-        "rater_experience",
-        "rater_fatigue",
-        "final_qc",
-        "notes",
-    ]
-    rows = []
-    for rec in records:
-        if hasattr(rec, "model_dump"):
-            rows.append(rec.model_dump())
-        elif hasattr(rec, "dict"):
-            rows.append(rec.dict())
-        elif isinstance(rec, dict):
-            rows.append(rec)
-    df = pd.DataFrame(rows)
-    if df.empty:
-        df = pd.DataFrame(columns=columns)
-    df = df.reindex(columns=columns, fill_value="")
-    for col in columns:
-        if col == "notes":
-            df[col] = df[col].map(normalize_note_value)
-        else:
-            df[col] = df[col].fillna("").astype(str)
-    return df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
+    return build_qc_results_dataframe(records)
 
 
 def _latest_checkpoint_path_for_session(out_dir: str | None, qc_session_id: str | None = None) -> Path | None:
@@ -805,7 +974,10 @@ def _checkpoint_contents_match_records(records: list, out_dir: str | None, qc_se
         "rater_id",
         "rater_experience",
         "rater_fatigue",
+        "rater_screen_size",
         "final_qc",
+        "facet",
+        "rating_value",
         "notes",
     ]
     current_df = _checkpoint_frame_for_records(records).reindex(columns=comparison_columns, fill_value="")
@@ -817,8 +989,8 @@ def _checkpoint_contents_match_records(records: list, out_dir: str | None, qc_se
         else:
             current_df[col] = current_df[col].fillna("").astype(str)
             latest_df[col] = latest_df[col].fillna("").astype(str)
-    current_df = current_df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
-    latest_df = latest_df.sort_values(by=["participant_id", "session_id", "pipeline", "qc_task"], kind="mergesort").reset_index(drop=True)
+    current_df = current_df.sort_values(by=["pipeline", "participant_id", "session_id", "qc_task", "facet"], kind="mergesort").reset_index(drop=True)
+    latest_df = latest_df.sort_values(by=["pipeline", "participant_id", "session_id", "qc_task", "facet"], kind="mergesort").reset_index(drop=True)
     return current_df.equals(latest_df)
 
 
@@ -951,6 +1123,9 @@ def _render_next_page_button(
             msg = "✅ The active filtered subject list is fully rated. Remove the filter to continue rating any remaining unrated subjects."
             st.info(msg)
             st.session_state["_pending_filtered_subject_msg"] = msg
+        else:
+            msg = "⚠️ Some subjects remain unrated. Complete all required ratings before moving to the final page."
+            st.session_state["_pending_incomplete_cohort_msg"] = msg
 
         if SessionManager.is_autoplay_enabled():
             SessionManager.set_autoplay_start_time(time.time())
@@ -978,8 +1153,7 @@ def _display_qc_pagination_controls(
     autoplay_col1, autoplay_col2 = st.columns([1, 1])
     with autoplay_col1:
         if st.button(MESSAGES["play_button"], width="stretch", key="autoplay_play"):
-            SessionManager.set_autoplay_enabled(True)
-            SessionManager.set_autoplay_start_time(time.time())
+            _save_and_start_autoplay(participant_id, session_id, qc_pipeline, qc_tasks)
             request_navigation_rerun(st)
 
     with autoplay_col2:
@@ -996,6 +1170,9 @@ def _display_qc_pagination_controls(
 
     if pending := st.session_state.pop("_pending_filtered_subject_msg", None):
         st.info(pending)
+
+    if pending := st.session_state.pop("_pending_incomplete_cohort_msg", None):
+        st.warning(pending)
 
     prev_page, next_page = _filtered_adjacent_pages(
         current_page=current_page,
@@ -1030,6 +1207,7 @@ def _display_qc_pagination_controls(
         key="create_checkpoint",
         help=MESSAGES["create_checkpoint_help"],
     ):
+        _save_current_page_qc_state(participant_id, session_id, qc_pipeline, qc_tasks)
         records = SessionManager.get_latest_qc_records_per_dedup(None)
         if not records:
             st.session_state["_pending_checkpoint_msg"] = ("info", INFO_MESSAGES["no_export_records"])
@@ -1139,11 +1317,20 @@ def _save_qc_record(
     return msg
 
 
-def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_pipeline: str, qc_task: str, rating: str, notes: str) -> None:
+def _record_qc_for_current_participant(
+    participant_id: str,
+    session_id: str,
+    qc_pipeline: str,
+    qc_task: str,
+    rating: str | None,
+    notes: str,
+    *,
+    ratings: dict[str, str | None] | None = None,
+) -> None:
     """Save a QC record for the current participant without navigating."""
     # A stale/rotated widget key (e.g. the autoplay poll reading a key from before the
     # page advanced) reads back None; ignore it instead of overwriting a saved rating.
-    if rating is None:
+    if rating is None and not ratings:
         return
 
     now = datetime.now()
@@ -1158,7 +1345,8 @@ def _record_qc_for_current_participant(participant_id: str, session_id: str, qc_
         rater_experience=SessionManager.get_rater_experience(),
         rater_fatigue=SessionManager.get_rater_fatigue(),
         rater_screen_size=SessionManager.get_rater_screen_size(),
-        final_qc=rating,
+        final_qc=rating if rating is not None else SessionManager.derive_multifacet_final_qc(ratings),
+        ratings=ratings,
         notes=notes,
     )
     SessionManager.add_qc_record(record)

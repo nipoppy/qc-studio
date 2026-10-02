@@ -7,12 +7,43 @@ from constants import (
     DEFAULT_MONTAGE_MAX_ROWS,
     DEFAULT_MONTAGE_MAX_COLS,
     QC_RATINGS,
+    DEFAULT_QC_RATING,
+    DEFAULT_QC_RATING_NONE,
+    DEFAULT_QC_RATING_OPTIONS,
 )
 from utils.cohort import bare_bids_id as _bare_bids_id
 
 
 class SessionManager:
     """Manages session state access with type safety and defaults."""
+
+    @staticmethod
+    def _normalize_rater_screen_size(screen_size: str | None) -> str:
+        """Map legacy/export labels to the canonical landing-page radio options."""
+        if screen_size is None:
+            return ""
+        text = str(screen_size).strip()
+        if not text:
+            return ""
+        mapping = {
+            # Canonical choices
+            "14 or less": "14 or less",
+            "15-20": "15-20",
+            "21-25": "21-25",
+            "26-30": "26-30",
+            "31 or above": "31 or above",
+            "Unknown": "Unknown",
+            # Legacy/input variants seen in historical TSVs/tests
+            "14 inches or less": "14 or less",
+            "15-20in": "15-20",
+            # Export labels written by utils.export._normalize_screen_size_label
+            "Laptop (13 inch)": "14 or less",
+            "Laptop (17 inch)": "15-20",
+            "Monitor (24 inch)": "21-25",
+            "Desktop (27 inch)": "26-30",
+            "Large desktop display (32 inch)": "31 or above",
+        }
+        return mapping.get(text, text)
 
     @staticmethod
     def init_session_state():
@@ -22,6 +53,7 @@ class SessionManager:
             SESSION_KEYS["batch_size"]: 1,
             SESSION_KEYS["qc_records"]: [],
             SESSION_KEYS["rater_id"]: "",
+            SESSION_KEYS["rater_id_display"]: "",
             SESSION_KEYS["rater_experience"]: None,
             SESSION_KEYS["rater_fatigue"]: None,
             SESSION_KEYS["rater_screen_size"]: None,
@@ -31,6 +63,8 @@ class SessionManager:
             SESSION_KEYS["participant_order"]: [],
             SESSION_KEYS["qc_cohort_order"]: [],
             SESSION_KEYS["landing_page_complete"]: False,
+            SESSION_KEYS["selected_qc_task"]: "",
+            SESSION_KEYS["default_qc_rating"]: DEFAULT_QC_RATING,
             SESSION_KEYS["selected_panels"]: DEFAULT_PANELS.copy(),
             SESSION_KEYS["montage_max_rows"]: DEFAULT_MONTAGE_MAX_ROWS,
             SESSION_KEYS["montage_max_cols"]: DEFAULT_MONTAGE_MAX_COLS,
@@ -54,14 +88,27 @@ class SessionManager:
     # Rater Information Methods
     @staticmethod
     def get_rater_id() -> str:
-        """Get current rater ID."""
-        return st.session_state.get(SESSION_KEYS["rater_id"], "")
+        """Get current normalized rater ID for filenames and exports."""
+        value = st.session_state.get(SESSION_KEYS["rater_id"], "")
+        return value.strip().lower() if isinstance(value, str) else ""
+
+    @staticmethod
+    def get_rater_id_display() -> str:
+        """Get the user-facing rater ID as originally entered."""
+        value = st.session_state.get(SESSION_KEYS["rater_id_display"], "")
+        return str(value or SessionManager.get_rater_id()).strip()
 
     @staticmethod
     def set_rater_id(rater_id: str):
-        """Set rater ID."""
+        """Set normalized rater ID for filenames and exports."""
         clean_rater_id = str(rater_id or "").strip().lower()
         st.session_state[SESSION_KEYS["rater_id"]] = clean_rater_id
+        st.session_state[SESSION_KEYS["rater_id_display"]] = str(rater_id or "").strip()
+
+    @staticmethod
+    def set_rater_id_display(rater_id: str):
+        """Set the exact user-facing rater ID shown in the UI."""
+        st.session_state[SESSION_KEYS["rater_id_display"]] = str(rater_id or "").strip()
 
     @staticmethod
     def get_qc_session_id() -> str:
@@ -126,12 +173,46 @@ class SessionManager:
     @staticmethod
     def get_rater_screen_size() -> str:
         """Get current rater monitor screen size."""
-        return st.session_state.get(SESSION_KEYS["rater_screen_size"], "")
+        value = st.session_state.get(SESSION_KEYS["rater_screen_size"], "")
+        return SessionManager._normalize_rater_screen_size(value)
 
     @staticmethod
     def set_rater_screen_size(screen_size: str):
         """Set rater monitor screen size."""
-        st.session_state[SESSION_KEYS["rater_screen_size"]] = screen_size
+        st.session_state[SESSION_KEYS["rater_screen_size"]] = SessionManager._normalize_rater_screen_size(screen_size)
+
+    # QC task selection methods
+    @staticmethod
+    def get_selected_qc_task() -> str:
+        """Get the currently selected landing-page QC task."""
+        value = st.session_state.get(SESSION_KEYS["selected_qc_task"], "")
+        return value.strip() if isinstance(value, str) else ""
+
+    @staticmethod
+    def set_selected_qc_task(qc_task: str):
+        """Persist the landing-page QC task selection for the current session."""
+        st.session_state[SESSION_KEYS["selected_qc_task"]] = str(qc_task or "").strip()
+
+    @staticmethod
+    def get_default_qc_rating() -> str:
+        """Get the session-level default QC rating used to preselect unrated forms."""
+        value = str(st.session_state.get(SESSION_KEYS["default_qc_rating"], DEFAULT_QC_RATING) or "").strip()
+        if not value:
+            return DEFAULT_QC_RATING
+        if value.lower() == DEFAULT_QC_RATING_NONE.lower():
+            return DEFAULT_QC_RATING_NONE
+        value_u = value.upper()
+        return value_u if value_u in QC_RATINGS else DEFAULT_QC_RATING
+
+    @staticmethod
+    def set_default_qc_rating(rating: str):
+        """Set the session-level default QC rating (falls back to DEFAULT_QC_RATING)."""
+        value = str(rating or "").strip()
+        if value.lower() == DEFAULT_QC_RATING_NONE.lower():
+            st.session_state[SESSION_KEYS["default_qc_rating"]] = DEFAULT_QC_RATING_NONE
+            return
+        value_u = value.upper()
+        st.session_state[SESSION_KEYS["default_qc_rating"]] = value_u if value_u in DEFAULT_QC_RATING_OPTIONS else DEFAULT_QC_RATING
 
     # Panel Selection Methods
     @staticmethod
@@ -363,8 +444,37 @@ class SessionManager:
     def _final_qc_is_decided(record) -> bool:
         if record is None:
             return False
+        ratings = record.ratings if hasattr(record, "ratings") else record.get("ratings", None)
+        if isinstance(ratings, dict):
+            if not ratings:
+                return False
+            return all(str(v).strip().lower() not in {"", "none", "nan"} for v in ratings.values())
         fq = record.final_qc if hasattr(record, "final_qc") else record.get("final_qc", "")
-        return str(fq) in QC_RATINGS
+        fq_str = str(fq).strip()
+        return fq_str.lower() not in {"", "none", "nan"}
+
+    @staticmethod
+    def derive_multifacet_final_qc(ratings: dict[str, str | None] | None) -> str | None:
+        """Subject-level label for multi-facet ratings.
+
+        Returns:
+            - ``All-Pass`` when every facet is PASS
+            - ``All-Fail`` when every facet is FAIL
+            - ``Partial-Pass`` when at least one facet is PASS and all facets are filled
+            - ``None`` otherwise (including missing/blank facet ratings)
+        """
+        if not isinstance(ratings, dict) or not ratings:
+            return None
+        values = [str(v).strip().upper() for v in ratings.values()]
+        if not values or any(v in {"", "NONE", "NAN"} for v in values):
+            return None
+        if all(v == "PASS" for v in values):
+            return "All-Pass"
+        if all(v == "FAIL" for v in values):
+            return "All-Fail"
+        if any(v == "PASS" for v in values):
+            return "Partial-Pass"
+        return None
 
     @staticmethod
     def participant_has_decided_qc(participant_id: str, session_id: str, qc_task: str) -> bool:

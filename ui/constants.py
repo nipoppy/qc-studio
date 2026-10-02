@@ -21,14 +21,17 @@ DEFAULT_PANELS = {"niivue": True, "montage": True, "iqm": False}
 
 # Panel configuration metadata
 PANEL_CONFIG = {
-    "niivue": {"label": "🧠 3D MRI Viewer (Niivue)", "description": "Display interactive 3D MRI viewer", "default": True},
-    "montage": {"label": "📊 Montage", "description": "Display 2D image montage visualization", "default": True},
-    "iqm": {"label": "📈 QC Metrics", "description": "Display QC metrics panel", "default": False},
+    "niivue": {"label": "3D MRI (Niivue)", "description": "Display interactive 3D MRI viewer", "default": True},
+    "montage": {"label": "Montage", "description": "Display 2D image montage visualization", "default": True},
+    "iqm": {"label": "QC Metrics", "description": "Display QC metrics panel", "default": False},
 }
 
 # QC rating options
 QC_RATINGS = ["PASS", "FAIL", "UNCERTAIN"]
 DEFAULT_QC_RATING = "PASS"
+DEFAULT_QC_RATING_NONE = "None"
+DEFAULT_QC_RATING_OPTIONS = QC_RATINGS + [DEFAULT_QC_RATING_NONE]
+RATING_FACET_COLUMNS = 12
 
 # Columns used to identify duplicate QC rows when merging/saving results
 QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]
@@ -58,8 +61,8 @@ DEFAULT_BATCH_SIZE = 1
 SIDEBAR_SUBJECT_LIST_HEIGHT = 280
 
 # Montage grid settings
-DEFAULT_MONTAGE_MAX_ROWS = None  # None means auto-calculate
-DEFAULT_MONTAGE_MAX_COLS = None  # None means auto-calculate
+DEFAULT_MONTAGE_MAX_ROWS = 1
+DEFAULT_MONTAGE_MAX_COLS = 4
 MIN_MONTAGE_GRID_SIZE = 1
 MAX_MONTAGE_GRID_SIZE = 10
 
@@ -69,6 +72,7 @@ SESSION_KEYS = {
     "batch_size": "batch_size",
     "qc_records": "qc_records",
     "rater_id": "rater_id",
+    "rater_id_display": "rater_id_display",
     "rater_experience": "rater_experience",
     "rater_fatigue": "rater_fatigue",
     "rater_screen_size": "rater_screen_size",
@@ -78,6 +82,8 @@ SESSION_KEYS = {
     "participant_order": "participant_order",
     "qc_cohort_order": "qc_cohort_order",
     "landing_page_complete": "landing_page_complete",
+    "selected_qc_task": "selected_qc_task",
+    "default_qc_rating": "default_qc_rating",
     "selected_panels": "selected_panels",
     "montage_max_rows": "montage_max_rows",
     "montage_max_cols": "montage_max_cols",
@@ -89,6 +95,7 @@ SESSION_KEYS = {
     # they survive the sidebar's mid-script st.rerun()/st.switch_page() calls.
     "iqm_view_selection": "iqm_view_selection",
     "iqm_display_mode_selection": "iqm_display_mode_selection",
+    "facet_max_rows": "facet_max_rows",
 }
 
 # Widget key for the subject search box (must differ from the persist key above).
@@ -124,7 +131,7 @@ MESSAGES = {
     "panels_validation_warning": "⚠️ You must select at least one panel to proceed!",
     "panels_success": "✅ {count} panel(s) selected",
     "upload_header": "📤 Upload Existing QC File (Optional)",
-    "upload_help": "Upload a previously saved <QC_status>.tsv file / checkpoint to resume your QC session or review previous results.",
+    "upload_help": "Upload a previously saved <QC_status>.tsv file / checkpoint to resume QC",
     "csv_uploader_label": "Choose a QC_status.tsv file",
     "continue_button": "✅ Continue to QC",
     "rater_form_button": "✅ Continue to QC",
@@ -208,7 +215,7 @@ INFO_MESSAGES = {
     "proceed_with_form": "You can now proceed with the rater form on the left to continue QC.",
     "no_export_records": "No QC records to export.",
     "checkpoint_unchanged": "No QC changes since the last checkpoint were detected, so no new checkpoint was created.",
-    "rater_info_extracted": "📋 Rater information extracted:",
+    # "rater_info_extracted": "📋 Rater information extracted:",
     "rater_id_prefix": "- **Rater ID:** {id}",
     "experience_prefix": "- **Experience:** {exp}",
     "fatigue_prefix": "- **Fatigue Level:** {fatigue}",

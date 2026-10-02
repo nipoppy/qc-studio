@@ -47,8 +47,14 @@ def app(
     SessionManager.init_session_state()
     SessionManager.compact_duplicate_qc_records_if_needed()
 
+    selected_qc_task = SessionManager.get_selected_qc_task()
+    if selected_qc_task:
+        qc_task = selected_qc_task
+        qc_tasks_eff = resolve_qc_tasks(selected_qc_task, qc_config_path)
+    else:
+        qc_tasks_eff = qc_tasks if qc_tasks is not None else resolve_qc_tasks(qc_task, qc_config_path)
+
     qc_cohort_eff = qc_cohort if qc_cohort is not None else _legacy_qc_cohort(participant_ids, session_id)
-    qc_tasks_eff = qc_tasks if qc_tasks is not None else resolve_qc_tasks(qc_task, qc_config_path)
     if not qc_tasks_eff:
         if str(qc_task).strip().lower() == "all":
             st.error(ERROR_MESSAGES["no_qc_tasks_all"].format(qc_config_path=qc_config_path))

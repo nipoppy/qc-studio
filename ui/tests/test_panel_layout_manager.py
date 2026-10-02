@@ -1,8 +1,5 @@
 """Unit tests for PanelLayoutManager."""
 
-import pytest
-from unittest.mock import MagicMock, patch
-import streamlit as st
 from managers.panel_layout_manager import PanelLayoutManager
 from constants import PANEL_CONFIG, NIIVUE_SECONDARY_RATIO, EQUAL_RATIO, RATING_IQM_RATIO
 
