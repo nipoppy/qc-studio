@@ -24,9 +24,9 @@ A web-based quality control (QC) application for neuroimaging data. QC-Studio al
 ### Prerequisites
 
 - **Python**: 3.10+ (3.12 tested in CI/DEV environment)
-- **pip/venv** OR **[uv](https://github.com/astral-sh/uv)** (recommended for faster installs)
+- **pip 25.1+/venv** OR **[uv](https://github.com/astral-sh/uv)** (recommended for faster installs)
 
-### Option A: Using uv (Recommended - Fastest)
+### Option A: Using uv (recommended)
 
 ```bash
 # Clone the repository
@@ -39,14 +39,12 @@ uv venv
 # Activate the environment
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install dependencies with uv
-uv pip install -r requirements.txt
+# Install with runtime dependencies only
+uv pip install -r pyproject.toml --extra niivue
 
-# Install niivue-streamlit component
-uv pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
+# Install with dev dependencies
+uv pip install -r pyproject.toml --extra niivue --group dev
 
-# Install development checks
-uv pip install -r requirements-test.txt
 pre-commit install
 ```
 
@@ -61,17 +59,15 @@ cd qc-studio
 python3 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Upgrade pip
-python -m pip install --upgrade pip setuptools wheel
+# Upgrade pip (25.1+ is required for `pip install --group`)
+python -m pip install --upgrade pip
 
-# Install runtime dependencies
-pip install -r requirements.txt
+# Install runtime dependencies only
+python -m pip install .
+python -m pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
 
-# Install niivue-streamlit component
-pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
-
-# Install development checks
-python -m pip install -r requirements-test.txt
+# Install development dependencies
+python -m pip install --group dev
 pre-commit install
 ```
 

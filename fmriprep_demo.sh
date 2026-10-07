@@ -42,7 +42,7 @@ cmd+=(--session_list "$session_list")
 
 if ! command -v streamlit >/dev/null 2>&1; then
   echo "Error: streamlit is not available in PATH." >&2
-  echo "Activate your environment and install dependencies, e.g. pip install -r requirements.txt" >&2
+  echo "Activate your environment and install dependencies, e.g. pip install ." >&2
   exit 127
 fi
 
