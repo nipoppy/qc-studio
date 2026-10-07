@@ -29,6 +29,7 @@ from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConf
 from managers.session_manager import SessionManager
 from models import QCRecord
 from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
+from components.surface_viewer import display_surface_qc_panel
 
 AUTOPLAY_RUN_CTX_KEY = "_autoplay_run_ctx"
 QC_SAVE_PATH_KEY = "qc_save_path"
@@ -238,11 +239,13 @@ def display_qc_viewers(
         "niivue": selected_panels.get("niivue_col", selected_panels.get("niivue", True)),
         "montage": selected_panels.get("montage_col", selected_panels.get("montage", True)),
         "iqm": selected_panels.get("iqm_col", selected_panels.get("iqm", False)),
+        "surface": selected_panels.get("surface", False),
     }
 
     show_niivue = selected_panels.get("niivue", True)
     show_montage = selected_panels.get("montage", True)
     show_iqm = selected_panels.get("iqm", False)
+    show_surface = selected_panels.get("surface", False)
 
     _render_autoplay_countdown_main_banner()
 
@@ -255,6 +258,13 @@ def display_qc_viewers(
             st.divider()
         st.subheader(display_label)
         task_has_niivue = show_niivue and bool(qc_config.get("base_mri_image_path"))
+        task_has_surface = (
+            show_surface
+            and bool(qc_config.get("base_mri_image_path"))
+            and bool(qc_config.get("surface_path"))
+            and bool(qc_config.get("surface_reference_mri_image_path"))
+        )
+
         if task_has_niivue and show_montage and show_iqm:
             _display_niivue_with_secondary_panel(
                 dataset_dir,
@@ -294,6 +304,18 @@ def display_qc_viewers(
                 participant_id,
                 session_id,
                 dataset_dir,
+            )
+
+        if task_has_surface:
+            if task_has_niivue or show_montage or show_iqm:
+                st.divider()
+
+            display_surface_qc_panel(
+                dataset_dir,
+                qc_config,
+                participant_id=participant_id,
+                session_id=session_id,
+                task_suffix=tname,
             )
 
         _display_qc_rating_for_task(
@@ -517,9 +539,20 @@ def _on_notes_change(participant_id, session_id, qc_pipeline, qc_task, rver, nve
 
 
 def _toggle_notes_editing_for_task(qc_task: str) -> None:
-    """Reveal the notes box for editing and pause autoplay until the user resumes manually."""
-    st.session_state[_notes_edit_mode_key(qc_task)] = True
-    _pause_autoplay_for_notes_edit()
+    """Toggle notes editing and pause autoplay when editing begins."""
+    key = _notes_edit_mode_key(qc_task)
+
+    editing = not bool(
+        st.session_state.get(
+            key,
+            False,
+        )
+    )
+
+    st.session_state[key] = editing
+
+    if editing:
+        _pause_autoplay_for_notes_edit()
 
 
 def _display_qc_rating_for_task(
@@ -558,9 +591,13 @@ def _display_qc_rating_for_task(
     action_col, notes_col = st.columns([2, 6])
     with action_col:
         st.caption("Autoplay will be paused when you add notes. Notes are saved when you continue with rating or navigation.")
-        if st.button("Add notes" if not notes_editable else "Edit notes", key=f"_toggle_notes_{qc_task}_{nver}", use_container_width=True):
-            _toggle_notes_editing_for_task(qc_task)
-            st.rerun()
+        st.button(
+            "Done editing" if notes_editable else "Add / edit notes",
+            key=f"_toggle_notes_{qc_task}_{nver}",
+            use_container_width=True,
+            on_click=_toggle_notes_editing_for_task,
+            args=(qc_task,),
+        )
     with notes_col:
         st.text_area(
             MESSAGES["qc_notes_prompt"],
