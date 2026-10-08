@@ -329,10 +329,10 @@ class TestLoadMontageData:
         assert isinstance(result, dict)
         assert len(result) == 1
 
-        # Check JPEG file is loaded correctly
+        # JPEG is kept as the original file bytes, not a decoded image
         data = list(result.values())[0]
         assert data["type"] == "jpeg"
-        assert isinstance(data["content"], Image.Image)
+        assert data["content"] == jpeg_file.read_bytes()
 
     def test_load_montage_partial_failure(self, temp_dir, sample_montage_content):
         """Test loading multiple SVGs when one file doesn't exist."""
@@ -414,6 +414,100 @@ class TestLoadMontageData:
         assert len(result) == 1
         filename = list(result.keys())[0]
         assert result[filename]["type"] == "svg"
+
+    def test_multiple_png_files_keep_source_bytes_and_png_encoded_montage(self, temp_dir):
+        """Cached display data holds compressed bytes only; the montage is PNG-encoded once."""
+        from io import BytesIO
+        from PIL import Image
+
+        png_file1 = temp_dir / "image1.png"
+        png_file2 = temp_dir / "image2.png"
+        Image.new("RGB", (100, 50), color="red").save(png_file1)
+        Image.new("RGB", (100, 50), color="blue").save(png_file2)
+
+        result = load_montage_data(temp_dir, {"montage_path": [png_file1, png_file2]})
+
+        individual = {k: v for k, v in result.items() if k != "montage"}
+        assert sorted(v["content"] for v in individual.values()) == sorted([png_file1.read_bytes(), png_file2.read_bytes()])
+        montage = result["montage"]
+        assert montage["type"] == "png"
+        assert isinstance(montage["content"], bytes)
+        assert montage["content"].startswith(b"\x89PNG")
+        with Image.open(BytesIO(montage["content"])) as img:
+            # Two 100x50 images stack into a 1x2 grid (closest to square) with 10 px padding.
+            assert img.size == (100 + 2 * 10, 2 * 50 + 3 * 10)
+        assert not any(isinstance(v["content"], Image.Image) for v in result.values())
+
+    def test_single_svg_is_not_rasterized(self, temp_dir, sample_montage_content):
+        """No combined montage is built for one image, so the SVG should not be rasterized."""
+        montage_file = temp_dir / "montage.svg"
+        montage_file.write_text(sample_montage_content)
+
+        with patch("utils.data_loaders._load_image_from_file") as mock_load:
+            result = load_montage_data(temp_dir, {"montage_path": montage_file})
+
+        mock_load.assert_not_called()
+        assert len(result) == 1
+
+    def test_montage_skips_images_that_fail_to_decode(self, temp_dir, sample_montage_content):
+        """An SVG that can't be rasterized keeps its tab but is left out of the grid."""
+        from PIL import Image
+        from utils import image_processing
+        from utils.data_loaders import _load_image_from_file as real_load
+
+        svg_file = temp_dir / "montage.svg"
+        svg_file.write_text(sample_montage_content)
+        png_file1 = temp_dir / "image1.png"
+        png_file2 = temp_dir / "image2.png"
+        Image.new("RGB", (10, 10), color="red").save(png_file1)
+        Image.new("RGB", (10, 10), color="blue").save(png_file2)
+
+        def fake_load(path, dpi=96):
+            if str(path).endswith(".svg"):
+                raise ValueError("cairosvg missing")
+            return real_load(path, dpi)
+
+        with (
+            patch("utils.data_loaders._load_image_from_file", side_effect=fake_load),
+            patch("utils.image_processing.create_grid_montage", wraps=image_processing.create_grid_montage) as grid,
+        ):
+            result = load_montage_data(temp_dir, {"montage_path": [svg_file, png_file1, png_file2]})
+
+        assert "montage" in result
+        assert len(grid.call_args.args[0]) == 2
+        assert sum(1 for k, v in result.items() if k != "montage" and v["type"] == "svg") == 1
+
+    def test_corrupt_png_is_skipped(self, temp_dir, sample_montage_content):
+        """A .png that isn't a valid image is dropped, as before."""
+        bad_png = temp_dir / "broken.png"
+        bad_png.write_bytes(b"not a png")
+        svg_file = temp_dir / "montage.svg"
+        svg_file.write_text(sample_montage_content)
+
+        result = load_montage_data(temp_dir, {"montage_path": [bad_png, svg_file]})
+
+        assert len(result) == 1
+        assert list(result.values())[0]["type"] == "svg"
+
+
+class TestCreateGridMontage:
+    """Grid layout output for create_grid_montage."""
+
+    def test_mixed_sizes_are_resized_to_cells_and_placed_in_order(self):
+        from PIL import Image
+        from utils.image_processing import create_grid_montage
+
+        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+        sizes = [(40, 20), (20, 10), (40, 20), (10, 5)]
+        images = [Image.new("RGB", size, color=c) for size, c in zip(sizes, colors)]
+
+        montage = create_grid_montage(images, padding=10)
+
+        # Four 40x20 cells: one column of four rows (aspect 0.5) is closer to square than 2x2 (aspect 2).
+        assert montage.size == (40 + 2 * 10, 4 * 20 + 5 * 10)
+        centers = [(10 + 20, 10 + i * 30 + 10) for i in range(4)]
+        assert [montage.getpixel(c) for c in centers] == colors
+        assert montage.getpixel((0, 0)) == (255, 255, 255)
 
 
 class TestScannerMetadataHelpers:

@@ -14,6 +14,7 @@ from html import escape
 from pathlib import Path
 from constants import (
     MONTAGE_HEIGHT,
+    MONTAGE_CACHE_MAX_ENTRIES,
     MESSAGES,
     ERROR_MESSAGES,
     SUCCESS_MESSAGES,
@@ -459,9 +460,14 @@ def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = Fal
     return st.session_state[state_key]
 
 
-@st.cache_data(show_spinner=False, max_entries=128)
+@st.cache_resource(show_spinner=False, max_entries=MONTAGE_CACHE_MAX_ENTRIES)
 def _load_montage_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols):
-    """Cached wrapper around ``data_loaders.load_montage_data``."""
+    """Cached wrapper around ``data_loaders.load_montage_data``.
+
+    ``cache_resource`` hands back the same dict on every hit instead of
+    unpickling a copy per rerun. The dict holds only immutable str/bytes and
+    callers must treat it as read-only.
+    """
     return _load_montage_data_uncached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
 
 

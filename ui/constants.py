@@ -39,6 +39,8 @@ QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]
 # Viewer settings
 NIIVUE_HEIGHT = 600
 MONTAGE_HEIGHT = 600
+# Subject×task montage entries kept in memory (each holds compressed image bytes).
+MONTAGE_CACHE_MAX_ENTRIES = 16
 IQM_HEIGHT = 400
 # Streamlit component messages are capped (~200 MB); keep NIfTI payloads below this.
 NIIVUE_MAX_FILE_BYTES = 150 * 1024 * 1024
