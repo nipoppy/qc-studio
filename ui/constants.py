@@ -44,6 +44,8 @@ MONTAGE_CACHE_MAX_ENTRIES = 16
 IQM_HEIGHT = 400
 # Streamlit component messages are capped (~200 MB); keep NIfTI payloads below this.
 NIIVUE_MAX_FILE_BYTES = 150 * 1024 * 1024
+# NIfTI files kept in memory for Niivue (base + overlay for two tasks on one page).
+NIIVUE_CACHE_MAX_ENTRIES = 4
 DEFAULT_VIEW_MODE = "multiplanar"
 VIEW_MODES = ["multiplanar", "axial", "coronal", "sagittal", "3d"]
 OVERLAY_COLORMAPS = ["cool", "warm"]

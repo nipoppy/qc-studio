@@ -1,13 +1,40 @@
 """Niivue viewer configuration and rendering utilities."""
 
+from pathlib import Path
+
 import streamlit as st
-from constants import NIIVUE_HEIGHT, NIIVUE_MAX_FILE_BYTES, VIEW_MODES, OVERLAY_COLORMAPS, DEFAULT_OVERLAY_OPACITY, MESSAGES, ERROR_MESSAGES
-from utils.data_loaders import load_mri_data
+from constants import (
+    NIIVUE_HEIGHT,
+    NIIVUE_MAX_FILE_BYTES,
+    NIIVUE_CACHE_MAX_ENTRIES,
+    VIEW_MODES,
+    OVERLAY_COLORMAPS,
+    DEFAULT_OVERLAY_OPACITY,
+    MESSAGES,
+    ERROR_MESSAGES,
+)
+from utils.data_loaders import load_mri_data, read_nifti_bytes_for_niivue
 
 try:
     from niivue_component import niivue_viewer
 except ImportError:
     from _niivue_viewer_fallback import niivue_viewer
+
+
+@st.cache_resource(show_spinner=False, max_entries=NIIVUE_CACHE_MAX_ENTRIES)
+def _read_nifti_cached(path_str: str, mtime_ns: int, size: int):
+    """Cached ``read_nifti_bytes_for_niivue``; mtime/size in the key reload rewritten files.
+
+    ``cache_resource`` returns the same immutable bytes on every hit instead of
+    re-reading (and, for 4D/oversize files, re-reducing) the file per rerun.
+    """
+    return read_nifti_bytes_for_niivue(Path(path_str))
+
+
+def _read_nifti_for_niivue_cached(path: Path):
+    """Per-file reader for ``load_mri_data`` backed by ``_read_nifti_cached``."""
+    stat = path.stat()
+    return _read_nifti_cached(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
 
 
 class NiivueViewerConfig:
@@ -222,7 +249,7 @@ class NiivueViewerManager:
         """
         try:
             # Load MRI data
-            mri_data = load_mri_data(dataset_dir, qc_config)
+            mri_data = load_mri_data(dataset_dir, qc_config, read_nifti=_read_nifti_for_niivue_cached)
 
             if mri_data.get("base_mri_oversize"):
                 size_mb = mri_data.get("base_mri_size_bytes", 0) / (1024 * 1024)

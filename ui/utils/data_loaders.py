@@ -10,7 +10,7 @@ import pandas as pd
 
 from pathlib import Path
 
-from typing import Optional, Union, Tuple
+from typing import Callable, Optional, Union, Tuple
 
 from constants import NIIVUE_MAX_FILE_BYTES
 
@@ -73,8 +73,12 @@ def _nifti_volume_to_bytes(img, vol_index: int = 0) -> bytes:
     return out.to_bytes()
 
 
-def _read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Optional[str]]:
-    """Load NIfTI bytes for Niivue; reduce 4D / oversize files to the first volume."""
+def read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Optional[str]]:
+    """Load NIfTI bytes for Niivue; reduce 4D / oversize files to the first volume.
+
+    Returns ``(bytes or None, reduced, error)``. Uncached; see
+    ``niivue_viewer_manager._read_nifti_cached``.
+    """
     size = path.stat().st_size
     try:
         import nibabel as nib
@@ -100,9 +104,9 @@ def _read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Opt
         return None, False, "oversize"
 
 
-def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
+def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str, read_nifti: Callable = read_nifti_bytes_for_niivue) -> None:
     """Read NIfTI bytes for Niivue (first BOLD volume when 4D or file is large)."""
-    nbytes, reduced, err = _read_nifti_bytes_for_niivue(path)
+    nbytes, reduced, err = read_nifti(path)
     file_bytes_dict[f"{prefix}_mri_image_path"] = path
     if nbytes is not None:
         file_bytes_dict[f"{prefix}_mri_image_bytes"] = nbytes
@@ -117,6 +121,8 @@ def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
 def load_mri_data(
     dataset_dir: Union[str, Path, dict],
     path_dict: Optional[dict] = None,
+    *,
+    read_nifti: Callable = read_nifti_bytes_for_niivue,
 ) -> dict:
     """Load base and overlay MRI image files as bytes.
 
@@ -128,6 +134,8 @@ def load_mri_data(
             dataset_dir: Root directory containing the dataset, or a path_dict if
                     ``path_dict`` is omitted.
             path_dict: Dictionary with keys 'base_mri_image_path' and 'overlay_mri_image_path'
+            read_nifti: Per-file reader with the ``read_nifti_bytes_for_niivue``
+                    signature; callers can pass a cached reader.
 
     Returns:
             dict with keys: 'base_mri_image_bytes', 'base_mri_image_path',
@@ -147,10 +155,10 @@ def load_mri_data(
     file_bytes_dict = {}
 
     if base_mri_path is not None and base_mri_path.is_file():
-        _attach_nifti_bytes(file_bytes_dict, base_mri_path, "base")
+        _attach_nifti_bytes(file_bytes_dict, base_mri_path, "base", read_nifti)
 
     if overlay_mri_path is not None and overlay_mri_path.is_file():
-        _attach_nifti_bytes(file_bytes_dict, overlay_mri_path, "overlay")
+        _attach_nifti_bytes(file_bytes_dict, overlay_mri_path, "overlay", read_nifti)
 
     return file_bytes_dict
 
