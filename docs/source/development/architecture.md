@@ -1,4 +1,4 @@
-# QC-Studio Architecture Documentation
+# Architecture
 
 ## Overview
 
@@ -43,7 +43,8 @@ ui/
 │   ├── config.py                # QC config parsing
 │   ├── data_loaders.py          # Data loading and file I/O
 │   ├── image_processing.py      # Image montage creation
-│   └── export.py                # CSV export
+│   ├── path_helpers.py          # Output file naming helpers
+│   └── export.py                # TSV export
 │
 └── tests/                        # Comprehensive Test Suite
     ├── conftest.py              # Shared test fixtures
@@ -95,7 +96,7 @@ ui/
 #### `app.py` - Streamlit Application Entry
 **Responsibility**: Main web application orchestration
 
-**Imports**: 
+**Imports**:
 - Screen modules: `views.landing_page`, `views.congratulations_page`
 - Components: `components.qc_viewer`
 - Managers: SessionManager, NiivueViewerManager, PanelLayoutManager
@@ -118,11 +119,12 @@ Pages represent complete, full-width views shown at different stages of the QC w
 **Responsibility**: Onboarding and initial QC session configuration
 
 **Data Flow**:
-1. User enters rater information
-2. User selects which panels to display (Niivue, Montage, IQM)
-3. User optionally uploads CSV of previous QC records
-4. SessionManager stores all state
-5. Continue to QC viewers page
+1. User enters rater information (if needed)
+2. User selects the QC task and default rating in the sidebar
+3. User selects which panel(s) to display (Niivue, Montage, IQM)
+4. User optionally loads a previous results or checkpoint file
+5. SessionManager stores all state
+6. Continue to QC viewers page
 
 ---
 
@@ -131,8 +133,8 @@ Pages represent complete, full-width views shown at different stages of the QC w
 
 **Data Flow**:
 1. Display number of participants reviewed
-2. Show QC statistics (PASS/FAIL/UNCERTAIN counts)
-3. Offer CSV export with duplicate handling
+2. Show subject-level QC statistics, plus facet-level statistics for multi-facet tasks
+3. Offer TSV export with duplicate handling (one file per QC task)
 4. Navigation back to landing page
 
 ---
@@ -226,7 +228,7 @@ It centralizes layout ratios, visibility decisions, and panel sizing rules.
 
 **Exports**: All model classes for backward-compatible imports
 ```python
-from models import QCRecord, QCTask, QCConfig, MetricQC, QCDecision, QCStatusRow
+from models import QCRecord, QCTask, QCConfig, RatingConfig, MetricQC, QCDecision, QCStatusRow
 ```
 
 ---
@@ -260,6 +262,14 @@ It builds grid montages from loaded images and applies sizing/layout rules for d
 **Responsibility**: Export QC results to standardized formats
 
 It serializes QC records for export, including duplicate-handling logic when requested.
+Multi-facet ratings are written as one row per facet.
+
+---
+
+#### `utils/path_helpers.py`
+**Responsibility**: Consistent naming of output files
+
+It builds the names of status and checkpoint files from the rater, pipeline and QC task.
 
 ---
 
@@ -274,15 +284,15 @@ It serializes QC records for export, including duplicate-handling logic when req
 
 ### Complete QC Session Workflow
 
-```mermaid
-flowchart TD
+```{mermaid}
+flowchart LR
     startNode([Start]) --> appInit[app.py initializes SessionManager]
     appInit --> landingCheck{Landing page complete?}
 
     landingCheck -- No --> landingView[views/landing_page.py]
     landingView --> collectRater[Collect rater info]
     collectRater --> selectPanels[Select panels and optional defaults]
-    selectPanels --> uploadPrevious[Optional CSV upload]
+    selectPanels --> uploadPrevious[Optional import of previous results]
     uploadPrevious --> landingDone[Set landing page complete]
     landingDone --> appMain[app.py main flow]
 
@@ -304,42 +314,43 @@ flowchart TD
 ```
 
 ### Module Interaction Diagram
-```mermaid
+
+```{mermaid}
 flowchart TD
-        app[app.py]
-        main[main.py]
-        landing[views/landing_page.py]
-        viewer[components/qc_viewer.py]
-        sidebar[views/sidebar_cohort_nav.py]
-        congrats[views/congratulations_page.py]
-        session[managers/session_manager.py]
-        niivue[managers/niivue_viewer_manager.py]
-        layout[managers/panel_layout_manager.py]
-        config[utils/config.py]
-        loaders[utils/data_loaders.py]
-        export[utils/export.py]
-        models[models/qc_models.py]
-        constants[constants.py]
+    app[app.py]
+    main[main.py]
+    landing[views/landing_page.py]
+    viewer[components/qc_viewer.py]
+    sidebar[views/sidebar_cohort_nav.py]
+    congrats[views/congratulations_page.py]
+    session[managers/session_manager.py]
+    niivue[managers/niivue_viewer_manager.py]
+    layout[managers/panel_layout_manager.py]
+    config[utils/config.py]
+    loaders[utils/data_loaders.py]
+    export[utils/export.py]
+    models[models/qc_models.py]
+    constants[constants.py]
 
-        main --> app
-        app --> landing
-        app --> viewer
-        app --> sidebar
-        app --> congrats
+    main --> app
+    app --> landing
+    app --> viewer
+    app --> sidebar
+    app --> congrats
 
-        landing --> session
-        landing --> config
-        viewer --> session
-        viewer --> niivue
-        viewer --> layout
-        viewer --> config
-        viewer --> loaders
-        viewer --> models
-        viewer --> constants
-        sidebar --> session
-        congrats --> session
-        congrats --> export
-        export --> models
+    landing --> session
+    landing --> config
+    viewer --> session
+    viewer --> niivue
+    viewer --> layout
+    viewer --> config
+    viewer --> loaders
+    viewer --> models
+    viewer --> constants
+    sidebar --> session
+    congrats --> session
+    congrats --> export
+    export --> models
 ```
 
 ---
@@ -396,18 +407,18 @@ pytest ui/tests/ --cov=ui --cov-report=html
 ```python
 class TestNewFeature:
     """Tests for new feature."""
-    
+
     def test_basic_functionality(self):
         """Test basic operation."""
         # Arrange
         component = SomeComponent()
-        
+
         # Act
         result = component.do_something()
-        
+
         # Assert
         assert result == expected_value
-    
+
     def test_edge_case(self):
         """Test edge case behavior."""
         # Similar structure
@@ -420,5 +431,3 @@ class TestNewFeature:
 - **Pytest Documentation**: https://docs.pytest.org/
 - **Python Design Patterns**: https://refactoring.guru/design-patterns
 - **Session State Management**: Streamlit docs on st.session_state
-
----
