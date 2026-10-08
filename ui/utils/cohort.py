@@ -31,9 +31,9 @@ def normalize_session_id_bids(sid: str) -> str:
 def parse_session_list(raw: str | None) -> list[str] | None:
     """Return ordered unique BIDS session ids from CLI ``--session_list``.
 
-    Returns None for single-session datasets (no session label).
+    Returns None for datasets with no session level (``none`` or empty).
     """
-    if raw is None or str(raw).strip() == "":
+    if raw is None or str(raw).strip().lower() in {"", "none"}:
         return None
     parts = [p.strip() for p in str(raw).strip().split(",") if p.strip()]
     if not parts:

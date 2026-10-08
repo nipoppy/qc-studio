@@ -210,6 +210,21 @@ class TestLoadMriData:
         assert result == {}
 
 
+class TestParseSessionList:
+    """CLI --session_list parsing."""
+
+    @pytest.mark.parametrize("raw", [None, "", "  ", "none", "None", " NONE "])
+    def test_none_or_empty_means_no_session_level(self, raw):
+        from utils.cohort import parse_session_list
+
+        assert parse_session_list(raw) is None
+
+    def test_normalizes_and_dedupes_in_order(self):
+        from utils.cohort import parse_session_list
+
+        assert parse_session_list("02, ses-01,2,ses-01") == ["ses-02", "ses-01"]
+
+
 class TestLoadMontageData:
     """Test load_montage_data function."""
 

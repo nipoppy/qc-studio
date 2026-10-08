@@ -21,7 +21,6 @@ from views.sidebar_cohort_nav import render_sidebar_cohort_subjects
 from utils.path_helpers import sanitize_qc_task_slug
 from utils.cohort import (
     build_qc_cohort,
-    normalize_session_id_bids,
     parse_session_list,
     participant_ids_in_cohort_order,
 )
@@ -48,8 +47,9 @@ def parse_args(args=None):
         help=(
             "Comma-separated BIDS session labels to QC (e.g. ses-01,ses-02). "
             "Each participant is combined with each session into one review page. "
-            "If the participant TSV has a session_id column, that table defines "
-            "(participant, session) rows instead. Legacy default Baseline maps to ses-01."
+            "Pass 'none' if the dataset has no session level. May be omitted only "
+            "when the participant TSV has a session_id column, which then defines "
+            "the (participant, session) rows."
         ),
         default=None,
         required=False,
@@ -107,19 +107,16 @@ def get_cli_run_context():
     args.out_dir = str(Path(args.out_dir).expanduser().resolve()) if args.out_dir else str(Path(".").expanduser().resolve())
     ui_dir = os.path.dirname(os.path.abspath(__file__))
     qc_config_path = os.path.join(ui_dir, args.qc_json)
-    session_ids = parse_session_list(args.session_list)
-    if session_ids is None:
-        from bids import BIDSLayout
-
-        layout = BIDSLayout(args.dataset_dir, validate=False)
-        bids_sessions = layout.get_sessions()
-        if bids_sessions:
-            session_ids = [normalize_session_id_bids(s) for s in bids_sessions]
-            print(
-                f"No --session_list given, using sessions found in dataset: {session_ids}",
-                file=sys.stderr,
-            )
     participants_df = pd.read_csv(args.participant_list, delimiter="\t")
+    if args.session_list is None and "session_id" not in participants_df.columns:
+        print(
+            "QC-Studio: cannot tell which sessions to QC. Pass --session_list ses-01,ses-02,... "
+            "or --session_list none if the dataset has no sessions "
+            f"(or add a session_id column to {args.participant_list!r}).",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    session_ids = parse_session_list(args.session_list)
     stored_cohort = SessionManager.get_qc_cohort_order()
     if stored_cohort:
         qc_cohort = stored_cohort
