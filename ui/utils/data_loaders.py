@@ -10,7 +10,7 @@ import pandas as pd
 
 from pathlib import Path
 
-from typing import Optional, Union, Tuple
+from typing import Callable, Optional, Union, Tuple
 
 from constants import NIIVUE_MAX_FILE_BYTES
 
@@ -73,8 +73,12 @@ def _nifti_volume_to_bytes(img, vol_index: int = 0) -> bytes:
     return out.to_bytes()
 
 
-def _read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Optional[str]]:
-    """Load NIfTI bytes for Niivue; reduce 4D / oversize files to the first volume."""
+def read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Optional[str]]:
+    """Load NIfTI bytes for Niivue; reduce 4D / oversize files to the first volume.
+
+    Returns ``(bytes or None, reduced, error)``. Uncached; see
+    ``niivue_viewer_manager._read_nifti_cached``.
+    """
     size = path.stat().st_size
     try:
         import nibabel as nib
@@ -100,9 +104,9 @@ def _read_nifti_bytes_for_niivue(path: Path) -> Tuple[Optional[bytes], bool, Opt
         return None, False, "oversize"
 
 
-def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
+def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str, read_nifti: Callable = read_nifti_bytes_for_niivue) -> None:
     """Read NIfTI bytes for Niivue (first BOLD volume when 4D or file is large)."""
-    nbytes, reduced, err = _read_nifti_bytes_for_niivue(path)
+    nbytes, reduced, err = read_nifti(path)
     file_bytes_dict[f"{prefix}_mri_image_path"] = path
     if nbytes is not None:
         file_bytes_dict[f"{prefix}_mri_image_bytes"] = nbytes
@@ -117,6 +121,8 @@ def _attach_nifti_bytes(file_bytes_dict: dict, path: Path, prefix: str) -> None:
 def load_mri_data(
     dataset_dir: Union[str, Path, dict],
     path_dict: Optional[dict] = None,
+    *,
+    read_nifti: Callable = read_nifti_bytes_for_niivue,
 ) -> dict:
     """Load base and overlay MRI image files as bytes.
 
@@ -128,6 +134,8 @@ def load_mri_data(
             dataset_dir: Root directory containing the dataset, or a path_dict if
                     ``path_dict`` is omitted.
             path_dict: Dictionary with keys 'base_mri_image_path' and 'overlay_mri_image_path'
+            read_nifti: Per-file reader with the ``read_nifti_bytes_for_niivue``
+                    signature; callers can pass a cached reader.
 
     Returns:
             dict with keys: 'base_mri_image_bytes', 'base_mri_image_path',
@@ -147,10 +155,10 @@ def load_mri_data(
     file_bytes_dict = {}
 
     if base_mri_path is not None and base_mri_path.is_file():
-        _attach_nifti_bytes(file_bytes_dict, base_mri_path, "base")
+        _attach_nifti_bytes(file_bytes_dict, base_mri_path, "base", read_nifti)
 
     if overlay_mri_path is not None and overlay_mri_path.is_file():
-        _attach_nifti_bytes(file_bytes_dict, overlay_mri_path, "overlay")
+        _attach_nifti_bytes(file_bytes_dict, overlay_mri_path, "overlay", read_nifti)
 
     return file_bytes_dict
 
@@ -261,6 +269,7 @@ def _create_unique_id_from_path(file_path: Path) -> str:
 
 
 def _load_montage_entry(full_path: Path, unique_id: str):
+    """Read an SVG as text; it is only rasterized later if a combined montage is built."""
     try:
         with open(full_path, encoding="utf-8") as f:
             montage_content = f.read()
@@ -270,15 +279,7 @@ def _load_montage_entry(full_path: Path, unique_id: str):
             "type": "svg",
             "content": montage_content,
         }
-
-        # Convert SVG to image for montage (optional - if conversion fails, SVG is still available as string)
-        try:
-            pil_img = _load_image_from_file(full_path)
-        except Exception:
-            # SVG conversion not critical; skip but keep the SVG string version for rendering
-            pil_img = None
-
-        return filename, data_content, pil_img
+        return filename, data_content
 
     except Exception as e:
         print(f"Failed to load Montage file {full_path}: {e}")
@@ -286,26 +287,51 @@ def _load_montage_entry(full_path: Path, unique_id: str):
 
 
 def _load_raster_entry(full_path: Path, unique_id: str, raster_type: str):
+    """Keep the original PNG/JPEG file bytes; decoding happens only to build a montage."""
+    from PIL import Image
+
     try:
-        pil_img = _load_image_from_file(full_path)
-
-        filename = f"{unique_id}_{raster_type}"
-        data_content = {"type": raster_type, "content": pil_img}
-        return filename, data_content, pil_img
-
-    except ValueError:
+        # Image.open is lazy: this checks the header without decoding pixels.
+        with Image.open(full_path):
+            pass
+        content = full_path.read_bytes()
+    except (OSError, ValueError):
         return None
+
+    filename = f"{unique_id}_{raster_type}"
+    data_content = {"type": raster_type, "content": content}
+    return filename, data_content
+
+
+def _encode_png(img) -> bytes:
+    """Encode a PIL image to PNG bytes."""
+    from io import BytesIO
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _add_montage_if_available(
     image_data_dict: dict,
-    images_for_montage: list,
+    paths_for_montage: list,
     max_montage_rows=None,
     max_montage_cols=None,
 ) -> dict:
-    if len(images_for_montage) <= 1:
+    if len(paths_for_montage) <= 1:
         # Keep individual images for single-image montages, without injecting a
         # synthetic combined montage tab.
+        return image_data_dict
+
+    # Decode only to build the combined montage; images that fail to decode
+    # (e.g. SVG without cairosvg) are left out of the grid but keep their own tab.
+    images_for_montage = []
+    for path in paths_for_montage:
+        try:
+            images_for_montage.append(_load_image_from_file(path))
+        except Exception:
+            continue
+    if len(images_for_montage) <= 1:
         return image_data_dict
 
     try:
@@ -316,7 +342,7 @@ def _add_montage_if_available(
             max_rows=max_montage_rows,
             max_cols=max_montage_cols,
         )
-        result_dict = {"montage": {"type": "png", "content": montage_img}}
+        result_dict = {"montage": {"type": "png", "content": _encode_png(montage_img)}}
         result_dict.update(image_data_dict)
         return result_dict
     except Exception:
@@ -333,18 +359,20 @@ def _build_montage_display_data(montage_paths: tuple, max_montage_rows=None, max
 
     Returns:
             Dict with image keys mapped to ``{"type": ..., "content": ...}``.
-            SVG content is returned as a string; PNG/JPEG content is returned as a
-            PIL Image. If multiple images can be converted for montage display, a
-            ``"montage"`` entry is inserted first. Returns None if no valid image
-            files are found.
+            SVG content is returned as a string; PNG/JPEG content is returned as
+            the original file bytes. If multiple images can be converted for
+            montage display, a ``"montage"`` entry (PNG bytes) is inserted first.
+            Returns None if no valid image files are found.
 
     Notes:
             - Unsupported formats are silently skipped.
+            - Images are decoded only to build the combined montage and are not
+              kept, so cached display data stays compressed.
             - SVG-to-image conversion is optional; if conversion fails, the SVG text
               is still returned for direct rendering.
     """
     image_data_dict = {}
-    images_for_montage = []  # Collect PIL Images for montage creation
+    paths_for_montage = []  # Paths of displayable images, decoded later for the montage
 
     for montage_path in montage_paths:
         full_path = Path(montage_path)
@@ -359,29 +387,25 @@ def _build_montage_display_data(montage_paths: tuple, max_montage_rows=None, max
         if file_ext == ".svg":
             # Return SVG as string content (use open() so tests can mock builtins.open)
             loaded_entry = _load_montage_entry(full_path, unique_id)
-            if loaded_entry is None:
-                continue
-            filename, data_content, pil_img = loaded_entry
-            image_data_dict[filename] = data_content
-            if pil_img is not None:
-                images_for_montage.append(pil_img)
-
         elif file_ext in [".png", ".jpg", ".jpeg"]:
-            # Return PNG/JPEG as PIL Image
+            # Return PNG/JPEG as the original file bytes
             raster_type = "jpeg" if file_ext in (".jpg", ".jpeg") else file_ext.lstrip(".")
             loaded_entry = _load_raster_entry(full_path, unique_id, raster_type)
-            if loaded_entry is None:
-                continue
-            filename, data_content, pil_img = loaded_entry
-            image_data_dict[filename] = data_content
-            images_for_montage.append(pil_img)
+        else:
+            continue
+
+        if loaded_entry is None:
+            continue
+        filename, data_content = loaded_entry
+        image_data_dict[filename] = data_content
+        paths_for_montage.append(full_path)
 
     if not image_data_dict:
         return None
 
     return _add_montage_if_available(
         image_data_dict,
-        images_for_montage,
+        paths_for_montage,
         max_montage_rows=max_montage_rows,
         max_montage_cols=max_montage_cols,
     )

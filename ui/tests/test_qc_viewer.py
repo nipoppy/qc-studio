@@ -137,10 +137,12 @@ class TestCleanFilename:
 
     def test_build_montage_display_data_keeps_combined_and_individual_tabs(self, tmp_path):
         """The loader should add a combined montage grid first while preserving one tab per original image."""
+        from PIL import Image
+
         img_a = tmp_path / "a.png"
-        img_a.write_bytes(b"fake")
+        Image.new("RGB", (4, 4)).save(img_a)
         img_b = tmp_path / "b.png"
-        img_b.write_bytes(b"fake")
+        Image.new("RGB", (4, 4)).save(img_b)
 
         with (
             patch("utils.data_loaders._load_image_from_file", side_effect=lambda p, dpi=96: MagicMock()),
