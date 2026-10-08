@@ -194,10 +194,11 @@ Managers handle complex application logic and provide structured access to funct
 
 **Data Flow**:
 1. `render_controls_panel()` displays dropdowns and checkboxes
-2. User selections → NiivueViewerConfig object
-3. Config passed to `build_viewer_kwargs()`
-4. Settings include: nifti_data, overlays, view settings, unique key
-5. `render_viewer()` renders Niivue component in Streamlit
+2. Streamlit stores widget values to session state before the script body runs
+3. `build_config_from_widget_state()` reads those keys and creates `NiivueViewerConfig`
+4. Config passed to `build_viewer_kwargs()`
+5. Settings include: nifti_data, overlays, view settings, unique key
+6. `render_viewer()` renders Niivue component in Streamlit
 
 ---
 

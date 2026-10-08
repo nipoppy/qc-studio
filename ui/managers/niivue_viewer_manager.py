@@ -72,17 +72,77 @@ class NiivueViewerManager:
     """Manages Niivue viewer rendering and configuration."""
 
     @staticmethod
-    def render_controls_panel(state_suffix: str = "") -> NiivueViewerConfig:
+    def config_state_key(state_suffix: str = "") -> str:
+        """Session-state key holding the stored NiivueViewerConfig.
+
+        Args:
+            state_suffix: If set, use ``niivue_config_<suffix>``.
+        """
+        return "niivue_config" if not state_suffix else f"niivue_config_{state_suffix}"
+
+    @staticmethod
+    def control_widget_keys(state_suffix: str = "") -> dict:
+        """Widget keys used by ``render_controls_panel``.
+
+        Args:
+            state_suffix: If set, suffixes the keys.
+
+        Returns:
+            Mapping of control name to Streamlit widget key.
+        """
+        # Widget keys must differ when multiple control panels render on one page (e.g. --qc_task all).
+        wid = (state_suffix or "default").replace(".", "_").replace(" ", "_")
+        return {
+            "show_overlay": f"niivue_ctrl_show_overlay_{wid}",
+            "view_mode": f"niivue_ctrl_view_mode_{wid}",
+            "overlay_colormap": f"niivue_ctrl_overlay_cmap_{wid}",
+        }
+
+    @staticmethod
+    def _make_config(view_mode: str, overlay_colormap: str, show_overlay: bool, previous: NiivueViewerConfig = None) -> NiivueViewerConfig:
+        """Assemble a config from the UI controls and config."""
+        return NiivueViewerConfig(
+            view_mode=view_mode,
+            overlay_colormap=overlay_colormap,
+            show_crosshair=previous.show_crosshair if previous else False,
+            radiological=previous.radiological if previous else False,
+            show_colorbar=previous.show_colorbar if previous else True,
+            interpolation=previous.interpolation if previous else True,
+            show_overlay=show_overlay,
+        )
+
+    @staticmethod
+    def build_config_from_widget_state(state_suffix: str = "", has_overlay: bool = False) -> NiivueViewerConfig:
+        """Build a config from the current control widget values in session state.
+
+        Args:
+            state_suffix: Passed to ``control_widget_keys()`` and ``config_state_key()``.
+            has_overlay: Default for the overlay toggle when the widget has not rendered yet.
+
+        Returns:
+            NiivueViewerConfig reflecting the current widget values.
+        """
+        keys = NiivueViewerManager.control_widget_keys(state_suffix)
+        previous = st.session_state.get(NiivueViewerManager.config_state_key(state_suffix))
+
+        view_mode = st.session_state.get(keys["view_mode"], VIEW_MODES[0])
+        overlay_colormap = st.session_state.get(keys["overlay_colormap"], OVERLAY_COLORMAPS[0])
+        show_overlay = st.session_state.get(keys["show_overlay"], previous.show_overlay if previous else has_overlay)
+
+        return NiivueViewerManager._make_config(view_mode, overlay_colormap, bool(show_overlay), previous)
+
+    @staticmethod
+    def render_controls_panel(state_suffix: str = "", has_overlay: bool = False) -> NiivueViewerConfig:
         """Render Niivue controls panel and return configuration.
 
         Args:
             state_suffix: If set, persist config under ``niivue_config_<suffix>`` (multi-task pages).
+            has_overlay: Initial value for the overlay toggle when nothing is stored yet.
         """
         st.header(MESSAGES["niivue_controls_header"])
 
-        state_key = "niivue_config" if not state_suffix else f"niivue_config_{state_suffix}"
-        # Widget keys must differ when multiple control panels render on one page (e.g. --qc_task all).
-        wid = (state_suffix or "default").replace(".", "_").replace(" ", "_")
+        state_key = NiivueViewerManager.config_state_key(state_suffix)
+        keys = NiivueViewerManager.control_widget_keys(state_suffix)
 
         # Get current config from session state for initial values
         current_config = st.session_state.get(state_key, None)
@@ -90,8 +150,8 @@ class NiivueViewerManager:
         # Overlay toggle - at the top for easy access
         show_overlay = st.checkbox(
             MESSAGES["show_overlay_label"],
-            value=current_config.show_overlay if current_config else False,
-            key=f"niivue_ctrl_show_overlay_{wid}",
+            value=current_config.show_overlay if current_config else has_overlay,
+            key=keys["show_overlay"],
         )
 
         st.divider()
@@ -102,7 +162,7 @@ class NiivueViewerManager:
             VIEW_MODES,
             index=VIEW_MODES.index(current_config.view_mode) if current_config else 0,
             help="Select the viewing perspective",
-            key=f"niivue_ctrl_view_mode_{wid}",
+            key=keys["view_mode"],
         )
 
         # Overlay colormap selection
@@ -111,21 +171,13 @@ class NiivueViewerManager:
             OVERLAY_COLORMAPS,
             index=OVERLAY_COLORMAPS.index(current_config.overlay_colormap) if current_config else 0,
             help="Select the colormap for the overlay",
-            key=f"niivue_ctrl_overlay_cmap_{wid}",
+            key=keys["overlay_colormap"],
         )
 
         # Create new config with updated values
-        new_config = NiivueViewerConfig(
-            view_mode=view_mode,
-            overlay_colormap=overlay_colormap,
-            show_crosshair=current_config.show_crosshair if current_config else False,
-            radiological=current_config.radiological if current_config else False,
-            show_colorbar=current_config.show_colorbar if current_config else True,
-            interpolation=current_config.interpolation if current_config else True,
-            show_overlay=show_overlay,
-        )
+        new_config = NiivueViewerManager._make_config(view_mode, overlay_colormap, show_overlay, current_config)
 
-        # Save updated config to session state so render_viewer uses it on next rerun
+        # Save config to session state to be reused
         st.session_state[state_key] = new_config
 
         return new_config
