@@ -1,0 +1,18 @@
+{
+  "source": {"pipeline": "fsqc", "qc_task": "FS_surface_workflow", "type": "multi"},
+  "target": {"pipeline": "fsqc", "qc_task": "FS_surface_workflow", "type": "multi"},
+
+  "scale": {"PASS": "PASS", "FAIL": "FAIL", "UNCERTAIN": "UNCERTAIN", "MISSING": "MISSING"},
+
+  "facets": {
+    "one_to_many": {
+        "Cingulate": ["L Cingulate", "R Cingulate"],
+        "Insula": ["L Insula", "R Insula"],
+        "Frontal": ["L Frontal", "R Frontal"],
+        "Occipital": ["L Occipital", "R Occipital"],
+        "Parietal": ["L Parietal", "R Parietal"],
+        "Temporal": ["L Temporal", "R Temporal"]
+    }
+  },
+  "unmapped_facets": "drop"
+}
