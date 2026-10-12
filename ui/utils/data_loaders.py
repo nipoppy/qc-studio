@@ -201,11 +201,8 @@ def _normalize_montage_paths(montage_paths_value):
     return None
 
 
-def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
-    """Normalize montage paths from a QC config and return display data.
-
-    Delegates file reads and montage creation to ``_build_montage_display_data``.
-    Uncached; see ``qc_viewer._load_montage_data_cached``.
+def resolve_montage_paths(dataset_dir, path_dict: dict) -> Optional[Tuple[str, ...]]:
+    """Normalize montage paths from a QC config and expand them to concrete files.
 
     Args:
             dataset_dir: Base directory path for resolving relative paths.
@@ -213,12 +210,10 @@ def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_m
                     - None (no montage)
                     - Single Path/str object
                     - List of Path/str objects
-            max_montage_rows: Maximum rows for grid montage.
-            max_montage_cols: Maximum columns for grid montage.
 
     Returns:
-            Display data from ``_build_montage_display_data``, or None if no
-            montage paths are configured.
+            Tuple of file path strings (globs expanded), or None if no montage
+            paths are configured or none match.
     """
     montage_paths_value = path_dict.get("montage_path")
     if not montage_paths_value:
@@ -235,11 +230,23 @@ def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_m
     if not resolved_paths:
         return None
 
-    return _build_montage_display_data(
-        tuple(str(path) for path in resolved_paths),
-        max_montage_rows,
-        max_montage_cols,
-    )
+    return tuple(str(path) for path in resolved_paths)
+
+
+def load_montage_data(dataset_dir, path_dict: dict, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+    """Resolve montage paths from a QC config and return display data.
+
+    Combines ``resolve_montage_paths`` and ``build_montage_display_data``.
+    Uncached; see ``qc_viewer._load_montage_data_cached``.
+
+    Returns:
+            Display data from ``build_montage_display_data``, or None if no
+            montage paths are configured.
+    """
+    montage_paths = resolve_montage_paths(dataset_dir, path_dict)
+    if not montage_paths:
+        return None
+    return build_montage_display_data(montage_paths, max_montage_rows, max_montage_cols)
 
 
 def _create_unique_id_from_path(file_path: Path) -> str:
@@ -349,7 +356,7 @@ def _add_montage_if_available(
         return image_data_dict
 
 
-def _build_montage_display_data(montage_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
+def build_montage_display_data(montage_paths: tuple, max_montage_rows=None, max_montage_cols=None) -> Optional[dict]:
     """Load montage image files and build display data. Uncached; see ``load_montage_data``.
 
     Args:

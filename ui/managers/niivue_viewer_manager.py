@@ -13,6 +13,7 @@ from constants import (
     MESSAGES,
     ERROR_MESSAGES,
 )
+from utils.cache import file_signature, freeze
 from utils.data_loaders import load_mri_data, read_nifti_bytes_for_niivue
 
 try:
@@ -22,19 +23,20 @@ except ImportError:
 
 
 @st.cache_resource(show_spinner=False, max_entries=NIIVUE_CACHE_MAX_ENTRIES)
-def _read_nifti_cached(path_str: str, mtime_ns: int, size: int):
-    """Cached ``read_nifti_bytes_for_niivue``; mtime/size in the key reload rewritten files.
+def _read_nifti_cached(signature):
+    """Cached ``read_nifti_bytes_for_niivue`` keyed on a file signature (see ``utils.cache``).
 
-    ``cache_resource`` returns the same immutable bytes on every hit instead of
-    re-reading (and, for 4D/oversize files, re-reducing) the file per rerun.
+    ``cache_resource`` returns the same immutable ``(bytes, reduced, error)``
+    tuple on every hit instead of re-reading (and, for 4D/oversize files,
+    re-reducing) the file per rerun.
     """
-    return read_nifti_bytes_for_niivue(Path(path_str))
+    path_str, _, _ = signature
+    return freeze(read_nifti_bytes_for_niivue(Path(path_str)))
 
 
 def _read_nifti_for_niivue_cached(path: Path):
     """Per-file reader for ``load_mri_data`` backed by ``_read_nifti_cached``."""
-    stat = path.stat()
-    return _read_nifti_cached(str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+    return _read_nifti_cached(file_signature(path))
 
 
 class NiivueViewerConfig:
