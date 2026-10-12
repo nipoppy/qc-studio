@@ -866,7 +866,9 @@ class TestSidebarCohortNavOrder:
             )
 
         names = [name for name, _ in order]
-        assert names[:5] == ["caption", "header", "controls", "caption", "search"]
+        # Participant caption, then the rating-filter help caption, then the search box.
+        assert names[:6] == ["caption", "header", "controls", "caption", "caption", "search"]
+        assert order[4] == ("caption", MESSAGES["sidebar_rating_filter_help"])
         mock_st.container.assert_any_call(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True)
         assert any(call.args[0] == "QC task: sdc_wf_qc" for call in mock_st.caption.call_args_list)
         assert any(
@@ -1319,3 +1321,113 @@ class TestSidebarSubjectSearch:
             )
         assert prev_page is None
         assert next_page is None
+
+
+class TestSidebarRatingFilter:
+    """Rating checkboxes narrow the subject list and Next/Previous navigation."""
+
+    ENTRIES = [
+        {"participant_id": "sub-01", "session_id": "ses-01"},
+        {"participant_id": "sub-02", "session_id": "ses-01"},
+        {"participant_id": "sub-03", "session_id": "ses-01"},
+        {"participant_id": "sub-04", "session_id": "ses-01"},
+    ]
+    # sub-04 has no record → Unrated; sub-03 has one task rated MISSING
+    CATEGORIES = {"sub-01": {"PASS"}, "sub-02": {"FAIL"}, "sub-03": {"PASS", "All-Missing"}, "sub-04": {"Unrated"}}
+
+    @pytest.fixture(autouse=True)
+    def _categories(self):
+        with patch(
+            "views.sidebar_cohort_nav.SessionManager.page_rating_categories",
+            side_effect=lambda pid, sid, tasks: self.CATEGORIES[pid],
+        ):
+            yield
+
+    def test_matches_any_selected_category(self):
+        from views.sidebar_cohort_nav import matching_page_numbers
+
+        assert matching_page_numbers(self.ENTRIES, "", "ses-01", ratings={"PASS"}, qc_tasks=["t"]) == [1, 3]
+        assert matching_page_numbers(self.ENTRIES, "", "ses-01", ratings={"All-Missing", "Unrated"}, qc_tasks=["t"]) == [3, 4]
+        assert matching_page_numbers(self.ENTRIES, "", "ses-01", ratings={"Unrated"}, qc_tasks=["t"]) == [4]
+        assert matching_page_numbers(self.ENTRIES, "", "ses-01", ratings=set(), qc_tasks=["t"]) == [1, 2, 3, 4]
+
+    def test_combines_with_text_query(self):
+        from views.sidebar_cohort_nav import matching_page_numbers
+
+        assert matching_page_numbers(self.ENTRIES, "sub-03", "ses-01", ratings={"PASS"}, qc_tasks=["t"]) == [3]
+
+    def test_keep_page_stays_visible(self):
+        from views.sidebar_cohort_nav import matching_page_numbers
+
+        assert matching_page_numbers(self.ENTRIES, "", "ses-01", ratings={"FAIL"}, qc_tasks=["t"], keep_page=4) == [2, 4]
+
+    def test_next_and_previous_follow_rating_filter(self):
+        from views.sidebar_cohort_nav import next_visible_subject_page, prev_visible_subject_page
+
+        kw = {"ratings": {"PASS"}, "qc_tasks": ["t"]}
+        assert next_visible_subject_page(self.ENTRIES, "", "ses-01", 1, **kw) == 3
+        assert next_visible_subject_page(self.ENTRIES, "", "ses-01", 3, **kw) is None
+        assert prev_visible_subject_page(self.ENTRIES, "", "ses-01", 4, **kw) == 3
+
+    def test_selection_change_snaps_only_when_current_is_hidden(self):
+        from views.sidebar_cohort_nav import _page_after_filter_change
+
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {}
+            # Current page 2 (FAIL) hidden by a new PASS filter → first PASS page.
+            assert _page_after_filter_change(self.ENTRIES, "", "ses-01", 2, ratings=frozenset({"PASS"}), qc_tasks=["t"]) == 1
+            # Current page 3 already matches a changed selection → stay.
+            assert _page_after_filter_change(self.ENTRIES, "", "ses-01", 3, ratings=frozenset({"PASS", "FAIL"}), qc_tasks=["t"]) is None
+
+    def test_rating_the_current_page_does_not_snap(self):
+        from views.sidebar_cohort_nav import _page_after_filter_change
+
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {}
+            ratings = frozenset({"Unrated"})
+            assert _page_after_filter_change(self.ENTRIES, "", "ses-01", 4, ratings=ratings, qc_tasks=["t"]) is None
+            # Page 4 gets rated PASS; same selection on the next rerun → no jump.
+            self.CATEGORIES["sub-04"] = {"PASS"}
+            try:
+                assert _page_after_filter_change(self.ENTRIES, "", "ses-01", 4, ratings=ratings, qc_tasks=["t"]) is None
+            finally:
+                self.CATEGORIES["sub-04"] = {"Unrated"}
+
+    def test_category_order_puts_none_and_missing_last(self):
+        from views.sidebar_cohort_nav import _ordered_rating_categories
+
+        assert _ordered_rating_categories({"Unrated", "GOOD", "All-Missing", "Mixed", "PASS"}) == [
+            "PASS",
+            "Mixed",
+            "GOOD",
+            "All-Missing",
+            "Unrated",
+        ]
+
+    def test_filtered_adjacent_pages_use_rating_filter(self):
+        from components.qc_viewer import _filtered_adjacent_pages
+
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {SESSION_KEYS["sidebar_subject_search"]: "", SESSION_KEYS["sidebar_rating_filter"]: ["PASS"]}
+            prev_page, next_page = _filtered_adjacent_pages(
+                current_page=2,
+                total_participants=4,
+                participant_ids=None,
+                qc_cohort=self.ENTRIES,
+                session_id="ses-01",
+                qc_tasks=["t"],
+            )
+
+        assert (prev_page, next_page) == (1, 3)
+
+    def test_clear_subject_search_clears_rating_checkboxes(self):
+        from views.sidebar_cohort_nav import clear_subject_search, get_rating_filter
+
+        with patch("views.sidebar_cohort_nav.st") as mock_st:
+            mock_st.session_state = {
+                SESSION_KEYS["sidebar_rating_filter"]: ["PASS"],
+                "sidebar_rating_filter_cb_PASS": True,
+            }
+            clear_subject_search()
+            assert get_rating_filter() == frozenset()
+            assert "sidebar_rating_filter_cb_PASS" not in mock_st.session_state

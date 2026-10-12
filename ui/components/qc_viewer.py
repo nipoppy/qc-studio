@@ -162,7 +162,12 @@ def try_autoplay_advance_if_due(
 
     current_page = SessionManager.get_current_page()
     _, next_page = _filtered_adjacent_pages(
-        current_page=current_page, total_participants=total_participants, participant_ids=participant_ids, qc_cohort=qc_cohort, session_id=session_id
+        current_page=current_page,
+        total_participants=total_participants,
+        participant_ids=participant_ids,
+        qc_cohort=qc_cohort,
+        session_id=session_id,
+        qc_tasks=tasks,
     )
 
     if next_page is not None:
@@ -949,22 +954,29 @@ def _cohort_entries_for_active_filter(
     participant_ids: list | None,
     session_id: str,
     total_participants: int,
+    qc_tasks: list | None = None,
 ) -> list:
-    """Return the currently visible cohort subset under the active sidebar filter, if any."""
-    from views.sidebar_cohort_nav import _matching_subject_entries, get_subject_search_query
+    """Return the currently visible cohort subset under the active sidebar filter, if any.
+
+    The current page stays in the subset even if its new rating no longer
+    matches the rating filter, as in the sidebar list.
+    """
+    from views.sidebar_cohort_nav import _matching_subject_entries, get_rating_filter, get_subject_search_query
 
     entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
     query = get_subject_search_query()
-    if not query:
+    ratings = get_rating_filter()
+    if not query and not ratings:
         return entries
-    return [entry for _, entry in _matching_subject_entries(entries, query, session_id)]
+    matched = _matching_subject_entries(entries, query, session_id, ratings=ratings, qc_tasks=qc_tasks, keep_page=SessionManager.get_current_page())
+    return [entry for _, entry in matched]
 
 
 def _has_active_subject_filter() -> bool:
-    """True when a sidebar subject filter is currently active."""
-    from views.sidebar_cohort_nav import get_subject_search_query
+    """True when a sidebar subject or rating filter is currently active."""
+    from views.sidebar_cohort_nav import get_rating_filter, get_subject_search_query
 
-    return bool(get_subject_search_query())
+    return bool(get_subject_search_query() or get_rating_filter())
 
 
 def _filtered_cohort_complete_for_tasks(
@@ -975,7 +987,7 @@ def _filtered_cohort_complete_for_tasks(
     total_participants: int,
 ) -> bool:
     """True when the visible subset under the active filter is finished for all tasks."""
-    active_entries = _cohort_entries_for_active_filter(qc_cohort, participant_ids, session_id, total_participants)
+    active_entries = _cohort_entries_for_active_filter(qc_cohort, participant_ids, session_id, total_participants, qc_tasks)
     if not active_entries:
         return False
     return SessionManager.all_qc_cohort_pages_complete_for_tasks(qc_tasks, active_entries)
@@ -987,9 +999,15 @@ def _filtered_adjacent_pages(
     participant_ids: list | None,
     qc_cohort: list | None,
     session_id: str,
+    qc_tasks: list | None = None,
 ) -> tuple[int | None, int | None]:
-    """Previous/next pages that match the subject filter. Empty filter → full cohort order."""
-    from views.sidebar_cohort_nav import get_subject_search_query, next_visible_subject_page, prev_visible_subject_page
+    """Previous/next pages that match the subject and rating filters. Empty filter → full cohort order."""
+    from views.sidebar_cohort_nav import (
+        get_rating_filter,
+        get_subject_search_query,
+        next_visible_subject_page,
+        prev_visible_subject_page,
+    )
 
     entries = _cohort_entries_for_filter(qc_cohort, participant_ids, session_id, total_participants)
     # Fallback for direct calls (e.g., tests) where cohort data is not provided.
@@ -999,9 +1017,10 @@ def _filtered_adjacent_pages(
         next_page = current_page + 1 if current_page < total_participants else None
         return prev_page, next_page
     query = get_subject_search_query()
+    rating_filter = {"ratings": get_rating_filter(), "qc_tasks": qc_tasks}
     return (
-        prev_visible_subject_page(entries, query, session_id, current_page),
-        next_visible_subject_page(entries, query, session_id, current_page),
+        prev_visible_subject_page(entries, query, session_id, current_page, **rating_filter),
+        next_visible_subject_page(entries, query, session_id, current_page, **rating_filter),
     )
 
 
@@ -1364,6 +1383,7 @@ def _display_qc_pagination_controls(
         participant_ids=participant_ids,
         qc_cohort=qc_cohort,
         session_id=session_id,
+        qc_tasks=qc_tasks,
     )
 
     _render_next_page_button(

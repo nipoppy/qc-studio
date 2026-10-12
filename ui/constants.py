@@ -32,6 +32,13 @@ DEFAULT_QC_RATING = "PASS"
 DEFAULT_QC_RATING_NONE = "None"
 DEFAULT_QC_RATING_OPTIONS = QC_RATINGS + [DEFAULT_QC_RATING_NONE]
 RATING_FACET_COLUMNS = 12
+# Sidebar rating filter: subject-level labels for multi-facet tasks (see
+# SessionManager.derive_multifacet_final_qc), pages explicitly rated MISSING,
+# and pages with no decided rating (final_qc None/blank or only some facets rated).
+MULTIFACET_FINAL_QC_LABELS = ["All-Pass", "All-Fail", "All-Uncertain", "Mixed"]
+RATING_FILTER_MISSING = "All-Missing"
+RATING_FILTER_UNRATED = "Unrated"
+RATING_FILTER_ORDER = QC_RATINGS + MULTIFACET_FINAL_QC_LABELS + [RATING_FILTER_MISSING, RATING_FILTER_UNRATED]
 
 # Columns used to identify duplicate QC rows when merging/saving results
 QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]
@@ -96,6 +103,8 @@ SESSION_KEYS = {
     "montage_defaults_applied_qc_task": "montage_defaults_applied_qc_task",
     # Non-widget copy of the sidebar subject filter so Confirm/Next does not clear it
     "sidebar_subject_search": "sidebar_subject_search",
+    # Non-widget copy of the sidebar rating-filter checkboxes (list of selected categories)
+    "sidebar_rating_filter": "sidebar_rating_filter",
     # IQM viewer widget selections, mirrored outside the widgets' own keys so
     # they survive the sidebar's mid-script st.rerun()/st.switch_page() calls.
     "iqm_view_selection": "iqm_view_selection",
@@ -105,6 +114,8 @@ SESSION_KEYS = {
 
 # Widget key for the subject search box (must differ from the persist key above).
 SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY = "sidebar_subject_search_input"
+# Prefix for the rating-filter checkbox widget keys (one per category).
+SIDEBAR_RATING_FILTER_WIDGET_PREFIX = "sidebar_rating_filter_cb_"
 
 # Set by sidebar nav buttons so the subject search widget can render before st.rerun().
 PENDING_SIDEBAR_RERUN_KEY = "_pending_sidebar_rerun"
@@ -142,7 +153,7 @@ MESSAGES = {
     "congratulations_title": "**🎉 QC Complete! Congratulations! 🎉**",
     "export_results_button": "💾 Export Final Results",
     "previous_button": "◀️ Previous",
-    "nav_tooltip_previous": ("Previous: navigates to the previous subject or session without saving any rating changes."),
+    "nav_tooltip_previous": ("Previous: navigates to the previous subject or session without saving any rating changes"),
     "nav_tooltip_next": (
         "Next: saves the current page's QC ratings and notes, then advances to the next subject or "
         "session. When more than one QC task is shown, set PASS, FAIL, or UNCERTAIN for every "
@@ -154,7 +165,7 @@ MESSAGES = {
     "qc_rating_prompt": "Rate this qc-task:",
     "qc_notes_prompt": "Notes (optional):",
     "create_checkpoint_button": "🏁 Create checkpoint",
-    "create_checkpoint_help": "Create a timestamped snapshot of the current QC records.",
+    "create_checkpoint_help": "Create a timestamped snapshot of the current QC records",
     "next_button": "Next ▶️",
     "play_button": "▶️ Play",
     "pause_button": "⏸️ Pause",
@@ -162,14 +173,16 @@ MESSAGES = {
     "sidebar_subjects_header": "QC subject list",
     "sidebar_subjects_search": "Search subjects",
     "sidebar_subjects_search_placeholder": "Filter by subject or session",
-    "sidebar_subjects_search_empty": "No subjects match this search.",
+    "sidebar_subjects_search_empty": "No subjects match this search",
+    "sidebar_rating_filter": "Filter by rating",
+    "sidebar_rating_filter_help": "Show only pages with these ratings (aggregated over facets for multi-facet tasks).",
     "niivue_header": "3D MRI (Niivue)",
     "niivue_controls_header": "Niivue Controls",
     "montage_header": "Montage",
     "metrics_header": "QC Metrics",
     "iqm_distribution_header": "IQM Distributions",
-    "iqm_metrics_table_experimental": "🧪 Experimental layout — subject-level metrics table, may change.",
-    "iqm_generic_distribution_experimental": "🧪 Experimental layout — generic per-column view for a non-MRIQC pipeline, may change.",
+    "iqm_metrics_table_experimental": "🧪 Experimental layout — subject-level metrics table, may change",
+    "iqm_generic_distribution_experimental": "🧪 Experimental layout — generic per-column view for a non-MRIQC pipeline, may change",
     "view_mode_label": "View Mode",
     "overlay_colormap_label": "Overlay Colormap",
     "display_settings_header": "Display Settings",

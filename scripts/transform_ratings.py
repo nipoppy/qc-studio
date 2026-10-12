@@ -293,7 +293,7 @@ def aggregate(values: list[str], how: str) -> tuple[str, bool]:
 
 
 def derive_final_qc(ratings: dict[str, str]) -> str:
-    """Generalized copy of SessionManager.derive_multifacet_final_qc (ui/managers/session_manager.py)."""
+    """Copy of SessionManager.derive_multifacet_final_qc (ui/managers/session_manager.py)."""
     values = [str(v).strip() for v in ratings.values()]
     if not values or any(_is_blank(v) for v in values):
         return ""

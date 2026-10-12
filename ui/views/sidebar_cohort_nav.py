@@ -7,7 +7,9 @@ import streamlit as st
 from constants import (
     MESSAGES,
     PENDING_SIDEBAR_RERUN_KEY,
+    RATING_FILTER_ORDER,
     SESSION_KEYS,
+    SIDEBAR_RATING_FILTER_WIDGET_PREFIX,
     SIDEBAR_SEARCH_HOLD_KEY,
     SIDEBAR_SUBJECT_LIST_HEIGHT,
     SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY,
@@ -19,6 +21,7 @@ _MAX_PID_DISPLAY_LEN = 28
 _SUBJECT_SEARCH_WIDGET_KEY = SIDEBAR_SUBJECT_SEARCH_WIDGET_KEY
 _NAV_BUTTON_KEYS = ("pag_next", "pag_prev", "autoplay_play", "autoplay_pause")
 _LAST_APPLIED_FILTER_KEY = "_sidebar_search_applied_query"
+_LAST_APPLIED_RATING_FILTER_KEY = "_sidebar_rating_filter_applied"
 
 
 def render_sidebar_cohort_subjects(
@@ -124,12 +127,21 @@ def get_subject_search_query() -> str:
     return str(st.session_state.get(SESSION_KEYS["sidebar_subject_search"], "") or "").strip()
 
 
+def get_rating_filter() -> frozenset[str]:
+    """Return the persisted rating-filter selection (empty means no rating filter)."""
+    return frozenset(st.session_state.get(SESSION_KEYS["sidebar_rating_filter"]) or ())
+
+
 def clear_subject_search() -> None:
-    """Clear the subject filter."""
+    """Clear the subject filter, including the rating checkboxes."""
     st.session_state[SESSION_KEYS["sidebar_subject_search"]] = ""
     st.session_state[_SUBJECT_SEARCH_WIDGET_KEY] = ""
     st.session_state.pop(SIDEBAR_SEARCH_HOLD_KEY, None)
     st.session_state.pop(_LAST_APPLIED_FILTER_KEY, None)
+    st.session_state[SESSION_KEYS["sidebar_rating_filter"]] = []
+    st.session_state.pop(_LAST_APPLIED_RATING_FILTER_KEY, None)
+    for key in [k for k in st.session_state.keys() if isinstance(k, str) and k.startswith(SIDEBAR_RATING_FILTER_WIDGET_PREFIX)]:
+        del st.session_state[key]
 
 
 def _nav_triggered() -> bool:
@@ -145,36 +157,54 @@ def _hold_search_across_nav() -> None:
         st.session_state[_SUBJECT_SEARCH_WIDGET_KEY] = persist
 
 
-def _matching_subject_entries(entries: list, query: str, session_id: str) -> list[tuple[int, dict]]:
-    """Return ``(original_index, entry)`` pairs whose subject or session contains ``query``."""
+def _matching_subject_entries(
+    entries: list,
+    query: str,
+    session_id: str,
+    *,
+    ratings: frozenset[str] | set[str] | None = None,
+    qc_tasks: list | None = None,
+    keep_page: int | None = None,
+) -> list[tuple[int, dict]]:
+    """Return ``(original_index, entry)`` pairs matching the subject filter.
+
+    An entry matches when its subject or session contains ``query`` and, if
+    ``ratings`` is non-empty, any of its ``qc_tasks`` has a rating-filter
+    category in ``ratings``. ``keep_page`` (1-based) bypasses the rating check so
+    the page being rated stays visible after its rating changes.
+    """
     needle = (query or "").strip().lower()
     matched: list[tuple[int, dict]] = []
     for i, entry in enumerate(entries):
         pid = str(entry.get("participant_id", ""))
         sid = str(entry.get("session_id", session_id))
         haystack = f"{pid} {sid}".lower()
-        if not needle or needle in haystack:
-            matched.append((i, entry))
+        if needle and needle not in haystack:
+            continue
+        if ratings and qc_tasks and i + 1 != keep_page:
+            if not SessionManager.page_rating_categories(pid, sid, qc_tasks) & set(ratings):
+                continue
+        matched.append((i, entry))
     return matched
 
 
-def matching_page_numbers(entries: list, query: str, session_id: str) -> list[int]:
+def matching_page_numbers(entries: list, query: str, session_id: str, **rating_filter) -> list[int]:
     """1-based page numbers that match the current subject filter."""
-    return [i + 1 for i, _ in _matching_subject_entries(entries, query, session_id)]
+    return [i + 1 for i, _ in _matching_subject_entries(entries, query, session_id, **rating_filter)]
 
 
-def next_visible_subject_page(entries: list, query: str, session_id: str, current_page: int) -> int | None:
+def next_visible_subject_page(entries: list, query: str, session_id: str, current_page: int, **rating_filter) -> int | None:
     """Next 1-based page among filter matches, or ``None`` if this is the last match."""
-    for page in matching_page_numbers(entries, query, session_id):
+    for page in matching_page_numbers(entries, query, session_id, **rating_filter):
         if page > current_page:
             return page
     return None
 
 
-def prev_visible_subject_page(entries: list, query: str, session_id: str, current_page: int) -> int | None:
+def prev_visible_subject_page(entries: list, query: str, session_id: str, current_page: int, **rating_filter) -> int | None:
     """Previous 1-based page among filter matches, or ``None`` if this is the first match."""
     previous = None
-    for page in matching_page_numbers(entries, query, session_id):
+    for page in matching_page_numbers(entries, query, session_id, **rating_filter):
         if page < current_page:
             previous = page
         else:
@@ -182,31 +212,85 @@ def prev_visible_subject_page(entries: list, query: str, session_id: str, curren
     return previous
 
 
-def page_if_filter_hides_current(entries: list, query: str, session_id: str, current_page: int) -> int | None:
+def page_if_filter_hides_current(entries: list, query: str, session_id: str, current_page: int, **rating_filter) -> int | None:
     """First matching page if ``current_page`` is hidden by the filter; otherwise ``None``."""
     if current_page < 1 or current_page > len(entries):
         return None
-    pages = matching_page_numbers(entries, query, session_id)
+    pages = matching_page_numbers(entries, query, session_id, **rating_filter)
     if not pages or current_page in pages:
         return None
     return pages[0]
 
 
-def first_visible_subject_page(entries: list, query: str, session_id: str) -> int | None:
+def first_visible_subject_page(entries: list, query: str, session_id: str, **rating_filter) -> int | None:
     """1-based page of the first filter match, or ``None`` if nothing matches."""
-    pages = matching_page_numbers(entries, query, session_id)
+    pages = matching_page_numbers(entries, query, session_id, **rating_filter)
     return pages[0] if pages else None
 
 
-def _page_after_filter_change(entries: list, query: str, session_id: str, current_page: int) -> int | None:
-    """When the filter changes, go to the first visible subject (or if the current page is hidden)."""
+def _page_after_filter_change(
+    entries: list,
+    query: str,
+    session_id: str,
+    current_page: int,
+    *,
+    ratings: frozenset[str] = frozenset(),
+    qc_tasks: list | None = None,
+) -> int | None:
+    """When the filter changes, go to the first visible subject (or if the current page is hidden).
+
+    Rating changes on the current page never move it: the rating check only runs
+    when the checkbox selection itself changes.
+    """
     query = (query or "").strip()
     previous = st.session_state.get(_LAST_APPLIED_FILTER_KEY)
     st.session_state[_LAST_APPLIED_FILTER_KEY] = query
-    first = first_visible_subject_page(entries, query, session_id)
+    previous_ratings = st.session_state.get(_LAST_APPLIED_RATING_FILTER_KEY, frozenset())
+    st.session_state[_LAST_APPLIED_RATING_FILTER_KEY] = ratings
+    rating_filter = {"ratings": ratings, "qc_tasks": qc_tasks}
+    first = first_visible_subject_page(entries, query, session_id, **rating_filter)
     if query and previous != query and first is not None and first != current_page:
         return first
+    if ratings and previous_ratings != ratings:
+        return page_if_filter_hides_current(entries, query, session_id, current_page, **rating_filter)
     return page_if_filter_hides_current(entries, query, session_id, current_page)
+
+
+def _ordered_rating_categories(categories) -> list[str]:
+    """Known categories in ``RATING_FILTER_ORDER``; custom scale values sorted before All-Missing/Unrated."""
+    head = [c for c in RATING_FILTER_ORDER[:-2] if c in categories]
+    tail = [c for c in RATING_FILTER_ORDER[-2:] if c in categories]
+    custom = sorted(c for c in categories if c not in RATING_FILTER_ORDER)
+    return head + custom + tail
+
+
+def _render_rating_filter(entries: list, session_id: str, qc_tasks: list) -> frozenset[str]:
+    """Render rating checkboxes (with page counts) and persist the selection."""
+    persist_key = SESSION_KEYS["sidebar_rating_filter"]
+    selected = set(st.session_state.get(persist_key) or ())
+    counts: dict[str, int] = {}
+    for entry in entries:
+        pid = str(entry.get("participant_id", ""))
+        sid = str(entry.get("session_id", session_id))
+        for category in SessionManager.page_rating_categories(pid, sid, qc_tasks):
+            counts[category] = counts.get(category, 0) + 1
+
+    # Show categories present in the cohort plus any still checked (count 0).
+    categories = _ordered_rating_categories(set(counts) | selected)
+    label = MESSAGES["sidebar_rating_filter"] + (f" ({len(selected)})" if selected else "")
+    with st.expander(label, expanded=bool(selected)):
+        st.caption(MESSAGES["sidebar_rating_filter_help"])
+        cols = st.columns(2)
+        for idx, category in enumerate(categories):
+            widget_key = f"{SIDEBAR_RATING_FILTER_WIDGET_PREFIX}{category}"
+            # Widget state is dropped on reruns where the sidebar list is hidden; restore it.
+            if widget_key not in st.session_state:
+                st.session_state[widget_key] = category in selected
+            with cols[idx % 2]:
+                st.checkbox(f"{category} ({counts.get(category, 0)})", key=widget_key)
+    chosen = frozenset(c for c in categories if st.session_state.get(f"{SIDEBAR_RATING_FILTER_WIDGET_PREFIX}{c}"))
+    st.session_state[persist_key] = sorted(chosen)
+    return chosen
 
 
 def _render_subject_search() -> str:
@@ -239,15 +323,16 @@ def _render_subject_list(
 ) -> None:
     """Render the subject buttons inside one fixed-height scroller panel."""
     current_page = SessionManager.get_current_page()
+    ratings = _render_rating_filter(entries, session_id, tasks_eff) if show_filter else get_rating_filter()
     with st.container(height=SIDEBAR_SUBJECT_LIST_HEIGHT, border=True):
         if show_filter:
             query = _render_subject_search()
-            snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page())
+            snap_to = _page_after_filter_change(entries, query, session_id, SessionManager.get_current_page(), ratings=ratings, qc_tasks=tasks_eff)
             if snap_to is not None:
                 _flush_qc_before_forced_navigation(flush_kwargs)
                 SessionManager.set_current_page(snap_to)
                 st.rerun()
-        visible = _matching_subject_entries(entries, query, session_id)
+        visible = _matching_subject_entries(entries, query, session_id, ratings=ratings, qc_tasks=tasks_eff, keep_page=current_page)
         if not visible:
             st.caption(MESSAGES["sidebar_subjects_search_empty"])
             return

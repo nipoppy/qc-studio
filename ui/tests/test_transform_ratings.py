@@ -98,6 +98,21 @@ class TestDeriveFinalQc:
     def test_matches_ui_labels(self, ratings, expected):
         assert tr.derive_final_qc(ratings) == expected
 
+    @pytest.mark.parametrize(
+        "ratings",
+        [
+            {"a": "PASS", "b": "PASS"},
+            {"a": "MISSING", "b": "MISSING"},
+            {"a": "missing"},
+            {"a": "MISSING", "b": "FAIL"},
+            {"a": "PASS", "b": ""},
+        ],
+    )
+    def test_same_result_as_ui(self, ratings):
+        from managers.session_manager import SessionManager
+
+        assert tr.derive_final_qc(ratings) == (SessionManager.derive_multifacet_final_qc(ratings) or "")
+
 
 class TestTransform:
     def test_rename_only_keeps_facets_and_other_tasks(self, tmp_path):

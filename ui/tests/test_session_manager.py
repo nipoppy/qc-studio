@@ -430,3 +430,39 @@ class TestTaskAwareRecordLookup:
         record = SessionManager.get_qc_record_for_participant("sub-CMH0002", "ses-01")
         assert record is not None
         assert record.get("qc_task") == "func_wf_qc"
+
+
+class TestRatingFilterCategory:
+    """Labels used by the sidebar rating filter."""
+
+    @pytest.mark.parametrize(
+        "record, expected",
+        [
+            (None, "Unrated"),
+            ({"final_qc": None}, "Unrated"),
+            ({"final_qc": ""}, "Unrated"),
+            ({"final_qc": "nan"}, "Unrated"),
+            ({"final_qc": "None"}, "Unrated"),
+            ({"final_qc": " PASS "}, "PASS"),
+            ({"final_qc": "FAIL"}, "FAIL"),
+            ({"ratings": {"a": "PASS", "b": "PASS"}}, "All-Pass"),
+            ({"ratings": {"a": "FAIL", "b": "FAIL"}}, "All-Fail"),
+            ({"ratings": {"a": "PASS", "b": "FAIL"}}, "Mixed"),
+            ({"ratings": {"a": "MISSING", "b": "MISSING"}}, "All-Missing"),
+            ({"ratings": {"a": "MISSING", "b": "PASS"}}, "Mixed"),
+            ({"final_qc": "MISSING"}, "All-Missing"),
+            ({"final_qc": "All-Missing"}, "All-Missing"),
+            ({"ratings": {"a": "PASS", "b": None}}, "Unrated"),
+            ({"ratings": {"a": "MISSING", "b": None}}, "Unrated"),
+            ({"ratings": {"a": None, "b": ""}}, "Unrated"),
+        ],
+    )
+    def test_rating_filter_category(self, record, expected):
+        assert SessionManager.rating_filter_category(record) == expected
+
+    def test_page_rating_categories_spans_tasks(self, mock_session_state):
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+        SessionManager.set_qc_records([{"participant_id": "sub-01", "session_id": "ses-01", "qc_task": "anat", "final_qc": "PASS"}])
+
+        assert SessionManager.page_rating_categories("sub-01", "ses-01", ["anat", "func"]) == {"PASS", "Unrated"}

@@ -10,6 +10,8 @@ from constants import (
     DEFAULT_QC_RATING,
     DEFAULT_QC_RATING_NONE,
     DEFAULT_QC_RATING_OPTIONS,
+    RATING_FILTER_MISSING,
+    RATING_FILTER_UNRATED,
 )
 from utils.cohort import bare_bids_id as _bare_bids_id
 
@@ -439,10 +441,12 @@ class SessionManager:
     def derive_multifacet_final_qc(ratings: dict[str, str | None] | None) -> str | None:
         """Subject-level label for multi-facet ratings.
 
+        Matches ``derive_final_qc`` in ``scripts/transform_ratings.py``.
+
         Returns:
-            - ``All-Pass`` when every facet is PASS
-            - ``All-Fail`` when every facet is FAIL
-            - ``All-Uncertain`` when every facet is UNCERTAIN
+            - ``All-<Value>`` when every facet has the same value, e.g.
+              ``All-Pass``, ``All-Fail``, ``All-Uncertain``, ``All-Missing``
+              (any scale value works, including custom ones)
             - ``Mixed`` for any other fully rated combination
             - ``None`` otherwise (including missing/blank facet ratings)
         """
@@ -451,13 +455,37 @@ class SessionManager:
         values = [str(v).strip().upper() for v in ratings.values()]
         if not values or any(v in {"", "NONE", "NAN"} for v in values):
             return None
-        if all(v == "PASS" for v in values):
-            return "All-Pass"
-        if all(v == "FAIL" for v in values):
-            return "All-Fail"
-        if all(v == "UNCERTAIN" for v in values):
-            return "All-Uncertain"
+        if len(set(values)) == 1:
+            return f"All-{values[0].title()}"
         return "Mixed"
+
+    @staticmethod
+    def rating_filter_category(record) -> str:
+        """Sidebar rating-filter label for one task's latest record.
+
+        Returns the single-scale ``final_qc`` value (e.g. ``PASS``), the
+        multi-facet label from ``derive_multifacet_final_qc`` (e.g. ``All-Pass``),
+        ``All-Missing`` when the rating is MISSING (single-scale ``MISSING`` or
+        every facet ``MISSING``), and ``Unrated`` when there is no decided rating:
+        no record, a None/blank rating, or only some facets rated.
+        """
+        if record is None:
+            return RATING_FILTER_UNRATED
+        ratings = record.ratings if hasattr(record, "ratings") else record.get("ratings", None)
+        if isinstance(ratings, dict) and ratings:
+            return SessionManager.derive_multifacet_final_qc(ratings) or RATING_FILTER_UNRATED
+        fq = record.final_qc if hasattr(record, "final_qc") else record.get("final_qc", "")
+        fq_str = "" if fq is None else str(fq).strip()
+        if fq_str.lower() in {"", "nan", "none"}:
+            return RATING_FILTER_UNRATED
+        if fq_str.lower() in {"missing", RATING_FILTER_MISSING.lower()}:
+            return RATING_FILTER_MISSING
+        return fq_str
+
+    @staticmethod
+    def page_rating_categories(participant_id: str, session_id: str, qc_tasks: list) -> set[str]:
+        """Rating-filter labels across ``qc_tasks`` for one cohort page."""
+        return {SessionManager.rating_filter_category(SessionManager.get_qc_record_for_participant(participant_id, session_id, t)) for t in qc_tasks}
 
     @staticmethod
     def participant_has_decided_qc(participant_id: str, session_id: str, qc_task: str) -> bool:
