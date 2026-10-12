@@ -175,8 +175,9 @@ def _list_resume_files(out_dir: str) -> tuple[Path | None, list[Path]]:
     return resolved_base, status_files + checkpoint_files
 
 
-# Matches the stamp written by qc_viewer._default_qc_checkpoint_path, e.g. "..._checkpoint_20261012T143005Z.tsv".
-_CHECKPOINT_STAMP_RE = re.compile(r"_checkpoint_(\d{8}T\d{6})Z?\.tsv$")
+# Matches the stamp written by qc_viewer._default_qc_checkpoint_path, e.g. "..._checkpoint_20261012T143005Z.tsv",
+# including derived files with a trailing suffix such as "..._checkpoint_20261012T143005Z_transformed.tsv".
+_CHECKPOINT_STAMP_RE = re.compile(r"_checkpoint_(\d{8}T\d{6})Z?(?:_[^/]*)?\.tsv$")
 
 
 def _mtime_or_epoch(path: Path) -> float:
