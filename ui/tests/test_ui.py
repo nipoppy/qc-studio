@@ -316,6 +316,62 @@ class TestParseArgs:
         assert ctx["qc_task"] == expected_task
         assert ctx["qc_tasks"] == tasks
 
+    @staticmethod
+    def _run_cli_context(monkeypatch, tmp_path, participants_df, session_args):
+        """Call get_cli_run_context with the given participant table and ``--session_list`` args."""
+        import json
+        import main
+
+        qc_json = tmp_path / "qc.json"
+        qc_json.write_text(json.dumps({"anat_wf_qc": {}}))
+        participants = tmp_path / "participants.tsv"
+        participants_df.to_csv(participants, sep="\t", index=False)
+        monkeypatch.setattr(main.SessionManager, "get_qc_cohort_order", lambda: None)
+        # Any attempt to import pybids fails: sessions must never come from indexing the dataset.
+        monkeypatch.setitem(sys.modules, "bids", None)
+        argv = ["main.py", "--dataset_dir", str(tmp_path), "--participant_list", str(participants)]
+        argv += session_args
+        argv += ["--qc_pipeline", "fmriprep", "--qc_task", "anat_wf_qc", "--output_dir", str(tmp_path / "out"), "--qc_json", str(qc_json)]
+        monkeypatch.setattr(sys, "argv", argv)
+        return main.get_cli_run_context()
+
+    def test_cli_context_requires_sessions_when_not_inferable(self, monkeypatch, tmp_path, capsys):
+        """No --session_list and no session_id column: exit with a hint instead of guessing."""
+        with pytest.raises(SystemExit) as exc:
+            self._run_cli_context(monkeypatch, tmp_path, pd.DataFrame({"participant_id": ["sub-01"]}), [])
+
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "--session_list none" in err
+        assert "--session_list ses-01" in err
+
+    def test_cli_context_uses_tsv_session_column_without_session_list(self, monkeypatch, tmp_path):
+        df = pd.DataFrame({"participant_id": ["sub-01", "sub-01", "sub-02"], "session_id": ["ses-01", "ses-02", "ses-01"]})
+
+        ctx = self._run_cli_context(monkeypatch, tmp_path, df, [])
+
+        assert ctx["qc_cohort"] == [
+            {"participant_id": "sub-01", "session_id": "ses-01"},
+            {"participant_id": "sub-01", "session_id": "ses-02"},
+            {"participant_id": "sub-02", "session_id": "ses-01"},
+        ]
+
+    @pytest.mark.parametrize("value", ["none", "NONE", ""])
+    def test_cli_context_session_list_none_means_no_session_level(self, monkeypatch, tmp_path, value):
+        ctx = self._run_cli_context(monkeypatch, tmp_path, pd.DataFrame({"participant_id": ["sub-01", "02"]}), ["--session_list", value])
+
+        assert ctx["session_ids"] is None
+        assert ctx["qc_cohort"] == [
+            {"participant_id": "sub-01", "session_id": None},
+            {"participant_id": "sub-02", "session_id": None},
+        ]
+
+    def test_cli_context_session_list_crosses_participants_and_sessions(self, monkeypatch, tmp_path):
+        ctx = self._run_cli_context(monkeypatch, tmp_path, pd.DataFrame({"participant_id": ["sub-01"]}), ["--session_list", "01,ses-02"])
+
+        assert ctx["session_ids"] == ["ses-01", "ses-02"]
+        assert [e["session_id"] for e in ctx["qc_cohort"]] == ["ses-01", "ses-02"]
+
     def test_parse_args_missing_required_argument(self):
         """Test parsing with missing required argument."""
         from main import parse_args

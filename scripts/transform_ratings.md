@@ -88,6 +88,8 @@ The output has the same 15 columns as the UI export. For `multi` targets, `final
 
 `timestamp`, `notes`, `rater_experience`, `rater_fatigue` and `rater_screen_size` are copied as they are. They are never rewritten, merged or set to the time of the transform.
 
+To remap the rater metadata values themselves (for example after the UI's experience, fatigue or screen-size options change), use [`transform_metadata.py`](transform_metadata.md).
+
 - **One value per record.** Rows are grouped into records by `pipeline`, `participant_id`, `session_id`, `task_id`, `run_id` and `rater_id`. The metadata comes from the record's first row, in file order. Every output row for that record gets this value, whatever the facet mapping does.
 - **Per-facet differences are lost.** If rows within one record have different notes or timestamps, only the first row's value survives. Notes are not concatenated, even when facets are combined with `many_to_one`.
 - **The timestamp records when the rating was made.** The output keeps the original rating time, so it doesn't show that the data was transformed. Keep the input file and mapping if you need that history.

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
+from constants import EXPERIENCE_LEVELS, FATIGUE_LEVELS, SCREEN_SIZES
 from utils.config import parse_qc_config
 from utils.data_loaders import (
     load_mri_data,
@@ -649,7 +650,23 @@ class TestSaveQcResultsToCsv:
         assert list(df.columns)[0] == "pipeline"
         assert df.iloc[0]["participant_id"] == "sub-CMH0001"
         assert "rater_screen_size" in df.columns
-        assert df.iloc[0]["rater_screen_size"] == "Desktop (27 inch)"
+        assert df.iloc[0]["rater_screen_size"] == qc_record_sample.rater_screen_size
+
+    @pytest.mark.parametrize(
+        "experience, fatigue, screen_size",
+        list(zip(EXPERIENCE_LEVELS, FATIGUE_LEVELS, SCREEN_SIZES)) + [(EXPERIENCE_LEVELS[0], FATIGUE_LEVELS[0], s) for s in SCREEN_SIZES],
+    )
+    def test_rater_metadata_round_trips_landing_page_options(self, temp_dir, qc_record_sample, experience, fatigue, screen_size):
+        """Exported rater metadata must match the landing-page options so imports restore the form."""
+        output_file = temp_dir / "output.tsv"
+        record = qc_record_sample.model_copy(update={"rater_experience": experience, "rater_fatigue": fatigue, "rater_screen_size": screen_size})
+
+        save_qc_results_to_csv(output_file, [record], drop_duplicates=False)
+
+        row = pd.read_csv(output_file, sep="\t", dtype=str, keep_default_na=False).iloc[0]
+        assert row["rater_experience"] == experience
+        assert row["rater_fatigue"] == fatigue
+        assert row["rater_screen_size"] == screen_size
 
     def test_save_empty_records_list(self, temp_dir):
         """Test saving empty records list."""

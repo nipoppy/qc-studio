@@ -86,7 +86,7 @@ def test_export_qc_results_uses_custom_path_and_sets_success_message(tmp_path):
         pipeline="fmriprep",
         timestamp="2026-09-03 12:00:00",
         rater_id="rater42",
-        rater_experience="Expert (>5 year experience)",
+        rater_experience="Expert (>5 years)",
         rater_fatigue="Not at all",
         final_qc="PASS",
         notes="",

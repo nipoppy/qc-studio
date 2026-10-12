@@ -1,0 +1,23 @@
+{
+  "filter": {"pipeline": "fmriprep", "qc_task": "anat_wf_qc"},
+
+  "columns": {
+    "rater_experience": {
+      "Expert (>5 years)": "Expert (>5 years)",
+      "Expert": "Expert (>5 years)",
+      "Intermediate": "Intermediate (1-5 years)",
+      "Beginner": "Beginner (< 1 year)"
+    },
+    "rater_fatigue": {
+      "Not at all": "Not at all",
+      "Not tired": "Not at all",
+      "": "Not at all"
+    },
+    "rater_screen_size": {
+      "26-30": "26-30",
+      "24": "21-25",
+      "27": "26-30",
+      "": "Unknown"
+    }
+  }
+}

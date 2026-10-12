@@ -72,7 +72,7 @@ class TestRaterMethods:
         st.session_state = mock_session_state.data
         SessionManager.init_session_state()
 
-        exp_level = "Expert (>5 year experience)"
+        exp_level = "Expert (>5 years)"
         SessionManager.set_rater_experience(exp_level)
         assert SessionManager.get_rater_experience() == exp_level
 
@@ -369,7 +369,7 @@ class TestSessionManagerIntegration:
 
         # Rater setup
         SessionManager.set_rater_id("rater_001")
-        SessionManager.set_rater_experience("Expert (>5 year experience)")
+        SessionManager.set_rater_experience("Expert (>5 years)")
         SessionManager.set_rater_fatigue("A bit tired ☕")
         SessionManager.set_rater_screen_size("26-30")
 

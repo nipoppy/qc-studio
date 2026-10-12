@@ -563,7 +563,7 @@ class TestLandingPageCsvUpload:
                 "session_id": ["ses-01", "ses-01"],
                 "timestamp": ["2026-09-03 10:00:00", "2026-09-03 10:01:00"],
                 "rater_id": ["tester", "tester"],
-                "rater_experience": ["Expert (>5 year experience)", "Expert (>5 year experience)"],
+                "rater_experience": ["Expert (>5 years)", "Expert (>5 years)"],
                 "rater_fatigue": ["Not at all", "Not at all"],
                 "final_qc": ["PASS", "FAIL"],
                 "notes": ["", ""],
@@ -610,7 +610,7 @@ class TestLandingPageCsvUpload:
                 "rater_id": ["nik"],
                 "rater_experience": ["Beginner (< 1 year)"],
                 "rater_fatigue": ["Not at all"],
-                "rater_screen_size": ["14 inches or less"],
+                "rater_screen_size": ["14 or less"],
                 "final_qc": ["UNCERTAIN"],
                 "notes": [""],
             }

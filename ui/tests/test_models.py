@@ -65,7 +65,7 @@ class TestQCRecord:
         """Test creating QCRecord with all fields."""
         assert qc_record_sample.participant_id == "sub-CMH0001"
         assert qc_record_sample.session_id == "ses-01"
-        assert qc_record_sample.rater_experience == "Expert (>5 year experience)"
+        assert qc_record_sample.rater_experience == "Expert (>5 years)"
         assert qc_record_sample.rater_fatigue == "Not at all"
         assert qc_record_sample.rater_screen_size == "26-30"
         assert qc_record_sample.final_qc == "PASS"
