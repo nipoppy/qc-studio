@@ -1,5 +1,6 @@
 """Landing page component for QC-Studio UI."""
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -152,35 +153,67 @@ def _list_resume_files(out_dir: str) -> tuple[Path | None, list[Path]]:
         return resolved_base, []
 
     seen: set[Path] = set()
-    candidates: list[Path] = []
+    status_files: list[Path] = []
     patterns = ["*_qc_status.tsv", "*_status.tsv"]
     for pattern in patterns:
         for path in resolved_base.glob(pattern):
             if path.is_file() and path not in seen:
                 seen.add(path)
-                candidates.append(path)
+                status_files.append(path)
 
+    checkpoint_files: list[Path] = []
     checkpoint_dir = resolved_base / "checkpoints"
     if checkpoint_dir.exists() and checkpoint_dir.is_dir():
         for path in checkpoint_dir.glob("*.tsv"):
             if path.is_file() and path not in seen:
                 seen.add(path)
-                candidates.append(path)
+                checkpoint_files.append(path)
 
-    candidates.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True)
-    return resolved_base, candidates
+    # Status files stay at the top (newest first); checkpoints follow, newest first by filename timestamp.
+    status_files.sort(key=_mtime_or_epoch, reverse=True)
+    checkpoint_files.sort(key=lambda p: _checkpoint_stamp(p) or datetime.fromtimestamp(_mtime_or_epoch(p)), reverse=True)
+    return resolved_base, status_files + checkpoint_files
+
+
+# Matches the stamp written by qc_viewer._default_qc_checkpoint_path, e.g. "..._checkpoint_20261012T143005Z.tsv".
+_CHECKPOINT_STAMP_RE = re.compile(r"_checkpoint_(\d{8}T\d{6})Z?\.tsv$")
+
+
+def _mtime_or_epoch(path: Path) -> float:
+    """File modification time, or 0.0 when the file cannot be stat'ed."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _checkpoint_stamp(path: Path) -> datetime | None:
+    """Timestamp embedded in a checkpoint filename, or None when absent or unparsable."""
+    match = _CHECKPOINT_STAMP_RE.search(path.name)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%dT%H%M%S")
+    except ValueError:
+        return None
 
 
 def _resume_file_label(base_dir: Path, candidate: Path) -> str:
     """Human-readable label for local resume files in the select box.
 
-    The modification time leads the label so it stays visible when the select box
-    truncates long filenames (checkpoint names differ only in their trailing timestamp).
+    A timestamp leads the label so it stays visible when the select box truncates long
+    filenames (checkpoint names differ only in their trailing timestamp). Checkpoints use
+    the timestamp embedded in their filename; other files use their modification time.
     """
     try:
         name = str(candidate.relative_to(base_dir))
     except ValueError:
         name = str(candidate)
+
+    stamp = _checkpoint_stamp(candidate)
+    if stamp is not None:
+        return f"{stamp.strftime('%Y-%m-%d %H:%M:%S')} · {name}"
+
     try:
         mtime = datetime.fromtimestamp(candidate.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     except OSError:
