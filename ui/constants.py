@@ -125,6 +125,7 @@ SIDEBAR_SEARCH_HOLD_KEY = "_sidebar_search_hold"
 # File upload settings
 UPLOAD_FILE_TYPES = ["csv", "tsv"]
 UPLOAD_SEPARATOR_INFERENCE = None  # Let pandas infer
+PREVIEW_DF_ROWS = 5  # Number of rows to show in the preview dataframe on the landing page
 
 # Substitution formats for participant and session IDs in qc_config
 SUBSTITUTIONS_DICT = {
@@ -148,7 +149,7 @@ MESSAGES = {
     "panels_success": "✅ {count} panel(s) selected",
     "upload_header": "📤 Upload Existing QC File (Optional)",
     "upload_help": "Upload a previously saved <QC_status>.tsv file / checkpoint to resume QC",
-    "csv_uploader_label": "Choose a QC_status.tsv file",
+    "csv_uploader_label": "Choose a QC_status.tsv file (from local machine)",
     "rater_form_button": "**:green[Continue to QC] 🚀**",
     "congratulations_title": "**🎉 QC Complete! Congratulations! 🎉**",
     "export_results_button": "💾 Export Final Results",

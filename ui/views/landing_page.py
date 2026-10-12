@@ -1,5 +1,6 @@
 """Landing page component for QC-Studio UI."""
 
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,7 @@ from constants import (
     MAX_MONTAGE_GRID_SIZE,
     QC_DEDUP_KEYS,
     SESSION_KEYS,
+    PREVIEW_DF_ROWS,
 )
 from managers.session_manager import SessionManager
 from models import QCRecord
@@ -170,12 +172,20 @@ def _list_resume_files(out_dir: str) -> tuple[Path | None, list[Path]]:
 
 
 def _resume_file_label(base_dir: Path, candidate: Path) -> str:
-    """Human-readable label for local resume files in the select box."""
+    """Human-readable label for local resume files in the select box.
+
+    The modification time leads the label so it stays visible when the select box
+    truncates long filenames (checkpoint names differ only in their trailing timestamp).
+    """
     try:
-        rel = candidate.relative_to(base_dir)
-        return str(rel)
+        name = str(candidate.relative_to(base_dir))
     except ValueError:
-        return str(candidate)
+        name = str(candidate)
+    try:
+        mtime = datetime.fromtimestamp(candidate.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    except OSError:
+        return name
+    return f"{mtime} · {name}"
 
 
 def _records_from_df_task(df_task: pd.DataFrame) -> list[QCRecord]:
@@ -288,7 +298,7 @@ def _show_import_confirmation_dialog(
         else:
             st.subheader(INFO_MESSAGES["preview_header"])
             st.caption(f"Showing records for workflow: **{payload['filter_label']}**")
-            st.dataframe(payload["preview_df"], width="stretch")
+            st.dataframe(payload["preview_df"].head(PREVIEW_DF_ROWS), width="stretch")
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
@@ -568,6 +578,7 @@ def _display_csv_upload(
         if selected_label != "(none)":
             selected_index = file_labels.index(selected_label)
             selected_local_path = local_resume_files[selected_index]
+            st.caption(f"Selected: `{selected_local_path.name}`")
             load_selected_local_file = st.button("📂 Load Selected Output File", key="load_selected_output_file", width="stretch")
     elif local_output_dir:
         st.caption(f"No status/checkpoint TSV files found in output directory: {local_output_dir}")
