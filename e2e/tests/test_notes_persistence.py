@@ -9,35 +9,19 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from conftest import two_subject_qc_config as qc_config
-from constants import MESSAGES, PANEL_CONFIG, QC_RATINGS
+from constants import MESSAGES, QC_RATINGS
 from shared.app_utils import (
     choose_radio_option,
     click_button,
-    click_form_submit,
     current_subject_id,
     fill_text_area_and_blur,
-    fill_text_input,
     get_text_area,
-    uncheck_checkbox,
 )
+from shared.flows import start_qc_session
 
 pytestmark = pytest.mark.flow
 
 NOTE_TEXT = "flagged: motion artifact on frontal slices"
-
-
-def _start_qc(app: Page) -> None:
-    """Submit the rater form and land on the first subject.
-
-    Niivue is intentionally not loaded for this test: it renders a real 3D MRI
-    volume client-side, which takes tens of seconds to finish loading and
-    keeps `wait_for_app_run`'s skeleton check blocked that whole time for no
-    benefit here -- this spec is about the notes box, not the viewer panels.
-    Montage-only keeps every rerun (including the two navigations below) fast.
-    """
-    fill_text_input(app, MESSAGES["rater_id_prompt"], "notes-tester")
-    uncheck_checkbox(app, PANEL_CONFIG["niivue"]["label"])
-    click_form_submit(app, MESSAGES["rater_form_button"])
 
 
 def test_note_survives_navigating_away_and_back(app: Page) -> None:
@@ -54,7 +38,7 @@ def test_note_survives_navigating_away_and_back(app: Page) -> None:
     a bug, but a real precondition for this spec that isn't obvious from the
     "Given" clause alone.
     """
-    _start_qc(app)
+    start_qc_session(app, "notes-tester")
     subject_label = current_subject_id(app)
 
     choose_radio_option(app, QC_RATINGS[0])

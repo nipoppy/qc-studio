@@ -9,58 +9,19 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from conftest import two_subject_qc_config as qc_config
-from constants import MESSAGES, PANEL_CONFIG
-from shared.app_utils import (
-    click_button,
-    click_form_submit,
-    current_subject_id,
-    fill_text_input,
-    get_by_key,
-    get_text_area,
-    set_slider_value,
-    uncheck_checkbox,
-)
+from constants import MESSAGES
+from shared.app_utils import click_button, current_subject_id, get_by_key, get_text_area
+from shared.flows import AUTOPLAY_SLIDER_MIN, start_autoplay, start_qc_session
 
 pytestmark = pytest.mark.flow
 
 
-#: The landing-page slider allows 5-15 seconds; use its minimum to keep this
-#: test as short as the app permits.
-AUTOPLAY_DURATION_SECONDS = 5
-AUTOPLAY_SLIDER_MIN = 5
-AUTOPLAY_SLIDER_MAX = 15
+#: Use the slider's minimum to keep this test as short as the app permits.
+AUTOPLAY_DURATION_SECONDS = AUTOPLAY_SLIDER_MIN
 #: try_autoplay_advance_if_due only fires duration + AUTOPLAY_ADVANCE_GRACE_SECONDS
 #: (0.3s) after Play; this is what we wait past to prove a page that *should*
 #: have advanced (were autoplay still running) did not.
 AUTOPLAY_SETTLE_WAIT_MS = int((AUTOPLAY_DURATION_SECONDS + 0.3 + 3) * 1000)
-
-
-def _start_qc_with_autoplay_running(app: Page) -> None:
-    """Submit the rater form with a short autoplay duration, then press Play.
-
-    Every viewer spec needs a rater on a subject with autoplay ticking; this is
-    the shared path to that state.
-
-    Unchecks the Niivue panel: it renders a real 3D MRI volume client-side,
-    which takes tens of seconds to finish loading -- far longer than the
-    whole autoplay window (2-10s) -- and keeps `wait_for_app_run`'s skeleton
-    check blocked that whole time. Montage-only keeps each rerun fast enough
-    that the standard helpers stay usable and the timing in this test means
-    what it says.
-    """
-    fill_text_input(app, MESSAGES["rater_id_prompt"], "autoplay-tester")
-    # Niivue is intentionally not loaded for this test -- see docstring above.
-    uncheck_checkbox(app, PANEL_CONFIG["niivue"]["label"])
-    set_slider_value(
-        app,
-        MESSAGES["autoplay_duration_label"],
-        AUTOPLAY_DURATION_SECONDS,
-        minimum=AUTOPLAY_SLIDER_MIN,
-        maximum=AUTOPLAY_SLIDER_MAX,
-    )
-    click_form_submit(app, MESSAGES["rater_form_button"])
-
-    click_button(app, MESSAGES["play_button"])
 
 
 def test_add_notes_pauses_autoplay(app: Page) -> None:
@@ -70,7 +31,8 @@ def test_add_notes_pauses_autoplay(app: Page) -> None:
     notes box for that task is no longer disabled, and after the full autoplay
     duration has elapsed the app is still showing the same subject.
     """
-    _start_qc_with_autoplay_running(app)
+    start_qc_session(app, "autoplay-tester", autoplay_duration=AUTOPLAY_DURATION_SECONDS)
+    start_autoplay(app)
 
     banner = get_by_key(app, "autoplay_countdown_banner")
     expect(banner).to_be_visible()

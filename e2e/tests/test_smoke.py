@@ -33,7 +33,9 @@ def test_rater_form_is_reachable(app: Page) -> None:
     """The rater form's input and submit button can be located.
 
     Proves the selector helpers work. Note the submit button uses the form
-    submit test id, not the plain button one.
+    submit test id, not the plain button one, and that
+    MESSAGES["rater_form_button"] is authored with markdown markup that never
+    reaches the DOM -- the getter matches on the rendered label.
     """
-    get_text_input(app, MESSAGES["rater_id_prompt"])
-    get_form_submit_button(app, MESSAGES["rater_form_button"])
+    expect(get_text_input(app, MESSAGES["rater_id_prompt"])).to_be_visible()
+    expect(get_form_submit_button(app, MESSAGES["rater_form_button"])).to_be_enabled()
