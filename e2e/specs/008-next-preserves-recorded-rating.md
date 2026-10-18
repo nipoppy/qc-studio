@@ -1,4 +1,4 @@
-# Spec: Next navigates on without discarding an already-recorded rating
+# Spec: Next saves the current page's rating before advancing
 
 ---
 
@@ -8,14 +8,14 @@
 
 **Priority:** medium
 
-**Why end-to-end:** "Next" and "Confirm and Next" both advance, and their
-tooltips say the difference is saving -- but the rating radio already saves on
-change, so what Next actually does to a rating is unclear from reading the
-code. This spec pins down the current behaviour in the browser, where the two
-buttons genuinely differ. Its real value is as the safety net for a decision
-that has not been made yet: if the two buttons are later collapsed into one,
-this test is what says whether the collapse changed anything a rater would
-notice.
+**Why end-to-end:** "Next" used to be a pure navigation button sitting beside
+a separate "Confirm and Next"; those have since been collapsed into one
+button that records the page and then advances. That makes saving a
+*side-effect of navigating*, which is only observable in a browser: the click
+has to reach `_record_all_qc_tasks` before the page is torn down. If that
+ordering broke, a rater's last rating on each subject would vanish as they
+moved on -- the most expensive possible failure, since it would hit every
+subject but the last.
 
 ---
 
@@ -26,8 +26,7 @@ rated the first subject PASS.
 
 ### When
 
-The rater clicks "Next ▶️" -- the plain navigation button, not "Confirm and
-Next".
+The rater clicks "Next ▶️".
 
 ### Then
 
@@ -35,33 +34,34 @@ The app shows the next subject.
 
 ### And (optional)
 
-Navigating back, the first subject is still rated PASS -- moving on with the
-plain Next did not discard it.
+Navigating back, the first subject is still rated PASS.
 
 ---
 
 ### Copy used
 
-MESSAGES["next_button"]              "Next ▶️"
-MESSAGES["previous_button"]          "◀️ Previous"
-MESSAGES["confirm_next_button"]      named only to say which button is *not* used
-QC_RATINGS                           ["PASS", "FAIL", "UNCERTAIN"]
+MESSAGES["next_button"]          "Next ▶️"
+MESSAGES["previous_button"]      "◀️ Previous"
+QC_RATINGS                       ["PASS", "FAIL", "UNCERTAIN"]
 
 ### Notes
 
-- **Needs the same multi-subject config as spec 003** -- the default
-  participant list has a single subject and the Next button is not rendered at
-  all when there is no next page. Rebind the shared fixture:
+- **This spec was rewritten.** It originally contrasted "Next" with "Confirm
+  and Next", which no longer exists -- the buttons were merged into the single
+  `pag_next`, which saves and then advances. Nothing in the suite covers the
+  old two-button behaviour because that behaviour is gone.
+- Needs the multi-subject config; the Next button is not rendered at all when
+  there is no next page:
 
       from conftest import two_subject_qc_config as qc_config
-- Next and Confirm-and-Next are separate buttons rendered near each other in
-  the sidebar. `get_button` filters by label text, and "Next ▶️" is a
-  substring concern -- check the helper does not also match the confirm
-  button before trusting the click landed on the right one. If it does, that
-  is an `app_utils.py` fix, not a test workaround.
-- This spec deliberately overlaps spec 003: 003 proves a rating survives a
-  round trip at all, this one proves the *plain* Next specifically does not
-  drop it. Write 003 first -- if it fails, this one cannot be interpreted.
-- If this test ever disagrees with its "And" clause -- that is, if Next really
-  does lose a rating -- that is a product finding, not a test bug. Say so
-  rather than adjusting the spec to match the behaviour.
+
+- Overlaps spec 003 deliberately. 003 proves a rating survives a round trip at
+  all; this one proves the *save-then-advance ordering* inside the Next
+  handler specifically. Write 003 first -- if it fails, this one cannot be
+  interpreted.
+- Uncheck the Niivue panel in setup. It renders a real 3D volume client-side
+  and keeps `wait_for_app_run`'s skeleton check blocked for tens of seconds
+  per rerun, and this spec navigates twice. See
+  `notes-autoplay-test-debugging.md`.
+- Both nav buttons have explicit keys (`pag_next`, `pag_prev`), so `get_by_key`
+  avoids any risk of a label-substring collision.
