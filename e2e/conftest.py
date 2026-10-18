@@ -35,6 +35,25 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from shared.waits import wait_for_app_loaded  # noqa: E402
 
+#: Run every test in both engines by default. Chromium and Firefox render
+#: Streamlit's DOM differently, and this suite leans hard on that DOM, so a
+#: selector working in one is not proof it works in the other.
+DEFAULT_BROWSERS = ["chromium", "firefox"]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Default to both browsers, while letting --browser override.
+
+    pytest-playwright's `--browser` is an *append* option, so putting the
+    defaults in pytest.ini's addopts would make `--browser firefox` mean
+    "chromium, firefox, and firefox again" rather than "firefox only".
+    Setting them here instead -- only when the command line named none --
+    keeps `pytest e2e/` covering both and `pytest e2e/ --browser firefox`
+    meaning exactly what it looks like.
+    """
+    if not config.option.browser:
+        config.option.browser = list(DEFAULT_BROWSERS)
+
 
 @dataclass(frozen=True)
 class QCAppConfig:

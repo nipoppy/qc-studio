@@ -78,14 +78,9 @@ jobs:
 
       - name: Run end-to-end tests
         # `streamlit` must be on PATH: conftest.py launches the app itself.
-        #
-        # -o addopts=... replaces pytest.ini's addopts rather than adding to
-        # it. That matters: pytest.ini already lists both browsers, and
-        # --browser is *additive*, so passing --browser chromium on top of it
-        # would run chromium twice and firefox once.
+        # Naming browsers here replaces conftest.py's default of both.
         run: |
           python -m pytest e2e/ \
-            -o addopts="-ra --tb=short" \
             $(for b in ${{ steps.browsers.outputs.list }}; do printf -- '--browser %s ' "$b"; done) \
             --screenshot=only-on-failure \
             --video=retain-on-failure
