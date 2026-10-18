@@ -14,9 +14,9 @@ from shared.app_utils import (
     choose_radio_option,
     click_button,
     click_form_submit,
+    current_subject_id,
     fill_text_area_and_blur,
     fill_text_input,
-    get_current_subject_label,
     get_text_area,
     uncheck_checkbox,
 )
@@ -55,17 +55,17 @@ def test_note_survives_navigating_away_and_back(app: Page) -> None:
     "Given" clause alone.
     """
     _start_qc(app)
-    subject_label = get_current_subject_label(app).inner_text()
+    subject_label = current_subject_id(app)
 
     choose_radio_option(app, QC_RATINGS[0])
     click_button(app, MESSAGES["add_notes_button"])
     fill_text_area_and_blur(app, MESSAGES["qc_notes_prompt"], NOTE_TEXT)
 
     click_button(app, MESSAGES["next_button"])
-    expect(get_current_subject_label(app)).not_to_have_text(subject_label)
+    assert current_subject_id(app) != subject_label
 
     click_button(app, MESSAGES["previous_button"])
-    expect(get_current_subject_label(app)).to_have_text(subject_label)
+    assert current_subject_id(app) == subject_label
 
     notes_box = get_text_area(app, MESSAGES["qc_notes_prompt"]).locator("textarea")
     expect(notes_box).to_have_value(NOTE_TEXT)

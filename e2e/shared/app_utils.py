@@ -30,6 +30,32 @@ from shared.waits import wait_for_app_run
 LabelType = "str | re.Pattern[str]"
 
 
+#: Streamlit renders markdown inside widget labels, so a constant is not
+#: always what ends up in the DOM. MESSAGES["rater_form_button"] is authored
+#: as "**:green[Continue to QC] 🚀**" but renders as "Continue to QC 🚀" --
+#: bold and colour become styling, not text. Every label-based getter below
+#: matches on the *rendered* form.
+_MD_EMPHASIS_RE = re.compile(r"(\*{1,3}|_{1,3})(.+?)\1", re.DOTALL)
+_MD_COLOR_RE = re.compile(r":[a-z-]+\[([^\]]*)\]")
+
+
+def rendered_label(label: LabelType) -> LabelType:
+    """A widget label as it appears on screen, with markdown markup removed.
+
+    Pass constants from `ui/constants.py` through this before using them as a
+    text filter. Regex labels are returned untouched.
+    """
+    if isinstance(label, re.Pattern):
+        return label
+    text = label
+    for _ in range(3):  # nested markup, e.g. bold wrapping a colour span
+        collapsed = _MD_COLOR_RE.sub(r"\1", _MD_EMPHASIS_RE.sub(r"\2", text))
+        if collapsed == text:
+            break
+        text = collapsed
+    return text.strip()
+
+
 # --------------------------------------------------------------------------
 # Finding widgets
 # --------------------------------------------------------------------------
@@ -48,13 +74,13 @@ def get_by_key(page: Page, key: str) -> Locator:
 
 def get_text_input(page: Page, label: LabelType) -> Locator:
     """The text input whose label matches (e.g. MESSAGES["rater_id_prompt"])."""
-    element = page.get_by_test_id("stTextInput").filter(has_text=label)
+    element = page.get_by_test_id("stTextInput").filter(has_text=rendered_label(label))
     expect(element).to_be_visible()
     return element
 
 
 def get_text_area(page: Page, label: LabelType) -> Locator:
-    element = page.get_by_test_id("stTextArea").filter(has_text=label)
+    element = page.get_by_test_id("stTextArea").filter(has_text=rendered_label(label))
     expect(element).to_be_visible()
     return element
 
@@ -64,7 +90,7 @@ def get_radio_group(page: Page, label: LabelType) -> Locator:
 
     e.g. get_radio_group(app, MESSAGES["experience_prompt"])
     """
-    label_locator = page.get_by_test_id("stWidgetLabel").filter(has_text=label)
+    label_locator = page.get_by_test_id("stWidgetLabel").filter(has_text=rendered_label(label))
     element = page.get_by_test_id("stRadio").filter(has=label_locator)
     expect(element).to_be_visible()
     return element
@@ -79,21 +105,21 @@ def get_radio_option(page: Page, option_label: LabelType) -> Locator:
     version's DOM. Re-check against the installed Streamlit if this stops
     matching.
     """
-    element = page.locator('[data-baseweb="radio"]').filter(has_text=option_label)
+    element = page.locator('[data-baseweb="radio"]').filter(has_text=rendered_label(option_label))
     expect(element).to_be_visible()
     return element
 
 
 def get_checkbox(page: Page, label: LabelType) -> Locator:
     """A checkbox, located by its label -- QC-Studio's panel selection."""
-    element = page.get_by_test_id("stCheckbox").filter(has_text=label)
+    element = page.get_by_test_id("stCheckbox").filter(has_text=rendered_label(label))
     expect(element).to_be_visible()
     return element
 
 
 def get_slider(page: Page, label: LabelType) -> Locator:
     """A slider, located by its label (e.g. the autoplay duration slider)."""
-    element = page.get_by_test_id("stSlider").filter(has_text=label)
+    element = page.get_by_test_id("stSlider").filter(has_text=rendered_label(label))
     expect(element).to_be_visible()
     return element
 
@@ -106,7 +132,7 @@ def get_button(page: Page, label: LabelType) -> Locator:
     positioning, not two widgets. ``:visible`` keeps this a single-element
     locator so strict mode (and `.click()`) still works for those buttons.
     """
-    element = page.get_by_test_id("stButton").filter(has_text=label).locator("button:visible")
+    element = page.get_by_test_id("stButton").filter(has_text=rendered_label(label)).locator("button:visible")
     expect(element).to_be_visible()
     return element
 
@@ -117,7 +143,7 @@ def get_form_submit_button(page: Page, label: LabelType) -> Locator:
     QC-Studio's rater form uses st.form_submit_button, which renders with a
     *different* test id than st.button -- using get_button here finds nothing.
     """
-    element = page.get_by_test_id("stFormSubmitButton").filter(has_text=label).locator("button")
+    element = page.get_by_test_id("stFormSubmitButton").filter(has_text=rendered_label(label)).locator("button")
     expect(element).to_be_visible()
     return element
 
@@ -240,17 +266,36 @@ def upload_file(page: Page, file_path: Path) -> None:
 _LEADING_EMOJI_RE = re.compile(r"^[\U0001F300-\U0001FAFF☀-➿←-⇿️‍]+\s*")
 
 
-def get_current_subject_label(page: Page) -> Locator:
-    """The participant/session heading atop the QC viewer (e.g. "sub-01 · ses-01").
+#: The sidebar subject list marks the row the rater is on with this suffix
+#: (``views/sidebar_cohort_nav.py``). It is currently the *only* place the app
+#: says which subject is on screen: the viewer's own heading
+#: (``compact_session_label``) is commented out in ``qc_viewer.py``.
+_CURRENT_ROW_SUFFIX = "— current"
 
-    Matches the format of ``utils.cohort.compact_session_label``, which is the
-    only copy in the app that joins participant and session with "·" -- a
-    stable marker for "which subject is currently on screen" without
-    depending on any specific dataset's IDs.
-    """
-    element = page.get_by_text(re.compile(r"^sub-.*·.*$"))
+#: "⬜ sub-ED01 · ses-01 — current" -> "sub-ED01 · ses-01". The ✅/⬜ mark
+#: flips as soon as the subject is rated, so the row's full text is *not*
+#: stable across a test; only this core is.
+_SUBJECT_CORE_RE = re.compile(r"(sub-\S+(?:\s*·\s*\S+)?)")
+
+
+def get_current_subject_row(page: Page) -> Locator:
+    """The sidebar subject-list row for the subject currently on screen."""
+    element = page.get_by_test_id("stButton").filter(has_text=_CURRENT_ROW_SUFFIX)
     expect(element).to_be_visible()
     return element
+
+
+def current_subject_id(page: Page) -> str:
+    """Which subject is on screen, e.g. "sub-ED01 · ses-01".
+
+    Use this to compare subjects across a navigation. Prefer it over the row's
+    raw text, which also carries the ✅/⬜ completion mark and so changes when
+    the subject is rated, not only when it is navigated away from.
+    """
+    text = get_current_subject_row(page).inner_text()
+    match = _SUBJECT_CORE_RE.search(text)
+    assert match, f"no subject id in current row: {text!r}"
+    return match.group(1).strip()
 
 
 def expect_text_visible(page: Page, text: LabelType) -> None:
@@ -260,14 +305,16 @@ def expect_text_visible(page: Page, text: LabelType) -> None:
 
         expect_text_visible(app, ERROR_MESSAGES["invalid_rater_id"])
 
-    Handles messages authored with a leading emoji (e.g.
-    ERROR_MESSAGES["no_panel_selected"]) that Streamlit strips out and
-    renders as a separate icon instead.
+    Handles the two ways a constant can differ from what is on screen:
+    markdown markup in the label (see `rendered_label`), and a leading emoji
+    that Streamlit strips out to render as a separate icon (e.g.
+    ERROR_MESSAGES["no_panel_selected"]).
     """
     if isinstance(text, re.Pattern):
         expect(page.get_by_text(text)).to_be_visible()
         return
 
+    text = rendered_label(text)
     stripped = _LEADING_EMOJI_RE.sub("", text)
     if stripped == text:
         expect(page.get_by_text(text)).to_be_visible()
