@@ -1,0 +1,102 @@
+name: End-to-end tests
+
+# Deliberately NOT run on every push or PR. These start a real Streamlit
+# server and drive it in Chromium and Firefox, so a run costs minutes rather
+# than seconds -- too slow to sit in front of every commit, and most changes
+# cannot break them.
+#
+# Ask for a run in either of two ways:
+#   * press "Run workflow" on the Actions tab (any branch), or
+#   * add the "run-e2e" label to a pull request.
+#
+# The label is the useful one during review: put it on a PR that touches the
+# UI and the run reports back on the PR itself. Removing and re-adding the
+# label runs it again.
+on:
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: "Which browser to run"
+        type: choice
+        options: [both, chromium, firefox]
+        default: both
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    # On a pull_request, only run when the "run-e2e" label is present -- the
+    # `synchronize` trigger above then keeps re-running it on later pushes to
+    # an already-labelled PR, instead of needing the label re-applied.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'run-e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r e2e/requirements-e2e.txt
+
+      - name: Resolve browsers to install
+        id: browsers
+        run: |
+          case "${{ github.event.inputs.browser || 'both' }}" in
+            chromium) echo "list=chromium" >> "$GITHUB_OUTPUT" ;;
+            firefox)  echo "list=firefox"  >> "$GITHUB_OUTPUT" ;;
+            *)        echo "list=chromium firefox" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          # The key includes the pinned pytest-playwright line, so a version
+          # bump fetches fresh binaries instead of reusing incompatible ones.
+          key: playwright-${{ runner.os }}-${{ steps.browsers.outputs.list }}-${{ hashFiles('e2e/requirements-e2e.txt') }}
+          path: ~/.cache/ms-playwright
+
+      - name: Install browsers
+        # --with-deps pulls the system libraries the browsers need; a bare
+        # runner does not have them. Always run it: the cache restores the
+        # browser binaries but not the apt packages.
+        run: playwright install --with-deps ${{ steps.browsers.outputs.list }}
+
+      - name: Run end-to-end tests
+        # `streamlit` must be on PATH: conftest.py launches the app itself.
+        #
+        # -o addopts=... replaces pytest.ini's addopts rather than adding to
+        # it. That matters: pytest.ini already lists both browsers, and
+        # --browser is *additive*, so passing --browser chromium on top of it
+        # would run chromium twice and firefox once.
+        run: |
+          python -m pytest e2e/ \
+            -o addopts="-ra --tb=short" \
+            $(for b in ${{ steps.browsers.outputs.list }}; do printf -- '--browser %s ' "$b"; done) \
+            --screenshot=only-on-failure \
+            --video=retain-on-failure
+
+      - name: Upload failure artifacts
+        # The whole point of running in CI is seeing what broke on a machine
+        # you cannot open a browser on.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
