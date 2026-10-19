@@ -243,6 +243,21 @@ def set_slider_value(page: Page, label: LabelType, value: int, minimum: int, max
         handle.press("ArrowRight")
 
 
+def expect_radio_selected(page: Page, option_label: LabelType, *, selected: bool = True) -> None:
+    """Assert whether a radio option is the chosen one.
+
+    The QC rating radio starts with *nothing* selected, so "PASS is selected"
+    is a real assertion rather than a default. Checking the option's `<input>`
+    is what makes it real: all three labels are on screen at all times, so
+    asserting the text is visible proves nothing.
+    """
+    option = get_radio_option(page, option_label).locator("input")
+    if selected:
+        expect(option).to_be_checked()
+    else:
+        expect(option).not_to_be_checked()
+
+
 def choose_radio_option(page: Page, option_label: LabelType) -> None:
     get_radio_option(page, option_label).click()
     wait_for_app_run(page)
