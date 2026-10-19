@@ -143,7 +143,10 @@ def output_files(output_dir: Path):
     """
 
     def _listing() -> set[Path]:
-        return set(output_dir.iterdir()) if output_dir.exists() else set()
+        # Recursive: checkpoints land in an <output_dir>/checkpoints/
+        # subdirectory, so a flat iterdir() would report the directory and
+        # never the file inside it.
+        return {p for p in output_dir.rglob("*") if p.is_file()} if output_dir.exists() else set()
 
     before = _listing()
     return lambda: _listing() - before

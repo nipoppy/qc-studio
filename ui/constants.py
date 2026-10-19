@@ -137,6 +137,9 @@ MESSAGES = {
     "rater_form_button": "**:green[Continue to QC] 🚀**",
     "congratulations_title": "**🎉 QC Complete! Congratulations! 🎉**",
     "export_results_button": "💾 Export Final Results",
+    "overwrite_confirm_button": "Overwrite existing file",
+    "overwrite_warning": "⚠️ {label} will overwrite the existing file: {target}",
+    "overwrite_pending_warning": "⚠️ Existing export file will be overwritten: {target}",
     "previous_button": "◀️ Previous",
     "nav_tooltip_previous": ("Previous: navigates to the previous subject or session without saving any rating changes."),
     "nav_tooltip_next": (

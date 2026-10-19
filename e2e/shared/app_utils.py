@@ -96,6 +96,16 @@ def get_radio_group(page: Page, label: LabelType) -> Locator:
     return element
 
 
+def radio_options(page: Page, option_label: LabelType) -> Locator:
+    """Every radio option with this label, without asserting any is visible.
+
+    `get_radio_option` asserts visibility and so resolves to one element; use
+    this when the count itself is the question, as on a multi-task page where
+    each task renders its own PASS/FAIL/UNCERTAIN group.
+    """
+    return page.locator('[data-baseweb="radio"]').filter(has_text=rendered_label(option_label))
+
+
 def get_radio_option(page: Page, option_label: LabelType) -> Locator:
     """A single option inside a radio group (e.g. an EXPERIENCE_LEVELS entry).
 
@@ -184,6 +194,21 @@ def fill_text_input(page: Page, label: LabelType, value: str) -> None:
     button is pressed, so there is nothing to wait for yet.
     """
     get_text_input(page, label).locator("input").fill(value)
+
+
+def fill_text_input_and_blur(page: Page, key: str, value: str) -> None:
+    """Type into a text input that is *not* inside a form, and commit it.
+
+    `fill_text_input` deliberately does not wait, because the fields it was
+    written for sit inside `st.form` where nothing happens until submit. A
+    standalone `st.text_input` is different: it reruns the script, but only
+    once it loses focus. Located by key, since such inputs often collapse
+    their label.
+    """
+    box = get_by_key(page, key).locator("input")
+    box.fill(value)
+    box.press("Tab")
+    wait_for_app_run(page)
 
 
 def fill_text_area_and_blur(page: Page, label: LabelType, value: str) -> None:

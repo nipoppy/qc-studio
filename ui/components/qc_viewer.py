@@ -1205,7 +1205,7 @@ def _require_overwrite_confirmation(file_path: str | Path, label: str) -> bool:
         st.session_state.pop("_pending_overwrite_path", None)
         return True
     st.session_state["_pending_overwrite_path"] = str(target)
-    st.warning(f"⚠️ {label} will overwrite the existing file: {target}")
+    st.warning(MESSAGES["overwrite_warning"].format(label=label, target=target))
     return False
 
 
