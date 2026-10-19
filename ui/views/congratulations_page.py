@@ -42,7 +42,11 @@ def _require_overwrite_confirmation(file_path: str | Path, label: str) -> bool:
         st.session_state.pop(OVERWRITE_CONFIRMATION_PATH_KEY, None)
         return True
     st.session_state[OVERWRITE_CONFIRMATION_PATH_KEY] = str(target)
-    st.warning(f"⚠️ {label} will overwrite the existing file: {target}")
+    st.warning(
+        f"⚠️ {label} will update the existing file: {target}. "
+        "Rows with the same participant, session, pipeline, task and facet "
+        "are replaced; all other rows are kept."
+    )
     return False
 
 
@@ -199,8 +203,17 @@ def show_congratulations_page(
             qc_task=export_task_default,
         )
         if st.session_state.get(OVERWRITE_CONFIRMATION_PATH_KEY) == str(export_target):
-            st.warning(f"⚠️ Existing export file will be overwritten: {export_target}")
-            if st.button("Overwrite existing file", key="confirm_congrats_overwrite", type="primary", width="stretch"):
+            st.warning(
+                f"⚠️ Existing export file will be updated: {export_target}. "
+                "Matching rows are replaced with the new ratings; "
+                "other rows in the file are kept."
+            )
+            if st.button(
+                "Continue export",
+                key="confirm_congrats_overwrite",
+                type="primary",
+                width="stretch",
+            ):
                 st.session_state.pop(OVERWRITE_CONFIRMATION_PATH_KEY, None)
                 export_rows = SessionManager.get_latest_qc_records_per_dedup(None)
                 _export_qc_results(
