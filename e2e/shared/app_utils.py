@@ -97,27 +97,36 @@ def get_radio_group(page: Page, label: LabelType) -> Locator:
 
 
 def radio_options(page: Page, option_label: LabelType) -> Locator:
-    """Every radio option with this label, without asserting any is visible.
+    """Every radio input with this label, without asserting any is visible.
 
-    `get_radio_option` asserts visibility and so resolves to one element; use
-    this when the count itself is the question, as on a multi-task page where
-    each task renders its own PASS/FAIL/UNCERTAIN group.
+    Located by ARIA role rather than by Streamlit's internal markup: the
+    BaseWeb attributes this used to rely on changed between Streamlit 1.58
+    and 1.65, which broke every rating test in CI while passing locally. The
+    role and accessible name are part of the rendered contract and have been
+    stable across both.
+
+    Use when the count is the question, as on a multi-task page where each
+    task renders its own PASS/FAIL/UNCERTAIN group.
     """
-    return page.locator('[data-baseweb="radio"]').filter(has_text=rendered_label(option_label))
+    return page.get_by_role("radio", name=rendered_label(option_label), exact=True)
 
 
 def get_radio_option(page: Page, option_label: LabelType) -> Locator:
-    """A single option inside a radio group (e.g. an EXPERIENCE_LEVELS entry).
-
-    UNVERIFIED test id, corrected: the installed Streamlit version renders
-    each option as a BaseWeb `<label data-baseweb="radio">`, not with a
-    `stRadioOption` test id -- there's no such test id anywhere in this
-    version's DOM. Re-check against the installed Streamlit if this stops
-    matching.
-    """
-    element = page.locator('[data-baseweb="radio"]').filter(has_text=rendered_label(option_label))
-    expect(element).to_be_visible()
+    """A single radio option (e.g. a QC_RATINGS or EXPERIENCE_LEVELS entry)."""
+    element = radio_options(page, option_label)
+    expect(element).to_be_attached()
     return element
+
+
+def _radio_click_target(page: Page, option_label: LabelType) -> Locator:
+    """The visible element to click to select a radio option.
+
+    Streamlit keeps the real <input> off-screen, so clicking it directly
+    fails Playwright's actionability checks. Its enclosing <label> is what a
+    person clicks, and the browser forwards that to the input -- found by
+    walking up from the input so it does not depend on the label's markup.
+    """
+    return get_radio_option(page, option_label).locator("xpath=ancestor::label[1]")
 
 
 def get_checkbox(page: Page, label: LabelType) -> Locator:
@@ -276,7 +285,7 @@ def expect_radio_selected(page: Page, option_label: LabelType, *, selected: bool
     is what makes it real: all three labels are on screen at all times, so
     asserting the text is visible proves nothing.
     """
-    option = get_radio_option(page, option_label).locator("input")
+    option = get_radio_option(page, option_label)
     if selected:
         expect(option).to_be_checked()
     else:
@@ -284,7 +293,7 @@ def expect_radio_selected(page: Page, option_label: LabelType, *, selected: bool
 
 
 def choose_radio_option(page: Page, option_label: LabelType) -> None:
-    get_radio_option(page, option_label).click()
+    _radio_click_target(page, option_label).click()
     wait_for_app_run(page)
 
 

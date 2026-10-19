@@ -9,8 +9,8 @@ import pytest
 from playwright.sync_api import Page
 
 from conftest import QCAppConfig
-from constants import MESSAGES, QC_RATINGS
-from shared.app_utils import click_button, current_subject_id, radio_options
+from constants import DEFAULT_QC_RATING_NONE, MESSAGES, QC_RATINGS
+from shared.app_utils import choose_radio_option, click_button, current_subject_id, radio_options
 from shared.waits import wait_for_app_run
 from shared.flows import start_qc_session
 
@@ -47,8 +47,10 @@ def test_several_tasks_are_shown(app: Page) -> None:
     reason=(
         "BUG: the Next tooltip promises 'When more than one QC task is shown, "
         "set PASS, FAIL, or UNCERTAIN for every task before continuing', but "
-        "nothing enforces it -- Next advances with tasks left unrated, and "
-        "those tasks are never recorded. Remove this marker once fixed."
+        "nothing enforces it. Verified with the default QC rating set to None, "
+        "so the unrated tasks really are unrated -- at the shipped default of "
+        "PASS every task counts as rated and the gate would never be reached. "
+        "Remove this marker once fixed."
     ),
 )
 def test_next_requires_every_task_to_be_rated(app: Page) -> None:
@@ -56,6 +58,9 @@ def test_next_requires_every_task_to_be_rated(app: Page) -> None:
     When the rater clicks Next,
     Then the app does not advance to the next subject.
     """
+    # Without this the shipped default (PASS) pre-rates every task, so Next
+    # advancing would prove nothing.
+    choose_radio_option(app, DEFAULT_QC_RATING_NONE)
     start_qc_session(app, "multitask-gate-tester")
     subject = current_subject_id(app)
 
