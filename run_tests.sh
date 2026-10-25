@@ -14,7 +14,7 @@ echo -e "${BLUE}QC-Studio UI Test Suite${NC}\n"
 # Check if pytest is installed
 if ! command -v pytest &> /dev/null; then
     echo -e "${RED}Error: pytest is not installed${NC}"
-    echo "Install it with: pip install -r requirements-test.txt"
+    echo "Install it with: python -m pip install . --group dev"
     exit 1
 fi
 

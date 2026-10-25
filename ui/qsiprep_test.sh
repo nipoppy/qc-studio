@@ -35,7 +35,7 @@ elif command -v streamlit >/dev/null 2>&1; then
 	STREAMLIT_CMD="streamlit"
 else
 	echo "❌ streamlit not found. Activate the project venv first:"
-	echo "   cd ${SCRIPT_DIR}/.. && source .venv/bin/activate && pip install -r requirements.txt"
+	echo "   cd ${SCRIPT_DIR}/.. && source .venv/bin/activate && pip install ."
 	exit 1
 fi
 

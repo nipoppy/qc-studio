@@ -116,15 +116,11 @@ Tests for layout.py module:
 ### Install Test Dependencies
 
 ```bash
-pip install -r requirements-test.txt
-```
+# uv
+uv pip install -r pyproject.toml --group dev
 
-Or add to your existing requirements:
-
-```bash
-pytest>=7.0
-pytest-mock>=3.10
-pytest-cov>=4.0
+# pip (25.1+)
+python -m pip install --group dev
 ```
 
 ## Running Tests
