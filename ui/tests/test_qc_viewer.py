@@ -33,7 +33,7 @@ from components.qc_viewer import (
 )
 from managers.session_manager import SessionManager
 from models import QCRecord
-from utils.data_loaders import _build_montage_display_data
+from utils.data_loaders import build_montage_display_data
 from utils.export import save_qc_results_to_csv
 
 pytestmark = pytest.mark.unit
@@ -137,16 +137,18 @@ class TestCleanFilename:
 
     def test_build_montage_display_data_keeps_combined_and_individual_tabs(self, tmp_path):
         """The loader should add a combined montage grid first while preserving one tab per original image."""
+        from PIL import Image
+
         img_a = tmp_path / "a.png"
-        img_a.write_bytes(b"fake")
+        Image.new("RGB", (4, 4)).save(img_a)
         img_b = tmp_path / "b.png"
-        img_b.write_bytes(b"fake")
+        Image.new("RGB", (4, 4)).save(img_b)
 
         with (
             patch("utils.data_loaders._load_image_from_file", side_effect=lambda p, dpi=96: MagicMock()),
             patch("utils.image_processing.create_grid_montage", return_value=MagicMock()),
         ):
-            result = _build_montage_display_data((str(img_a), str(img_b)))
+            result = build_montage_display_data((str(img_a), str(img_b)))
 
         assert list(result.keys())[0] == "montage"
         assert len(result) == 3
@@ -172,6 +174,73 @@ class TestCleanFilename:
 
         assert mock_tabs.call_args.args[0][0] == "Overview"
         assert mock_render.call_count == 3
+
+
+class TestMontageCache:
+    """Montage display data cache: file-signature keys and read-only values."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        qc_viewer_module._build_montage_display_data_cached.clear()
+        yield
+        qc_viewer_module._build_montage_display_data_cached.clear()
+
+    @staticmethod
+    def _write_png(path, size):
+        from PIL import Image
+
+        Image.new("RGB", size).save(path)
+        return path
+
+    def test_unchanged_files_are_built_once(self, tmp_path):
+        self._write_png(tmp_path / "a.png", (4, 4))
+        qc_config = {"montage_path": "a.png"}
+        with patch.object(qc_viewer_module, "build_montage_display_data", wraps=build_montage_display_data) as builder:
+            first = qc_viewer_module._load_montage_data_cached(str(tmp_path), qc_config, None, None)
+            second = qc_viewer_module._load_montage_data_cached(str(tmp_path), qc_config, None, None)
+
+        assert builder.call_count == 1
+        assert first is second
+
+    def test_regenerated_figure_is_reloaded(self, tmp_path):
+        import os
+
+        path = self._write_png(tmp_path / "a.png", (4, 4))
+        qc_config = {"montage_path": "a.png"}
+        before = qc_viewer_module._load_montage_data_cached(str(tmp_path), qc_config, None, None)
+
+        self._write_png(path, (8, 8))
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        after = qc_viewer_module._load_montage_data_cached(str(tmp_path), qc_config, None, None)
+
+        (content,) = [entry["content"] for entry in after.values()]
+        assert content == path.read_bytes()
+        assert after != before
+
+    def test_new_glob_match_is_picked_up(self, tmp_path):
+        self._write_png(tmp_path / "a.png", (4, 4))
+        qc_config = {"montage_path": "*.png"}
+        before = qc_viewer_module._load_montage_data_cached(str(tmp_path), qc_config, None, None)
+
+        self._write_png(tmp_path / "b.png", (4, 4))
+        after = qc_viewer_module._load_montage_data_cached(str(tmp_path), qc_config, None, None)
+
+        assert len(before) == 1
+        assert "montage" in after and len(after) == 3
+
+    def test_cached_value_is_read_only(self, tmp_path):
+        self._write_png(tmp_path / "a.png", (4, 4))
+        self._write_png(tmp_path / "b.png", (4, 4))
+        data = qc_viewer_module._load_montage_data_cached(str(tmp_path), {"montage_path": ["a.png", "b.png"]}, None, None)
+
+        with pytest.raises(TypeError):
+            data["montage"] = None
+        with pytest.raises(TypeError):
+            data["montage"]["content"] = b""
+
+    def test_no_montage_configured_returns_none(self, tmp_path):
+        assert qc_viewer_module._load_montage_data_cached(str(tmp_path), {"montage_path": None}, None, None) is None
 
 
 # critical

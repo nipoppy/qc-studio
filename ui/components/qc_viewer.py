@@ -14,6 +14,7 @@ from html import escape
 from pathlib import Path
 from constants import (
     MONTAGE_HEIGHT,
+    MONTAGE_CACHE_MAX_ENTRIES,
     MESSAGES,
     ERROR_MESSAGES,
     SUCCESS_MESSAGES,
@@ -24,7 +25,8 @@ from constants import (
     RATING_FACET_COLUMNS,
     DEFAULT_QC_RATING_NONE,
 )
-from utils.data_loaders import load_montage_data as _load_montage_data_uncached
+from utils.cache import files_signature, freeze
+from utils.data_loaders import build_montage_display_data, resolve_montage_paths
 from utils.config import parse_qc_config
 from utils.navigation import request_navigation_rerun
 from utils.path_helpers import sanitize_qc_task_slug
@@ -459,10 +461,27 @@ def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = Fal
     return st.session_state[state_key]
 
 
-@st.cache_data(show_spinner=False, max_entries=128)
+@st.cache_resource(show_spinner=False, max_entries=MONTAGE_CACHE_MAX_ENTRIES)
+def _build_montage_display_data_cached(file_signatures, max_montage_rows, max_montage_cols):
+    """Cached ``build_montage_display_data`` keyed on file signatures (see ``utils.cache``).
+
+    ``cache_resource`` hands back the same object on every hit instead of
+    unpickling a copy per rerun, so the result is frozen into a read-only mapping.
+    """
+    paths = tuple(path for path, _, _ in file_signatures)
+    return freeze(build_montage_display_data(paths, max_montage_rows, max_montage_cols))
+
+
 def _load_montage_data_cached(dataset_dir, qc_config, max_montage_rows, max_montage_cols):
-    """Cached wrapper around ``data_loaders.load_montage_data``."""
-    return _load_montage_data_uncached(dataset_dir, qc_config, max_montage_rows, max_montage_cols)
+    """Resolve montage paths each rerun, then load display data through the cache.
+
+    Resolving outside the cache picks up new glob matches, and keying on
+    mtime/size reloads figures regenerated while the app is running.
+    """
+    montage_paths = resolve_montage_paths(dataset_dir, qc_config)
+    if not montage_paths:
+        return None
+    return _build_montage_display_data_cached(files_signature(montage_paths), max_montage_rows, max_montage_cols)
 
 
 def _display_montage_panel(dataset_dir, qc_config) -> None:
