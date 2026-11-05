@@ -107,15 +107,6 @@ def create_grid_montage(images, padding=10, bg_color=(255, 255, 255), max_rows=N
     rows, cols = best_rows, best_cols
     # print(f"Creating {rows}x{cols} grid montage for {num_images} images (montage ratio diff: {best_ratio_diff:.3f})")
 
-    # Resize all images to uniform size
-    resized_images = []
-    for img in images:
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        if img.width != max_width or img.height != max_height:
-            img = img.resize((max_width, max_height), Image.Resampling.LANCZOS)
-        resized_images.append(img)
-
     # Calculate total montage dimensions
     total_width = cols * max_width + (cols + 1) * padding
     total_height = rows * max_height + (rows + 1) * padding
@@ -123,8 +114,13 @@ def create_grid_montage(images, padding=10, bg_color=(255, 255, 255), max_rows=N
     # Create montage background
     montage = Image.new("RGB", (total_width, total_height), bg_color)
 
-    # Place images in grid
-    for idx, img in enumerate(resized_images):
+    # Resize each image to the uniform cell size and place it in the grid. One
+    # resized copy is alive at a time, rather than a full list of them.
+    for idx, img in enumerate(images):
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        if img.width != max_width or img.height != max_height:
+            img = img.resize((max_width, max_height), Image.Resampling.LANCZOS)
         row = idx // cols
         col = idx % cols
         x = col * max_width + (col + 1) * padding
