@@ -4,6 +4,7 @@ A users config JSON maps authenticated emails to each rater's setup::
 
     {
       "rater_root": "/data/qc-datasets/qc-raters",
+      "admins": ["lead@mcgill.ca"],
       "users": {
         "alice@mcgill.ca": {
           "rater_id": "alice",
@@ -27,6 +28,11 @@ Path rules:
 * ``participant_list`` and ``output_dir`` resolve against ``rater_dir``.
 * ``output_dir`` defaults to ``<rater_dir>/qc-output``.
 
+``admins`` (optional, top level) lists the emails allowed into the admin dashboard
+(``ui/admin/admin_app.py``). An admin does not need a ``users`` entry; admins who are
+not in ``users`` cannot rate. Invalid admin emails are skipped and reported in
+``UsersConfig.admin_rejected`` (they never grant access).
+
 Other rules:
 
 * Email keys are case-insensitive. ``rater_id`` defaults to the sanitized part of the
@@ -35,7 +41,7 @@ Other rules:
   raters. Rejected users are refused at sign-in. Duplicate emails, rater IDs or output
   folders reject every entry involved, so raters can never overwrite each other's files.
 * Only file-level problems (missing file, invalid JSON, no ``users`` object, invalid
-  ``rater_root``) raise :class:`UsersConfigError`.
+  ``rater_root``, ``admins`` not a list) raise :class:`UsersConfigError`.
 """
 
 from __future__ import annotations
@@ -98,6 +104,8 @@ class UsersConfig:
     rater_root: Path | None = None
     users: dict[str, dict] = field(default_factory=dict)
     rejected: dict[str, list[str]] = field(default_factory=dict)
+    admins: frozenset[str] = frozenset()
+    admin_rejected: dict[str, str] = field(default_factory=dict)  # raw value -> reason
 
 
 def _resolve_path(value: str, base_dir: Path) -> Path:
@@ -116,12 +124,17 @@ def _format_validation_error(exc: ValidationError) -> list[str]:
     return msgs
 
 
-def _parse_raw(path: Path) -> tuple[object, list[tuple[str, object]]]:
-    """Return ``(rater_root, users)``; users as (key, value) pairs, keeping duplicate keys."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise UsersConfigError(f"Cannot read users config {str(path)!r}: {exc}") from exc
+def _parse_raw(path: Path, text: str | None = None) -> tuple[object, list[tuple[str, object]], object]:
+    """Return ``(rater_root, users, admins)``; users as (key, value) pairs, keeping duplicate keys.
+
+    ``text`` parses that content as if it were the file at ``path`` (used to validate an edit
+    before it is written).
+    """
+    if text is None:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise UsersConfigError(f"Cannot read users config {str(path)!r}: {exc}") from exc
 
     def _pairs(pairs):
         return {"__pairs__": pairs}
@@ -133,7 +146,7 @@ def _parse_raw(path: Path) -> tuple[object, list[tuple[str, object]]]:
     top = dict(root.get("__pairs__", [])) if isinstance(root, dict) else None
     if not top or "users" not in top:
         raise UsersConfigError(f'{str(path)!r} must be a JSON object with a top-level "users" object')
-    unknown = sorted(set(top) - {"users", "rater_root"})
+    unknown = sorted(set(top) - {"users", "rater_root", "admins"})
     if unknown:
         raise UsersConfigError(f"Unknown top-level key(s) in {str(path)!r}: {', '.join(unknown)}")
     users = top["users"]
@@ -145,12 +158,30 @@ def _parse_raw(path: Path) -> tuple[object, list[tuple[str, object]]]:
             return {k: _plain(v) for k, v in obj["__pairs__"]}
         return obj
 
-    return top.get("rater_root"), [(k, _plain(v)) for k, v in users["__pairs__"]]
+    admins = top.get("admins")
+    if admins is not None and not isinstance(admins, list):
+        raise UsersConfigError(f'"admins" in {str(path)!r} must be a list of emails')
+    return top.get("rater_root"), [(k, _plain(v)) for k, v in users["__pairs__"]], admins
 
 
-def _build_config(path: Path) -> UsersConfig:
+def _parse_admins(raw_admins: list | None) -> tuple[frozenset[str], dict[str, str]]:
+    """Valid, lower-cased admin emails plus the reasons any entries were skipped."""
+    admins, rejected = set(), {}
+    for raw in raw_admins or []:
+        if not isinstance(raw, str):
+            rejected[repr(raw)] = "admin entries must be email strings"
+            continue
+        email = raw.strip().lower()
+        if not _EMAIL_RE.match(email):
+            rejected[raw] = f"{raw!r} is not a valid email address"
+            continue
+        admins.add(email)
+    return frozenset(admins), rejected
+
+
+def _build_config(path: Path, text: str | None = None) -> UsersConfig:
     config_dir = path.parent.resolve()
-    raw_root, entries = _parse_raw(path)
+    raw_root, entries, raw_admins = _parse_raw(path, text)
     if raw_root is None:
         rater_root = config_dir
     elif isinstance(raw_root, str) and raw_root.strip():
@@ -158,6 +189,7 @@ def _build_config(path: Path) -> UsersConfig:
     else:
         raise UsersConfigError(f'"rater_root" in {str(path)!r} must be a non-empty path string')
     cfg = UsersConfig(path=path, rater_root=rater_root)
+    cfg.admins, cfg.admin_rejected = _parse_admins(raw_admins)
     candidates: dict[str, dict] = {}
 
     def reject(email: str, msg: str):
@@ -225,6 +257,11 @@ def load_users_config(path: str | Path) -> UsersConfig:
     except OSError as exc:
         raise UsersConfigError(f"Users config not found: {str(p)!r}") from exc
     return _load_cached(str(p), mtime_ns)
+
+
+def is_admin(email: str | None, cfg: UsersConfig) -> bool:
+    """True when ``email`` is listed in the config's top-level ``admins``."""
+    return str(email or "").strip().lower() in cfg.admins
 
 
 def resolve_user_run_overrides(email: str, users_config_path: str | Path) -> dict | None:

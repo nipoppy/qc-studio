@@ -8,6 +8,9 @@ ui/__pycache__/
 .env
 .cursor/
 
+# Machine-specific notebook paths (template: notebooks/local_config.example.json)
+notebooks/local_config.json
+
 # Demo first-volume BOLD under bids/sub-CMH0001/ses-*/func/ (tracked).
 # Ignore other local raw BIDS files for sub-CMH0001 if present.
 sample_data/bids/sub-CMH0001/**/*

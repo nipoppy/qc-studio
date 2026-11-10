@@ -9,7 +9,7 @@
 * sessions are defined (``session_id`` column, per-user or CLI ``session_list``)
 * their output folder exists and is writable, or can be created
 
-It also checks how identity is configured (Cloudflare JWT vs. trusted header vs. the
+It also lists the admins (top-level ``admins``) and checks how identity is configured (Cloudflare JWT vs. trusted header vs. the
 dev-only override). Nothing is modified unless ``create_output_dirs`` is called.
 """
 
@@ -78,6 +78,7 @@ class SetupReport:
     global_issues: list[tuple[str, str]] = field(default_factory=list)
     identity_mode: str = ""
     rater_root: str = ""
+    admins: list[str] = field(default_factory=list)
 
     @property
     def fatal(self) -> bool:
@@ -212,6 +213,12 @@ def validate_users_setup(config_path: str | Path, session_list: str | None = Non
         report.global_issues.insert(0, (ERROR, str(exc)))
         return report
     report.rater_root = str(cfg.rater_root)
+    report.admins = sorted(cfg.admins)
+    for raw, reason in sorted(cfg.admin_rejected.items()):
+        # A typo in admins only removes that admin; it must not block the raters.
+        report.global_issues.append((WARNING, f"admins: {reason} (ignored)"))
+    if not cfg.admins:
+        report.global_issues.append((WARNING, 'no admins defined: add "admins": ["you@example.org"] to use the admin dashboard'))
     if not cfg.rater_root.is_dir():
         report.global_issues.insert(0, (ERROR, f"rater_root does not exist: {cfg.rater_root}"))
 
@@ -260,6 +267,7 @@ def format_report(report: SetupReport) -> str:
     lines = [f"QC-Studio multi-user setup: {report.config_path}"]
     if report.rater_root:
         lines.append(f"Rater root: {report.rater_root}")
+        lines.append(f"Admins: {', '.join(report.admins) or '(none)'}")
     lines += [f"Identity: {report.identity_mode}", ""]
     if report.users:
         w_email = max(len("EMAIL"), *(len(u.email) for u in report.users))

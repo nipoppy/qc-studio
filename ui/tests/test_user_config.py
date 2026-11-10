@@ -161,3 +161,43 @@ def test_invalid_rater_root_raises(tmp_path, root):
     cfg.write_text(json.dumps({"rater_root": root, "users": {}}))
     with pytest.raises(UsersConfigError, match="rater_root"):
         load_users_config(cfg)
+
+
+# --- admins (top-level list of emails allowed into the admin dashboard) -------------
+
+
+def test_admins_parsed_and_lowercased(tmp_path):
+    from utils.user_config import is_admin
+
+    cfg = tmp_path / "users.json"
+    cfg.write_text(json.dumps({"admins": [" Lead@McGill.ca "], "users": {"a@x.org": {"participant_list": "a.tsv"}}}))
+    loaded = load_users_config(cfg)
+    assert loaded.admins == frozenset({"lead@mcgill.ca"})
+    assert is_admin("LEAD@mcgill.ca", loaded)
+    assert not is_admin("a@x.org", loaded)  # being a rater does not make you an admin
+    assert not is_admin(None, loaded)
+
+
+def test_admins_optional(tmp_path):
+    loaded = load_users_config(_write(tmp_path / "users.json", {"a@x.org": {"participant_list": "a.tsv"}}))
+    assert loaded.admins == frozenset() and loaded.admin_rejected == {}
+
+
+def test_invalid_admin_entries_skipped_not_fatal(tmp_path):
+    cfg = tmp_path / "users.json"
+    cfg.write_text(json.dumps({"admins": ["ok@x.org", "not-an-email", 5], "users": {"a@x.org": {"participant_list": "a.tsv"}}}))
+    loaded = load_users_config(cfg)
+    assert loaded.admins == frozenset({"ok@x.org"})
+    assert set(loaded.admin_rejected) == {"not-an-email", "5"}
+    assert set(loaded.users) == {"a@x.org"}
+
+
+@pytest.mark.parametrize("admins", ['"lead@x.org"', "{}", "null"])
+def test_admins_must_be_a_list(tmp_path, admins):
+    cfg = tmp_path / "users.json"
+    cfg.write_text('{"admins": %s, "users": {}}' % admins)
+    if admins == "null":
+        assert load_users_config(cfg).admins == frozenset()
+    else:
+        with pytest.raises(UsersConfigError, match="admins"):
+            load_users_config(cfg)

@@ -122,3 +122,27 @@ def test_single_user_mode_unchanged(monkeypatch, tmp_path):
     ctx = main.get_cli_run_context()
     assert ctx["multi_user"] is False and ctx["user_email"] is None
     assert ctx["out_dir"] == str((tmp_path / "out").resolve())
+
+
+def test_admin_flag_in_context(monkeypatch, setup):
+    tmp_path, _ = setup
+    users = tmp_path / "users.json"
+    raw = json.loads(users.read_text())
+    raw["admins"] = ["bob@mcgill.ca", "lead@mcgill.ca"]
+    users.write_text(json.dumps(raw))
+    _as_user(monkeypatch, "bob@mcgill.ca")
+    assert main.get_cli_run_context()["is_admin"] is True
+    _as_user(monkeypatch, "alice@mcgill.ca")
+    assert main.get_cli_run_context()["is_admin"] is False
+
+
+def test_admin_who_is_not_a_rater_cannot_rate(monkeypatch, setup):
+    tmp_path, st_mock = setup
+    users = tmp_path / "users.json"
+    raw = json.loads(users.read_text())
+    raw["admins"] = ["lead@mcgill.ca"]
+    users.write_text(json.dumps(raw))
+    _as_user(monkeypatch, "lead@mcgill.ca")
+    with pytest.raises(_Stopped):
+        main.get_cli_run_context()
+    assert "not assigned" in st_mock.error.call_args[0][0]

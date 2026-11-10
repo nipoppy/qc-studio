@@ -1,6 +1,5 @@
 """Landing page component for QC-Studio UI."""
 
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from managers.session_manager import SessionManager
 from models import QCRecord
 from managers.panel_layout_manager import PanelLayoutManager
 from utils.config import list_qc_tasks_from_json, parse_qc_config
+from utils.qc_files import checkpoint_stamp
 from utils.cohort import (
     build_qc_cohort,
     count_complete_cohort_pages,
@@ -171,13 +171,8 @@ def _list_resume_files(out_dir: str) -> tuple[Path | None, list[Path]]:
 
     # Status files stay at the top (newest first); checkpoints follow, newest first by filename timestamp.
     status_files.sort(key=_mtime_or_epoch, reverse=True)
-    checkpoint_files.sort(key=lambda p: _checkpoint_stamp(p) or datetime.fromtimestamp(_mtime_or_epoch(p)), reverse=True)
+    checkpoint_files.sort(key=lambda p: checkpoint_stamp(p) or datetime.fromtimestamp(_mtime_or_epoch(p)), reverse=True)
     return resolved_base, status_files + checkpoint_files
-
-
-# Matches the stamp written by qc_viewer._default_qc_checkpoint_path, e.g. "..._checkpoint_20261012T143005Z.tsv",
-# including derived files with a trailing suffix such as "..._checkpoint_20261012T143005Z_transformed.tsv".
-_CHECKPOINT_STAMP_RE = re.compile(r"_checkpoint_(\d{8}T\d{6})Z?(?:_[^/]*)?\.tsv$")
 
 
 def _mtime_or_epoch(path: Path) -> float:
@@ -186,17 +181,6 @@ def _mtime_or_epoch(path: Path) -> float:
         return path.stat().st_mtime
     except OSError:
         return 0.0
-
-
-def _checkpoint_stamp(path: Path) -> datetime | None:
-    """Timestamp embedded in a checkpoint filename, or None when absent or unparsable."""
-    match = _CHECKPOINT_STAMP_RE.search(path.name)
-    if not match:
-        return None
-    try:
-        return datetime.strptime(match.group(1), "%Y%m%dT%H%M%S")
-    except ValueError:
-        return None
 
 
 def _resume_file_label(base_dir: Path, candidate: Path) -> str:
@@ -211,7 +195,7 @@ def _resume_file_label(base_dir: Path, candidate: Path) -> str:
     except ValueError:
         name = str(candidate)
 
-    stamp = _checkpoint_stamp(candidate)
+    stamp = checkpoint_stamp(candidate)
     if stamp is not None:
         return f"{stamp.strftime('%Y-%m-%d %H:%M:%S')} · {name}"
 

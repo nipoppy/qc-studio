@@ -124,7 +124,7 @@ def _apply_user_overrides(args) -> str:
     error) when the user cannot be identified or is not in the users config.
     """
     from utils.identity import IdentityError, get_current_user
-    from utils.user_config import UsersConfigError, load_users_config
+    from utils.user_config import UsersConfigError, is_admin, load_users_config
 
     try:
         identity = get_current_user()
@@ -162,6 +162,7 @@ def _apply_user_overrides(args) -> str:
         args.session_list = overrides["session_list"]
     args.out_dir = overrides["out_dir"]
     args.rater_id = overrides["rater_id"]
+    args.is_admin = is_admin(identity.email, users_cfg)
     return identity.email
 
 
@@ -228,6 +229,7 @@ def get_cli_run_context():
         "default_qc_rating": getattr(args, "default_qc_rating", DEFAULT_QC_RATING),
         "multi_user": multi_user,
         "user_email": user_email,
+        "is_admin": bool(getattr(args, "is_admin", False)),
     }
 
 
@@ -326,6 +328,9 @@ def main():
     )
     if ctx.get("multi_user") and ctx.get("user_email"):
         st.sidebar.caption(f"👤 Signed in as {ctx['user_email']}")
+        admin_url = os.environ.get("QC_STUDIO_ADMIN_URL", "").strip()
+        if ctx.get("is_admin") and admin_url:
+            st.sidebar.link_button("🛠️ Admin dashboard", admin_url)
 
     # Sidebar filter may have moved the page; use that for the viewer.
     current_page = SessionManager.get_current_page()

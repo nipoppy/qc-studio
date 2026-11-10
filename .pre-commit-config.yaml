@@ -40,6 +40,13 @@ repos:
           - .codespellrc
         files: ^(README\.md|docs/|ui/|pipelines/)
 
+  # Notebook outputs can hold rater emails and local paths: never commit them.
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+        files: ^notebooks/.*\.ipynb$
+
   - repo: local
     hooks:
       - id: pytest-ui

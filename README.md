@@ -75,7 +75,7 @@ python -m pip install -r requirements-test.txt
 pre-commit install
 ```
 
-Before pushing, run all pre-commit checks. This includes the same UI test command used in CI.
+Before pushing, run all pre-commit checks. This includes the same UI test command used in CI. The `nbstripout` hook clears outputs from notebooks under `notebooks/` (they can contain rater emails and local paths). When it changes a notebook the commit stops; `git add` the notebook again and re-commit.
 
 ```bash
 pre-commit run --all-files
@@ -108,6 +108,7 @@ Several raters can use one running QC-Studio at the same time. Each rater sees o
    ```json
    {
      "rater_root": "/data/qc-datasets/qc-raters",
+     "admins": ["lead@mcgill.ca"],
      "users": {
        "alice@mcgill.ca": {
          "rater_id": "alice",
@@ -122,6 +123,7 @@ Several raters can use one running QC-Studio at the same time. Each rater sees o
    | Key | Required | Meaning |
    |-----|----------|---------|
    | `rater_root` (top level) | no | Folder holding the rater folders: absolute, or relative to `users.json`. Defaults to the folder containing `users.json`. |
+   | `admins` (top level) | no | Emails allowed into the [admin dashboard](#admin-dashboard). An admin doesn't need a `users` entry, but can only rate if they have one. |
    | `rater_id` | no | Used in file names. Defaults to the part of the email before the `@`. |
    | `rater_dir` | no | The rater's folder, relative to `rater_root` (an absolute path ignores `rater_root`). Defaults to `<rater_id>`. |
    | `participant_list` | yes | Tab-separated file inside `rater_dir` with a `participant_id` column and an optional `session_id` column. |
@@ -153,6 +155,29 @@ Several raters can use one running QC-Studio at the same time. Each rater sees o
 Each rater's files end up in `<output_dir>/checkpoints/*.tsv` and `<output_dir>/<rater_id>_<pipeline>_<task>_qc_status.tsv`. Raters can't edit their rater ID, and importing another rater's file won't change it.
 
 To test locally without a tunnel, set `QC_STUDIO_DEV_USER_EMAIL=alice@mcgill.ca` in the environment. Never set it on a server: the check and the launcher refuse to run while it is set.
+
+### Admin dashboard
+
+A separate Streamlit app for the emails listed in `admins`. It has four tabs:
+
+- **Overview**: the setup status of every rater (the same checks as `check_users_setup.py`).
+- **Raters**: add, edit or remove rater entries in `users.json`. Every save shows a diff first, is refused if it would make any rater invalid or if the file changed in the meantime, and keeps a backup in `config_backups/` next to `users.json`. `admins` and `rater_root` can only be edited by hand.
+- **Assignments**: each rater's workload and the overlaps between raters. It can also create a participant list for a rater from the dataset participants assigned to the fewest raters, and won't replace an existing list unless you tick the box.
+- **Ratings**: collects each rater's `qc_status.tsv` (or, if there is none, their newest checkpoint) into dataset-level progress, coverage, rating distributions and agreement between raters. Every table can be downloaded.
+
+```bash
+cd ui
+./admin_launch.sh /data/qc-datasets/qc-raters/users.json /data/qc-datasets/qc_participants.tsv 8502 /data/qc-datasets/qc-raters/reports
+```
+
+The second argument is the dataset-level participant list that ratings and new lists are compared against. The optional fourth argument is a folder for "Save reports"; without it, reports can only be downloaded.
+
+- **Access:** in production, put the admin port behind **its own Cloudflare Access application**, limited to the admins. The app also checks the `admins` list itself, using the same identity settings (`CF_ACCESS_*` in `.env`) as the rater app.
+- **Audit log:** every write the dashboard makes is logged to stderr together with the admin's email.
+- **Link from the rater app:** set `QC_STUDIO_ADMIN_URL` for the rater app, and admins who are also raters see an "Admin dashboard" link in its sidebar.
+- **Local testing:** `QC_STUDIO_DEV_USER_EMAIL=lead@mcgill.ca ./admin_launch.sh ...`
+
+The same functions are used by `notebooks/qc_participants.ipynb` and `notebooks/qc_ratings.ipynb` (`ui/utils/assignments.py`, `ui/utils/ratings_report.py`).
 
 ## 🔗 Related Projects
 
