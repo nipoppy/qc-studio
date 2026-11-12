@@ -52,4 +52,18 @@ def test_resolve_pipeline_conflict_or_missing(tmp_path):
     with pytest.raises(ValueError, match="does not match"):
         core.resolve_qc_pipeline("fmriprep", _qc_json(tmp_path, {PIPELINE_KEY: "fsqc", "task_a": {}}))
     with pytest.raises(ValueError, match="no pipeline"):
-        core.resolve_qc_pipeline(None, _qc_json(tmp_path, {"task_a": {}}))
+        core.resolve_qc_pipeline(None, _qc_json(tmp_path, {"task_a": {}}), env={})
+
+
+def test_pipeline_from_env_when_no_cli_value(tmp_path):
+    qc = _qc_json(tmp_path, {"task_a": {}})
+    assert core.resolve_qc_pipeline(None, qc, env={"QC_PIPELINE": "fsqc"}) == "fsqc"
+    assert core.resolve_qc_pipeline("mriqc", qc, env={"QC_PIPELINE": "fsqc"}) == "mriqc"  # the CLI value wins
+    with pytest.raises(ValueError, match="does not match"):
+        core.resolve_qc_pipeline(None, _qc_json(tmp_path, {PIPELINE_KEY: "fsqc", "task_a": {}}), env={"QC_PIPELINE": "mriqc"})
+
+
+def test_no_pipeline_message_keeps_the_key_name(tmp_path):
+    with pytest.raises(ValueError) as exc:
+        core.resolve_qc_pipeline(None, _qc_json(tmp_path, {"task_a": {}}), env={})
+    assert f'`"{PIPELINE_KEY}"' in str(exc.value)  # in backticks, so Streamlit markdown doesn't bold it

@@ -167,15 +167,15 @@ def test_invalid_rater_root_raises(tmp_path, root):
 
 
 def test_admins_parsed_and_lowercased(tmp_path):
-    from utils.user_config import is_admin
+    from utils.user_config import dashboard_role
 
     cfg = tmp_path / "users.json"
     cfg.write_text(json.dumps({"admins": [" Lead@McGill.ca "], "users": {"a@x.org": {"participant_list": "a.tsv"}}}))
     loaded = load_users_config(cfg)
     assert loaded.admins == frozenset({"lead@mcgill.ca"})
-    assert is_admin("LEAD@mcgill.ca", loaded)
-    assert not is_admin("a@x.org", loaded)  # being a rater does not make you an admin
-    assert not is_admin(None, loaded)
+    assert dashboard_role("LEAD@mcgill.ca", loaded) == "admin"
+    assert dashboard_role("a@x.org", loaded) is None  # being a rater does not make you an admin
+    assert dashboard_role(None, loaded) is None
 
 
 def test_admins_optional(tmp_path):
@@ -201,3 +201,32 @@ def test_admins_must_be_a_list(tmp_path, admins):
     else:
         with pytest.raises(UsersConfigError, match="admins"):
             load_users_config(cfg)
+
+
+def test_viewers_are_parsed_and_admin_wins(tmp_path):
+    from utils.user_config import ADMIN, VIEWER, dashboard_role
+
+    cfg = tmp_path / "users.json"
+    cfg.write_text(
+        json.dumps(
+            {
+                "admins": ["lead@x.org"],
+                "viewers": [" PI@x.org ", "lead@x.org", "bad", 3],
+                "users": {"a@x.org": {"participant_list": "a.tsv"}},
+            }
+        )
+    )
+    loaded = load_users_config(cfg)
+    assert loaded.viewers == frozenset({"pi@x.org"})  # lead@x.org is an admin, so not a viewer
+    assert set(loaded.viewer_rejected) == {"bad", "3"}
+    assert dashboard_role("Lead@x.org", loaded) == ADMIN
+    assert dashboard_role("pi@x.org", loaded) == VIEWER
+    assert dashboard_role("a@x.org", loaded) is None  # a rater is not a viewer
+    assert dashboard_role(None, loaded) is None
+
+
+def test_viewers_must_be_a_list(tmp_path):
+    cfg = tmp_path / "users.json"
+    cfg.write_text('{"viewers": "pi@x.org", "users": {}}')
+    with pytest.raises(UsersConfigError, match="viewers"):
+        load_users_config(cfg)

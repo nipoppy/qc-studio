@@ -9,12 +9,10 @@ from utils.user_config import load_users_config
 from utils.users_config_writer import (
     BACKUP_DIRNAME,
     ConfigWriteError,
-    add_rater,
     apply_change,
     prepare_add_rater,
+    prepare_remove_rater,
     prepare_update_rater,
-    remove_rater,
-    update_rater,
 )
 
 
@@ -26,6 +24,7 @@ def config(tmp_path):
             {
                 "rater_root": "raters",
                 "admins": ["lead@x.org"],
+                "viewers": ["pi@x.org"],
                 "users": {
                     "Alice@x.org": {"rater_id": "alice", "participant_list": "alice.tsv"},
                     "bob@x.org": {"rater_id": "bob", "participant_list": "bob.tsv"},
@@ -47,10 +46,10 @@ def _backups(path):
 
 def test_add_rater(config):
     old = config.read_text()
-    backup = add_rater(config, "Carol@X.org", {"rater_id": "Carol", "participant_list": "carol.tsv", "session_list": " "})
+    backup = apply_change(prepare_add_rater(config, "Carol@X.org", {"rater_id": "Carol", "participant_list": "carol.tsv", "session_list": " "}))
     raw = _raw(config)
     assert raw["users"]["carol@x.org"] == {"rater_id": "carol", "participant_list": "carol.tsv"}
-    assert raw["admins"] == ["lead@x.org"] and raw["rater_root"] == "raters"
+    assert raw["admins"] == ["lead@x.org"] and raw["viewers"] == ["pi@x.org"] and raw["rater_root"] == "raters"
     assert backup.read_text() == old and _backups(config) == [backup]
     assert "carol@x.org" in load_users_config(config).users
 
@@ -63,7 +62,7 @@ def test_add_existing_email_refused(config):
 def test_duplicate_rater_id_refused_and_file_unchanged(config):
     old = config.read_text()
     with pytest.raises(ConfigWriteError, match="rater_id"):
-        add_rater(config, "carol@x.org", {"rater_id": "bob", "participant_list": "c.tsv"})
+        apply_change(prepare_add_rater(config, "carol@x.org", {"rater_id": "bob", "participant_list": "c.tsv"}))
     assert config.read_text() == old
     assert _backups(config) == []
 
@@ -87,7 +86,7 @@ def test_invalid_email_refused(config):
 
 
 def test_update_rater_keeps_original_key(config):
-    update_rater(config, "alice@x.org", {"rater_id": "alice", "participant_list": "alice_v2.tsv", "session_list": "ses-BL"})
+    apply_change(prepare_update_rater(config, "alice@x.org", {"rater_id": "alice", "participant_list": "alice_v2.tsv", "session_list": "ses-BL"}))
     raw = _raw(config)
     assert raw["users"]["Alice@x.org"] == {"rater_id": "alice", "participant_list": "alice_v2.tsv", "session_list": "ses-BL"}
     assert list(raw["users"]) == ["Alice@x.org", "bob@x.org"]
@@ -99,7 +98,7 @@ def test_update_unknown_rater(config):
 
 
 def test_remove_rater(config):
-    remove_rater(config, "BOB@x.org")
+    apply_change(prepare_remove_rater(config, "BOB@x.org"))
     assert set(_raw(config)["users"]) == {"Alice@x.org"}
 
 
@@ -130,5 +129,5 @@ def test_duplicate_keys_in_file_refused(config):
 
 def test_file_permissions_kept(config):
     os.chmod(config, 0o640)
-    add_rater(config, "carol@x.org", {"participant_list": "c.tsv"})
+    apply_change(prepare_add_rater(config, "carol@x.org", {"participant_list": "c.tsv"}))
     assert (config.stat().st_mode & 0o777) == 0o640

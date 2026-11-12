@@ -1,4 +1,4 @@
-"""Admin dashboard gate: only emails in the users config's ``admins`` get in."""
+"""Admin dashboard gate: ``admins`` get full access, ``viewers`` view-only, everyone else is stopped."""
 
 import json
 from unittest.mock import MagicMock
@@ -17,7 +17,7 @@ class _Stopped(Exception):
 @pytest.fixture
 def setup(monkeypatch, tmp_path):
     users = tmp_path / "users.json"
-    users.write_text(json.dumps({"admins": ["lead@x.org"], "users": {"rater@x.org": {"participant_list": "r.tsv"}}}))
+    users.write_text(json.dumps({"admins": ["lead@x.org"], "viewers": ["pi@x.org"], "users": {"rater@x.org": {"participant_list": "r.tsv"}}}))
     st_mock = MagicMock()
     st_mock.stop.side_effect = _Stopped
     monkeypatch.setattr(core, "st", st_mock)
@@ -31,19 +31,28 @@ def _as_user(monkeypatch, email):
 def test_admin_gets_in(monkeypatch, setup):
     users, st_mock = setup
     _as_user(monkeypatch, "Lead@X.org".lower())
-    email, cfg = core.require_admin(users)
-    assert email == "lead@x.org" and "rater@x.org" in cfg.users
+    email, cfg, role = core.require_dashboard_access(users)
+    assert email == "lead@x.org" and "rater@x.org" in cfg.users and role == "admin"
+    st_mock.stop.assert_not_called()
+
+
+def test_viewer_gets_in_view_only(monkeypatch, setup):
+    users, st_mock = setup
+    _as_user(monkeypatch, "pi@x.org")
+    email, cfg, role = core.require_dashboard_access(users)
+    assert (email, role) == ("pi@x.org", "viewer")
     st_mock.stop.assert_not_called()
 
 
 @pytest.mark.parametrize(
-    "email, message", [("rater@x.org", "not a QC-Studio admin"), ("eve@x.org", "not a QC-Studio admin"), (None, "Could not determine")]
+    "email, message",
+    [("rater@x.org", "not a QC-Studio admin or viewer"), ("eve@x.org", "not a QC-Studio admin or viewer"), (None, "Could not determine")],
 )
 def test_others_are_stopped(monkeypatch, setup, email, message):
     users, st_mock = setup
     _as_user(monkeypatch, email)
     with pytest.raises(_Stopped):
-        core.require_admin(users)
+        core.require_dashboard_access(users)
     assert message in st_mock.error.call_args[0][0]
 
 
@@ -55,7 +64,7 @@ def test_identity_misconfiguration_stops(monkeypatch, setup):
 
     monkeypatch.setattr(identity, "get_current_user", boom)
     with pytest.raises(_Stopped):
-        core.require_admin(users)
+        core.require_dashboard_access(users)
     assert "identity configuration" in st_mock.error.call_args[0][0]
 
 
@@ -65,7 +74,7 @@ def test_unreadable_config_stops(monkeypatch, setup, tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text("not json")
     with pytest.raises(_Stopped):
-        core.require_admin(bad)
+        core.require_dashboard_access(bad)
     assert "could not be loaded" in st_mock.error.call_args[0][0]
 
 
@@ -122,3 +131,33 @@ def test_build_context_stops_on_bad_qc_json(monkeypatch, setup, tmp_path):
     with pytest.raises(_Stopped):
         core.build_context(args, "lead@x.org", load_users_config(users))
     assert "QC tasks could not be loaded" in st_mock.error.call_args[0][0]
+
+
+def test_build_context_stops_on_unreadable_dataset_list(monkeypatch, setup, tmp_path):
+    users, st_mock = setup
+    from utils.user_config import load_users_config
+
+    qc = tmp_path / "qc.json"
+    qc.write_text('{"__pipeline__": "fsqc", "task_a": {}}')
+    args = core.parse_admin_args(["--users_config", str(users), "--participant_list", str(tmp_path / "missing.tsv"), "--qc_json", str(qc)])
+    with pytest.raises(_Stopped):
+        core.build_context(args, "lead@x.org", load_users_config(users))
+    assert "Dataset participant list cannot be read" in st_mock.error.call_args[0][0]
+
+
+def test_require_editor_refuses_viewers(monkeypatch):
+    st_mock = MagicMock()
+    st_mock.stop.side_effect = _Stopped
+    monkeypatch.setattr(core, "st", st_mock)
+    admin = core.AdminContext(
+        users_config=None, participant_list=None, pool=None, output_dir=None, session_list=None, email="lead@x.org", cfg=None, role="admin"
+    )
+    core.require_editor(admin)  # no error
+    assert admin.can_edit
+    viewer = core.AdminContext(
+        users_config=None, participant_list=None, pool=None, output_dir=None, session_list=None, email="pi@x.org", cfg=None, role="viewer"
+    )
+    assert not viewer.can_edit
+    with pytest.raises(_Stopped):
+        core.require_editor(viewer)
+    assert "View-only" in st_mock.error.call_args[0][0]

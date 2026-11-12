@@ -109,6 +109,7 @@ Several raters can use one running QC-Studio at the same time. Each rater sees o
    {
      "rater_root": "/data/qc-datasets/qc-raters",
      "admins": ["lead@mcgill.ca"],
+     "viewers": ["pi@mcgill.ca"],
      "users": {
        "alice@mcgill.ca": {
          "rater_id": "alice",
@@ -124,6 +125,7 @@ Several raters can use one running QC-Studio at the same time. Each rater sees o
    |-----|----------|---------|
    | `rater_root` (top level) | no | Folder holding the rater folders: absolute, or relative to `users.json`. Defaults to the folder containing `users.json`. |
    | `admins` (top level) | no | Emails allowed into the [admin dashboard](#admin-dashboard). An admin doesn't need a `users` entry, but can only rate if they have one. |
+   | `viewers` (top level) | no | Emails with **view-only** access to the admin dashboard: every tab and download, but no edits, list writes or saved reports. An email in both lists is an admin. |
    | `rater_id` | no | Used in file names. Defaults to the part of the email before the `@`. |
    | `rater_dir` | no | The rater's folder, relative to `rater_root` (an absolute path ignores `rater_root`). Defaults to `<rater_id>`. |
    | `participant_list` | yes | Tab-separated file inside `rater_dir` with a `participant_id` column and an optional `session_id` column. |
@@ -158,10 +160,10 @@ To test locally without a tunnel, set `QC_STUDIO_DEV_USER_EMAIL=alice@mcgill.ca`
 
 ### Admin dashboard
 
-A separate Streamlit app for the emails listed in `admins`. It has four tabs:
+A separate Streamlit app for the emails listed in `admins` (full access) and `viewers` (view only: they see everything and can download tables and lists, but the Raters edit forms, "Write list" and "Save reports" are hidden from them). It has four tabs:
 
 - **Overview**: rating completion for every task in the pipeline's `qc.json` (assigned participants rated, summed over raters; tasks nobody has started show 0% and "Not started") and the setup status of every rater (the same checks as `check_users_setup.py`).
-- **Raters**: add, edit or remove rater entries in `users.json`. Every save shows a diff first, is refused if it would make any rater invalid or if the file changed in the meantime, and keeps a backup in `config_backups/` next to `users.json`. `admins` and `rater_root` can only be edited by hand.
+- **Raters**: add, edit or remove rater entries in `users.json`. Every save shows a diff first, is refused if it would make any rater invalid or if the file changed in the meantime, and keeps a backup in `config_backups/` next to `users.json`. `admins`, `viewers` and `rater_root` can only be edited by hand.
 - **Assignments**: each rater's workload and the overlaps between raters. It can also create a participant list for a rater. Participants come from the dataset list, or from an uploaded custom list restricted to participants in the dataset list. The **least rated** policy takes those assigned to the fewest raters first, **random** takes a seeded random sample, and **all** assigns every participant of the source (e.g. a custom list meant for one rater). It won't replace an existing list unless you tick the box.
 - **Ratings**: collects each rater's `qc_status.tsv` (or, if there is none, their newest checkpoint) into dataset-level progress, coverage, rating distributions and agreement between raters, for the tasks in `qc.json`. Ratings of tasks that aren't in `qc.json` are flagged and left out. Every table can be downloaded.
 
@@ -180,9 +182,9 @@ The arguments, in order:
 
 The pipeline name comes from a top-level `"__pipeline__": "fsqc"` key in `qc.json`, if it has one. Otherwise set `QC_PIPELINE`, the same value as the rater app's `--qc_pipeline`. If both are set and disagree, the app refuses to start. Keys of the form `__name__` in `qc.json` are never treated as QC tasks.
 
-- **Access:** in production, put the admin port behind **its own Cloudflare Access application**, limited to the admins. The app also checks the `admins` list itself, using the same identity settings (`CF_ACCESS_*` in `.env`) as the rater app.
+- **Access:** in production, put the admin port behind **its own Cloudflare Access application**, limited to the admins and viewers. The app also checks the `admins` and `viewers` lists itself, using the same identity settings (`CF_ACCESS_*` in `.env`) as the rater app.
 - **Audit log:** every write the dashboard makes is logged to stderr together with the admin's email.
-- **Link from the rater app:** set `QC_STUDIO_ADMIN_URL` for the rater app, and admins who are also raters see an "Admin dashboard" link in its sidebar.
+- **Link from the rater app:** set `QC_STUDIO_ADMIN_URL` for the rater app, and admins or viewers who are also raters see an "Admin dashboard" link in its sidebar.
 - **Local testing:** `QC_STUDIO_DEV_USER_EMAIL=lead@mcgill.ca ./admin_launch.sh ...`
 
 The same functions are used by `notebooks/qc_participants.ipynb` and `notebooks/qc_ratings.ipynb` (`ui/utils/assignments.py`, `ui/utils/ratings_report.py`).

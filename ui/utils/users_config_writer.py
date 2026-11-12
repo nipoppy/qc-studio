@@ -4,8 +4,8 @@ An edit is prepared first (``prepare_add_rater`` / ``prepare_update_rater`` /
 ``prepare_remove_rater``), which validates it and returns a :class:`ConfigChange` holding
 the new file content and a diff for review. :func:`apply_change` then writes it:
 
-* only ``users`` entries are edited; ``admins``, ``rater_root`` and any other key are
-  copied unchanged, so the dashboard can neither grant admin rights nor move every rater
+* only ``users`` entries are edited; ``admins``, ``viewers``, ``rater_root`` and any other key
+  are copied unchanged, so the dashboard can neither grant admin/viewer rights nor move every rater
 * the edited config must parse, the edited rater must be valid, and every rater that was
   valid before must still be valid (e.g. a duplicate ``rater_id`` is refused)
 * the file must not have changed since the change was prepared (another admin's save)
@@ -195,15 +195,3 @@ def apply_change(change: ConfigChange) -> Path:
         Path(tmp).unlink(missing_ok=True)
         raise
     return backup
-
-
-def add_rater(path, email, entry) -> Path:
-    return apply_change(prepare_add_rater(path, email, entry))
-
-
-def update_rater(path, email, entry) -> Path:
-    return apply_change(prepare_update_rater(path, email, entry))
-
-
-def remove_rater(path, email) -> Path:
-    return apply_change(prepare_remove_rater(path, email))

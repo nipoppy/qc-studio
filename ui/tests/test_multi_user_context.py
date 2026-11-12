@@ -124,16 +124,16 @@ def test_single_user_mode_unchanged(monkeypatch, tmp_path):
     assert ctx["out_dir"] == str((tmp_path / "out").resolve())
 
 
-def test_admin_flag_in_context(monkeypatch, setup):
+def test_dashboard_role_in_context(monkeypatch, setup):
     tmp_path, _ = setup
     users = tmp_path / "users.json"
     raw = json.loads(users.read_text())
-    raw["admins"] = ["bob@mcgill.ca", "lead@mcgill.ca"]
+    raw["admins"], raw["viewers"] = ["lead@mcgill.ca"], ["bob@mcgill.ca"]
     users.write_text(json.dumps(raw))
     _as_user(monkeypatch, "bob@mcgill.ca")
-    assert main.get_cli_run_context()["is_admin"] is True
+    assert main.get_cli_run_context()["dashboard_role"] == "viewer"
     _as_user(monkeypatch, "alice@mcgill.ca")
-    assert main.get_cli_run_context()["is_admin"] is False
+    assert main.get_cli_run_context()["dashboard_role"] is None
 
 
 def test_admin_who_is_not_a_rater_cannot_rate(monkeypatch, setup):

@@ -6,7 +6,7 @@
 #
 # <qc.json> is the rater app's --qc_json: its tasks are the ones raters are expected to complete
 # (set QC_TASK=a,b for a subset). The pipeline comes from its "__pipeline__" key; until qc.json
-# has one, set QC_PIPELINE (the rater app's --qc_pipeline).
+# has one, set QC_PIPELINE (the rater app's --qc_pipeline) here or in the repo's .env.
 #
 # Only emails in the users config's top-level "admins" list get in. In production, expose
 # this port through its own Cloudflare Access application limited to the admins; Streamlit

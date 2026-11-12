@@ -6,14 +6,17 @@ import pandas as pd
 import pytest
 
 from utils.assignments import (
-    add_units,
+    clean_ids,
+    count_buckets,
     create_rater_list,
     load_assignments,
     overlap_matrices,
     overlapping_pairs,
     rank_participants_by_rater_count,
     rater_count_distribution,
+    rater_count_buckets,
     rater_summary,
+    rater_workload,
     read_participant_ids,
     restrict_to_pool,
     write_participant_list,
@@ -70,12 +73,12 @@ def test_only_configured_list_is_used(config):
 
 
 def test_overlap_statistics(config):
-    a, key = add_units(load_assignments(config, warn=lambda _: None))
-    assert key == ["participant_id"]
+    a = load_assignments(config, warn=lambda _: None)
     summary = rater_summary(a)
+    assert summary.loc["alice", "n_participants"] == 4
     assert summary.loc["alice", "shared_with_others"] == 2 and summary.loc["alice", "exclusive"] == 2
     dist = rater_count_distribution(a)
-    assert dist.loc[1, "n_units"] == 4 and dist.loc[2, "n_units"] == 2
+    assert dist.loc[1, "n_participants"] == 4 and dist.loc[2, "n_participants"] == 2
     overlap, jaccard = overlap_matrices(a)
     assert overlap.loc["alice", "bob"] == 2 and overlap.loc["alice", "alice"] == 4
     assert jaccard.loc["alice", "bob"] == pytest.approx(2 / 6)
@@ -83,12 +86,29 @@ def test_overlap_statistics(config):
     assert pairs.iloc[0][["rater_a", "rater_b", "shared"]].tolist() == ["alice", "bob", 2]
 
 
-def test_units_use_sessions_when_every_row_has_one():
-    a = pd.DataFrame({"rater_id": ["a", "a"], "list_file": "f", "participant_id": ["s1", "s1"], "session_id": ["ses-1", "ses-2"]})
-    out, key = add_units(a)
-    assert key == ["participant_id", "session_id"]
-    assert out["unit"].nunique() == 2
-    assert add_units(a, participant_level_only=True)[0]["unit"].nunique() == 1
+def test_overlap_is_per_participant_even_with_sessions():
+    a = pd.DataFrame({"rater_id": ["a", "a", "b"], "list_file": "f", "participant_id": ["s1", "s1", "s1"], "session_id": ["ses-1", "ses-2", "ses-1"]})
+    summary = rater_summary(a)
+    assert summary.loc["a", "n_participants"] == 1 and summary.loc["a", "n_sessions"] == 2
+    assert summary.loc["a", "duplicate_rows"] == 0  # different sessions are not duplicates
+    assert overlap_matrices(a)[0].loc["a", "b"] == 1
+
+
+def test_rater_workload_qc_records(config):
+    a = load_assignments(config, warn=lambda _: None)
+    wl = rater_workload(a, n_tasks=3, sessions_by_rater={"alice": ["ses-BL", "ses-FU"], "bob": None})
+    # QC records = participants x sessions x tasks
+    assert (wl.loc["alice", "n_sessions"], wl.loc["alice", "qc_records"]) == (2, 4 * 2 * 3)
+    assert (wl.loc["bob", "n_sessions"], wl.loc["bob", "qc_records"]) == (1, 4 * 1 * 3)  # no session level: one
+    assert (wl["n_tasks"] == 3).all()
+
+
+def test_rater_workload_counts_listed_sessions():
+    a = pd.DataFrame(
+        {"rater_id": "a", "list_file": "f", "participant_id": ["s1", "s1", "s2", "s2"], "session_id": ["ses-1", "ses-2", "ses-1", "ses-1"]}
+    )
+    wl = rater_workload(a, n_tasks=2, sessions_by_rater={"a": ["ses-X"]})  # the list's own sessions win
+    assert (wl.loc["a", "n_sessions"], wl.loc["a", "qc_records"], wl.loc["a", "duplicate_rows"]) == (2, 3 * 2, 1)
 
 
 def test_rank_fewest_raters_first(config):
@@ -182,3 +202,32 @@ def test_all_policy_takes_the_whole_source(config):
     assert chosen.set_index("participant_id").loc["sub-02", "n_raters"] == 1
     # the count is ignored
     assert len(create_rater_list("carol", 1, POOL, a, policy="all")) == len(POOL)
+
+
+def test_rater_count_buckets(config):
+    a = load_assignments(config, warn=lambda _: None)
+    extra = pd.DataFrame({"rater_id": ["carol"] * 2, "list_file": "c.tsv", "participant_id": ["sub-03", "sub-99"], "session_id": ""})
+    b = rater_count_buckets(pd.concat([a, extra], ignore_index=True), POOL).set_index("bucket")
+    # pool of 10: sub-07..10 none; sub-01,02,05,06 one; sub-04 two; sub-03 three (alice, bob, carol); sub-99 not in pool
+    assert list(b.index) == ["0", "1", "2", "3+"]
+    assert b["n_participants"].tolist() == [4, 4, 1, 1]
+    assert b.loc["0", "pct"] == 40.0 and b.loc["2", "pct_at_least"] == 20.0 and b.loc["0", "pct_at_least"] == 100.0
+
+
+def test_rater_count_buckets_empty_pool(config):
+    b = rater_count_buckets(load_assignments(config, warn=lambda _: None), [])
+    assert b["n_participants"].tolist() == [0, 0, 0, 0]
+
+
+def test_clean_ids_and_count_buckets():
+    assert clean_ids([" s1", "s2", "s1", "", "s3 "]) == ["s1", "s2", "s3"]
+    counts = pd.Series({"s1": 1, "s2": 5, "out": 2})  # "out" is not in the pool
+    buckets = count_buckets(counts, ["s1", "s2", "s3"])
+    assert buckets.to_dict() == {"0": 1, "1": 1, "2": 0, "3+": 1}
+
+
+def test_overlap_jaccard_zero_for_disjoint_and_identical_is_one():
+    a = pd.DataFrame({"rater_id": ["a", "a", "b", "c", "c"], "list_file": "f", "participant_id": ["s1", "s2", "s3", "s1", "s2"], "session_id": ""})
+    overlap, jaccard = overlap_matrices(a)
+    assert overlap.loc["a", "b"] == 0 and jaccard.loc["a", "b"] == 0
+    assert jaccard.loc["a", "c"] == 1 and overlap.loc["c", "c"] == 2

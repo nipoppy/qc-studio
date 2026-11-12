@@ -7,7 +7,7 @@ import json
 import pandas as pd
 import streamlit as st
 
-from admin.core import AdminContext, log_admin_action
+from admin.core import AdminContext, log_admin_action, require_editor
 from utils.users_config_writer import (
     ENTRY_KEYS,
     ConfigWriteError,
@@ -58,12 +58,13 @@ def _show_pending(ctx: AdminContext) -> None:
     st.caption("The file is re-formatted with 4-space indentation on save. A backup of the current file is kept in config_backups/.")
     c1, c2 = st.columns(2)
     if c1.button("💾 Save to users config", type="primary", disabled=not diff):
+        require_editor(ctx)
         try:
             backup = apply_change(change)
         except ConfigWriteError as exc:
             st.error(f"Not saved: {exc}")
             return
-        log_admin_action(ctx.admin_email, f"{change.summary} in {change.path} (backup {backup})")
+        log_admin_action(ctx.email, f"{change.summary} in {change.path} (backup {backup})")
         st.session_state.pop(_PENDING, None)
         st.session_state["admin_flash"] = f"Saved: {change.summary}. Backup: `{backup}`"
         st.rerun()
@@ -100,8 +101,11 @@ def render(ctx: AdminContext) -> None:
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
     if cfg.rejected:
         st.warning("Invalid entries (refused at sign-in):\n" + "\n".join(f"- `{e}`: {'; '.join(r)}" for e, r in cfg.rejected.items()))
+    if not ctx.can_edit:
+        st.caption("View-only access: ask an admin to add, edit or remove raters.")
+        return
     st.caption(
-        "Admins and rater_root can only be changed by editing the users config file. "
+        "Admins, viewers and rater_root can only be changed by editing the users config file. "
         "Saved changes apply to the rater app on the raters' next page load."
     )
 

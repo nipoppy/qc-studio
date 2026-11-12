@@ -1,7 +1,7 @@
 """QC-Studio admin dashboard.
 
 Assign rater workloads and collate everyone's ratings. Only emails listed in the users
-config's top-level ``admins`` get in. Run it separately from the rater app, on its own port
+config's top-level ``admins`` (full access) or ``viewers`` (view only) get in. Run it separately from the rater app, on its own port
 and (in production) behind its own Cloudflare Access application:
 
     streamlit run ui/admin/admin_app.py --server.port=8502 --server.address=127.0.0.1 -- \\
@@ -35,20 +35,20 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(UI_DIR.parent / ".env")
 load_dotenv()
 
-from admin.core import build_context, parse_admin_args, require_admin  # noqa: E402
+from admin.core import build_context, parse_admin_args, require_dashboard_access  # noqa: E402
 from admin.views import assignments, overview, ratings, raters  # noqa: E402
 
 
 def main() -> None:
     st.set_page_config(page_title="QC-Studio admin", page_icon="🛠️", layout="wide")
     args = parse_admin_args()
-    email, cfg = require_admin(args.users_config)
-    ctx = build_context(args, email, cfg)
+    email, cfg, role = require_dashboard_access(args.users_config)
+    ctx = build_context(args, email, cfg, role)
 
-    st.title("QC-Studio admin")
-    st.sidebar.caption(f"👤 Signed in as {email}")
-    st.sidebar.caption(f"Users config: `{ctx.users_config.name}`")
-    if st.sidebar.button("🔄 Refresh"):
+    title, who, refresh = st.columns([6, 3, 1], vertical_alignment="bottom")
+    title.title("QC-Studio admin")
+    who.caption(f"👤 Signed in as {email}" + ("" if ctx.can_edit else " · view only"))
+    if refresh.button("🔄", help="Reload the users config, participant lists and ratings from disk"):
         st.cache_data.clear()
         st.rerun()
 

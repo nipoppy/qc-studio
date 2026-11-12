@@ -38,13 +38,15 @@ def read_participant_ids(path: str | Path) -> list[str]:
     return read_participant_list(path)["participant_id"].unique().tolist()
 
 
-def restrict_to_pool(custom_ids, pool_ids) -> tuple[list[str], list[str]]:
-    """Split a custom participant list into ``(kept, not_in_pool)`` against the dataset pool.
+def clean_ids(ids) -> list[str]:
+    """IDs stripped, de-duplicated and non-blank, in their original order."""
+    return [p for p in pd.unique(pd.Series(list(ids), dtype=str).str.strip()) if p]
 
-    Both are stripped, de-duplicated, non-blank and in the custom list's order.
-    """
-    pool = {str(p).strip() for p in pool_ids}
-    ids = [p for p in pd.unique(pd.Series(list(custom_ids), dtype=str).str.strip()) if p]
+
+def restrict_to_pool(custom_ids, pool_ids) -> tuple[list[str], list[str]]:
+    """Split a custom participant list into ``(kept, not_in_pool)`` against the dataset pool (custom list order)."""
+    pool = set(clean_ids(pool_ids))
+    ids = clean_ids(custom_ids)
     return [p for p in ids if p in pool], [p for p in ids if p not in pool]
 
 
@@ -79,78 +81,125 @@ def load_assignments(rater_config, warn=print) -> pd.DataFrame:
     return pd.concat(rows, ignore_index=True)[ASSIGNMENT_COLUMNS]
 
 
-def add_units(assign: pd.DataFrame, participant_level_only: bool = False) -> tuple[pd.DataFrame, list[str]]:
-    """Add a ``unit`` column: participant, or participant+session when every row has a session.
-
-    Returns ``(assign_with_unit, key_columns)``.
-    """
-    has_sessions = not assign.empty and (assign["session_id"] != "").all()
-    key = ["participant_id"] if (participant_level_only or not has_sessions) else ["participant_id", "session_id"]
-    out = assign.copy()
-    out["unit"] = out[key].agg("|".join, axis=1) if not out.empty else pd.Series(dtype=str)
-    return out, key
-
-
-def raters_per_unit(assign: pd.DataFrame) -> pd.Series:
-    """Number of distinct raters per unit (``assign`` must have a ``unit`` column)."""
-    return assign.drop_duplicates(["rater_id", "unit"]).groupby("unit")["rater_id"].nunique()
+def assigned_raters_per_participant(assign: pd.DataFrame) -> pd.Series:
+    """Number of distinct raters each participant is assigned to."""
+    return assign.drop_duplicates(["rater_id", "participant_id"]).groupby("participant_id")["rater_id"].nunique()
 
 
 def rater_summary(assign: pd.DataFrame) -> pd.DataFrame:
-    """Per rater: rows, unique participants/units, duplicates, sessions, shared vs exclusive units."""
+    """Per rater: list rows, unique participants, duplicate rows, listed sessions, shared vs exclusive participants.
+
+    Statistics are per participant; ``duplicate_rows`` counts repeated participant(-session) rows.
+    """
     if assign.empty:
         return pd.DataFrame()
-    n_raters = assign["unit"].map(raters_per_unit(assign))
-    a = assign.assign(n_raters_for_unit=n_raters)
+    n_raters = assign["participant_id"].map(assigned_raters_per_participant(assign))
+    a = assign.assign(n_raters_for_participant=n_raters)
     rows = []
     for rid, g in a.groupby("rater_id"):
-        uniq = g.drop_duplicates("unit")
+        uniq = g.drop_duplicates("participant_id")
         rows.append(
             {
                 "rater_id": rid,
                 "rows": len(g),
-                "unique_participants": g["participant_id"].nunique(),
-                "unique_units": len(uniq),
-                "duplicate_rows": len(g) - len(uniq),
+                "n_participants": len(uniq),
+                "duplicate_rows": int(g.duplicated(["participant_id", "session_id"]).sum()),
                 "n_sessions": g.loc[g["session_id"] != "", "session_id"].nunique(),
-                "shared_with_others": int((uniq["n_raters_for_unit"] > 1).sum()),
-                "exclusive": int((uniq["n_raters_for_unit"] == 1).sum()),
+                "shared_with_others": int((uniq["n_raters_for_participant"] > 1).sum()),
+                "exclusive": int((uniq["n_raters_for_participant"] == 1).sum()),
             }
         )
     out = pd.DataFrame(rows).set_index("rater_id")
-    out["pct_shared"] = (100 * out["shared_with_others"] / out["unique_units"]).round(1)
-    return out.sort_values("unique_units", ascending=False)
+    out["pct_shared"] = (100 * out["shared_with_others"] / out["n_participants"]).round(1)
+    return out.sort_values("n_participants", ascending=False)
+
+
+def rater_workload(assign: pd.DataFrame, n_tasks: int, sessions_by_rater: dict[str, list[str] | None] | None = None) -> pd.DataFrame:
+    """Per rater: participants, sessions, tasks and ``qc_records`` to rate.
+
+    A QC record is one participant × session × task (as ``total_qc_records`` in the rater app).
+    Sessions come from the list's ``session_id`` column (its participant-session pairs are counted),
+    else from ``sessions_by_rater`` (the rater's ``session_list`` or the launch ``--session_list``);
+    a rater with neither counts one session (datasets without a session level).
+    """
+    summary = rater_summary(assign)
+    if summary.empty:
+        return summary
+    sessions_by_rater = sessions_by_rater or {}
+    pages, n_sessions = {}, {}
+    for rid, g in assign.groupby("rater_id"):
+        if (g["session_id"] != "").any():  # the list names its sessions
+            pages[rid] = len(g.drop_duplicates(["participant_id", "session_id"]))
+            n_sessions[rid] = g.loc[g["session_id"] != "", "session_id"].nunique()
+        else:
+            n_sessions[rid] = len(sessions_by_rater.get(rid) or []) or 1
+            pages[rid] = g["participant_id"].nunique() * n_sessions[rid]
+    out = summary.copy()
+    out["n_sessions"] = out.index.map(n_sessions)
+    out["n_tasks"] = n_tasks
+    out["qc_records"] = out.index.map(pages) * n_tasks
+    cols = ["n_participants", "n_sessions", "n_tasks", "qc_records", "duplicate_rows", "shared_with_others", "pct_shared"]
+    return out[cols]
 
 
 def rater_count_distribution(assign: pd.DataFrame) -> pd.DataFrame:
-    """How many units have 1, 2, ... raters: ``n_units``, ``pct``, ``cum_pct_at_least`` indexed by ``n_raters``."""
-    per_unit = raters_per_unit(assign)
-    total = len(per_unit)
-    cov = per_unit.value_counts().sort_index().rename_axis("n_raters").rename("n_units").to_frame()
+    """How many participants have 1, 2, ... raters: ``n_participants``, ``pct``, ``cum_pct_at_least`` indexed by ``n_raters``."""
+    per_participant = assigned_raters_per_participant(assign)
+    total = len(per_participant)
+    cov = per_participant.value_counts().sort_index().rename_axis("n_raters").rename("n_participants").to_frame()
     if total:
-        cov["pct"] = (100 * cov["n_units"] / total).round(1)
-        cov["cum_pct_at_least"] = (100 * cov["n_units"][::-1].cumsum()[::-1] / total).round(1)
+        cov["pct"] = (100 * cov["n_participants"] / total).round(1)
+        cov["cum_pct_at_least"] = (100 * cov["n_participants"][::-1].cumsum()[::-1] / total).round(1)
     return cov
 
 
+BUCKET_TOP = 3  # "0", "1", "2", "3+" raters
+
+
+def count_buckets(counts: pd.Series, pool_ids, top: int = BUCKET_TOP) -> pd.Series:
+    """Pool participants by their count in ``counts`` (indexed by participant): ``"0"`` ... ``"<top>+"``.
+
+    Participants missing from ``counts`` count 0; IDs outside the pool are ignored.
+    """
+    per = counts.reindex(clean_ids(pool_ids), fill_value=0).clip(upper=top).astype(int)
+    out = per.value_counts().reindex(range(top + 1), fill_value=0)
+    out.index = [f"{n}+" if n == top else str(n) for n in out.index]
+    return out.rename("n_participants")
+
+
+def rater_count_buckets(assign: pd.DataFrame, pool_ids, top: int = BUCKET_TOP) -> pd.DataFrame:
+    """Dataset participants by number of assigned raters: one row per bucket ``0`` ... ``<top>+``.
+
+    Columns: ``bucket``, ``n_raters`` (lower bound), ``n_participants``, ``pct`` (of the pool)
+    and ``pct_at_least`` (``n_raters`` or more).
+    """
+    counts = count_buckets(assigned_raters_per_participant(assign), pool_ids, top)
+    total = counts.sum()
+    out = counts.rename_axis("bucket").reset_index()
+    out.insert(1, "n_raters", range(top + 1))
+    out["pct"] = (100 * out["n_participants"] / total).round(1) if total else 0.0
+    out["pct_at_least"] = (100 * out["n_participants"][::-1].cumsum()[::-1] / total).round(1) if total else 0.0
+    return out
+
+
+def _participant_sets(assign: pd.DataFrame) -> pd.Series:
+    return assign.groupby("rater_id")["participant_id"].agg(set)
+
+
 def overlap_matrices(assign: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """``(shared_counts, jaccard)`` between every pair of raters; the diagonal is each rater's unit count."""
-    sets = assign.groupby("rater_id")["unit"].agg(set)
-    raters = sorted(sets.index)
-    overlap = pd.DataFrame(0, index=raters, columns=raters, dtype=int)
-    jaccard = pd.DataFrame(0.0, index=raters, columns=raters)
-    for a in raters:
-        for b in raters:
-            inter = len(sets[a] & sets[b])
-            union = len(sets[a] | sets[b])
-            overlap.loc[a, b] = inter
-            jaccard.loc[a, b] = inter / union if union else 0.0
+    """``(shared_counts, jaccard)`` of participants between every pair of raters; the diagonal is each rater's list size."""
+    member = pd.crosstab(assign["rater_id"], assign["participant_id"]).clip(upper=1)  # rater × participant, 0/1
+    overlap = member @ member.T
+    size = np.diag(overlap)
+    union = size[:, None] + size[None, :] - overlap
+    jaccard = (overlap / union.where(union > 0)).fillna(0.0)
+    overlap.index.name = overlap.columns.name = jaccard.index.name = jaccard.columns.name = None
     return overlap, jaccard
 
 
 def overlapping_pairs(assign: pd.DataFrame) -> pd.DataFrame:
-    """Rater pairs that share at least one unit, most shared first."""
-    sets = assign.groupby("rater_id")["unit"].agg(set)
+    """Rater pairs that share at least one participant, most shared first."""
+    sets = _participant_sets(assign)
     rows = []
     for a, b in combinations(sorted(sets.index), 2):
         shared = len(sets[a] & sets[b])
@@ -173,7 +222,7 @@ def overlapping_pairs(assign: pd.DataFrame) -> pd.DataFrame:
 
 def _rank(pool_ids, assignments: pd.DataFrame, seed=None, warn=print, warn_outside_pool=True) -> pd.DataFrame:
     """Rank the pool by number of raters in ``assignments`` (fewest first, ties shuffled with ``seed``)."""
-    pool = pd.Index(pd.unique(pd.Series(list(pool_ids), dtype=str).str.strip()))
+    pool = pd.Index(clean_ids(pool_ids))
     a = assignments.drop_duplicates(["participant_id", "rater_id"])
     outside = set(a["participant_id"]) - set(pool)
     if outside and warn_outside_pool:
@@ -230,7 +279,7 @@ def create_rater_list(
     if policy in ("least_rated", "all"):
         chosen = ranked.head(n)
     else:  # random: sample in pool order so the result depends only on the pool and the seed
-        pool = pd.unique(pd.Series(list(pool_ids), dtype=str).str.strip())
+        pool = np.array(clean_ids(pool_ids))
         picked = pool[np.random.default_rng(seed).choice(len(pool), size=n, replace=False)]
         chosen = ranked.set_index("participant_id").loc[picked].reset_index()
     ids = chosen["participant_id"]

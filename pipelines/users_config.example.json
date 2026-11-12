@@ -1,6 +1,7 @@
 {
   "rater_root": "/data/qc-datasets/qc-raters",
   "admins": ["lead@mcgill.ca"],
+  "viewers": ["pi@mcgill.ca"],
   "users": {
     "alice@mcgill.ca": {
       "rater_id": "alice",

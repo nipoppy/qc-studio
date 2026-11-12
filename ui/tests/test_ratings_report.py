@@ -6,7 +6,12 @@ import pandas as pd
 import pytest
 
 from utils.ratings_report import (
+    coverage_buckets,
+    split_expected,
     ALL_TASKS,
+    dataset_sessions,
+    expected_records,
+    records_rated,
     IN_PROGRESS,
     NOT_EXPECTED,
     NOT_STARTED,
@@ -208,3 +213,49 @@ def test_unstarted_expected_tasks_in_completion_and_coverage(config):
     cov = dataset_coverage(qc, POOL, assigned_ids(config), tasks=EXPECTED, pipeline="fsqc").set_index("qc_task")
     assert cov.loc["FS_preproc_workflow", "rated_1+"] == 0 and cov.loc["FS_preproc_workflow", "not_rated"] == len(POOL)
     assert cov.loc["FS_volume_workflow", "rated_1+"] == 3
+
+
+def test_dataset_sessions_column_wins_over_session_list():
+    pool = pd.DataFrame({"participant_id": ["sub-1", "sub-1", "sub-2"], "session_id": ["ses-BL", "ses-V04", "ses-BL"]})
+    assert dataset_sessions(pool, "ses-X") == (["ses-BL", "ses-V04"], "session_id column")
+    assert dataset_sessions(pool[["participant_id"]], "ses-BL") == (["ses-BL"], "--session_list")
+    assert dataset_sessions(pool[["participant_id"]], None) == ([], "not specified")
+
+
+def test_expected_records_and_records_rated():
+    pool = pd.DataFrame({"participant_id": ["sub-1", "sub-2", "sub-3"]})
+    records = expected_records(pool, ["t1", "t2"], "ses-BL,ses-V04")
+    assert len(records) == 3 * 2 * 2
+    qc = pd.DataFrame(
+        {
+            "rater_id": ["a", "b", "a", "a", "a"],
+            "participant_id": ["sub-1", "sub-1", "sub-2", "sub-9", "sub-3"],  # sub-9 is outside the dataset
+            "session_id": ["ses-BL", "ses-BL", "ses-V04", "ses-BL", "ses-BL"],
+            "qc_task": ["t1", "t1", "t2", "t1", "t3"],  # t3 is not prescribed
+        }
+    )
+    assert records_rated(qc, records) == 2  # sub-1/BL/t1 counted once despite two raters
+    assert records_rated(qc.iloc[:0], records) == 0
+
+
+def test_expected_records_from_session_column_and_without_sessions():
+    pool = pd.DataFrame({"participant_id": ["sub-1", "sub-1", "sub-2"], "session_id": ["ses-BL", "ses-V04", "ses-BL"]})
+    assert len(expected_records(pool, ["t1"])) == 3
+    flat = expected_records(pool[["participant_id"]], ["t1", "t2"], None)
+    assert len(flat) == 4 and flat["session_id"].isna().all()
+    qc = pd.DataFrame({"participant_id": ["sub-1"], "session_id": ["ses-BL"], "qc_task": ["t2"]})
+    assert records_rated(qc, flat) == 1  # no sessions: matched on participant and task
+    assert expected_records(pool, []).empty
+
+
+def test_split_expected_normalises_pipeline():
+    qc = pd.DataFrame({"pipeline": ["FSQC", "fsqc", "mriqc"], "qc_task": ["t1", "t2", "t1"], "rater_id": "a", "participant_id": "s1"})
+    expected, other = split_expected(qc, "fsqc", ["t1"])
+    assert expected["pipeline"].tolist() == ["fsqc"] and len(other) == 2
+
+
+def test_coverage_buckets_per_task():
+    qc = pd.DataFrame({"qc_task": ["t1", "t1", "t1", "t2"], "rater_id": ["a", "b", "a", "a"], "participant_id": ["s1", "s1", "s2", "s9"]})
+    out = coverage_buckets(qc, ["s1", "s2", "s3"], ["t1", "t2"])
+    assert out.loc["t1"].to_dict() == {"0": 1, "1": 1, "2": 1, "3+": 0}
+    assert out.loc["t2"].to_dict() == {"0": 3, "1": 0, "2": 0, "3+": 0}  # s9 is outside the pool

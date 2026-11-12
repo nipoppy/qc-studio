@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from utils.assignments import as_users_config, read_participant_ids
+from utils.assignments import as_users_config, count_buckets, read_participant_ids
+from utils.cohort import parse_session_list
 from utils.qc_files import find_rating_files, read_rating_file, select_rating_file
 
 ID_COLS = ["participant_id", "session_id", "task_id", "run_id"]
@@ -252,6 +253,12 @@ def raters_per_participant(qc: pd.DataFrame, pool_ids, task: str) -> pd.Series:
     return g.groupby("participant_id")["rater_id"].nunique().reindex(sorted(set(pool_ids)), fill_value=0)
 
 
+def coverage_buckets(qc: pd.DataFrame, pool_ids, tasks) -> pd.DataFrame:
+    """Per task (rows): dataset participants by number of raters, columns ``"0"``, ``"1"``, ``"2"``, ``"3+"``."""
+    per_task = {t: qc[qc["qc_task"] == t].groupby("participant_id")["rater_id"].nunique() for t in tasks}
+    return pd.DataFrame({t: count_buckets(n, pool_ids) for t, n in per_task.items()}).T.rename_axis("qc_task")
+
+
 def dataset_coverage(qc: pd.DataFrame, pool_ids, assigned: dict[str, set[str]] | None = None, tasks=None, pipeline=None) -> pd.DataFrame:
     """Per task: how many pool participants were rated by at least 1, 2 and 3 raters.
 
@@ -292,10 +299,58 @@ TASK_STATUS_COLUMNS = ["pipeline", "qc_task", "in_qc_json", "status", "raters_st
 NOT_STARTED, IN_PROGRESS, NOT_EXPECTED = "Not started", "In progress", "Not in qc.json"
 
 
+def dataset_sessions(pool: pd.DataFrame, session_list: str | None = None) -> tuple[list[str], str]:
+    """Sessions of the dataset participant list and where they come from.
+
+    The list's ``session_id`` column wins; otherwise the ``--session_list`` value. An empty
+    list means the dataset has no session level (each participant is one QC page).
+    """
+    if "session_id" in pool.columns:
+        return sorted(s for s in pool["session_id"].dropna().astype(str).str.strip().unique() if s), "session_id column"
+    sessions = parse_session_list(session_list) or []
+    return sessions, ("--session_list" if sessions else "not specified")
+
+
+def expected_records(pool: pd.DataFrame, tasks, session_list: str | None = None) -> pd.DataFrame:
+    """Every QC record the dataset calls for: one row per participant × session × task.
+
+    Participant–session pairs come from the list's ``session_id`` column when present, else every
+    participant × each ``--session_list`` session. Without sessions, ``session_id`` is empty.
+    """
+    cols = ["participant_id", "session_id", "qc_task"]
+    ids = pool["participant_id"].astype(str).str.strip()
+    if "session_id" in pool.columns:
+        pages = pd.DataFrame({"participant_id": ids, "session_id": pool["session_id"].astype(str).str.strip()})
+    else:
+        sessions = dataset_sessions(pool, session_list)[0] or [None]
+        pages = pd.MultiIndex.from_product([ids.unique(), sessions], names=cols[:2]).to_frame(index=False)
+    pages = pages[pages["participant_id"] != ""].drop_duplicates()
+    tasks = pd.DataFrame({"qc_task": list(tasks)})
+    if pages.empty or tasks.empty:
+        return pd.DataFrame(columns=cols)
+    return pages.merge(tasks, how="cross")[cols]
+
+
+def records_rated(qc: pd.DataFrame, records: pd.DataFrame) -> int:
+    """Number of ``records`` (participant × session × task) with at least one participant-level rating.
+
+    Each record counts once however many raters rated it; ratings outside ``records`` are ignored.
+    When ``records`` has no sessions, ratings match on participant and task only.
+    """
+    if qc.empty or records.empty:
+        return 0
+    keys = ["participant_id", "qc_task"] + (["session_id"] if records["session_id"].notna().any() else [])
+    rated = qc[keys].astype(str).drop_duplicates()
+    return len(records[keys].astype(str).drop_duplicates().merge(rated, on=keys))
+
+
 def split_expected(qc: pd.DataFrame, pipeline: str, tasks) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """``(expected, other)``: ratings of the expected pipeline tasks, and everything else."""
+    """``(expected, other)``: rows of the expected pipeline tasks (``pipeline`` spelled as given), and everything else.
+
+    Works on facet- and participant-level tables; the pipeline is matched case-insensitively.
+    """
     mask = (qc["pipeline"].str.lower() == str(pipeline).lower()) & qc["qc_task"].isin(list(tasks))
-    return qc[mask], qc[~mask]
+    return qc[mask].assign(pipeline=pipeline), qc[~mask]
 
 
 def task_status(qc: pd.DataFrame, pipeline: str, tasks) -> pd.DataFrame:

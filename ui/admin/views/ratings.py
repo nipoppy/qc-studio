@@ -6,29 +6,25 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from admin.core import AdminContext, cached_collation, clear_collation_cache, log_admin_action, to_tsv_bytes
-from utils.assignments import read_participant_ids
+from admin.charts import COVERAGE_COLORS, QC_COLORS, VALUE_COLORS, style_bars, style_heatmap
+from admin.core import AdminContext, cached_ratings, log_admin_action, require_editor, to_tsv_bytes
 from utils.ratings_report import (
     QC_ORDER,
     VALUE_ORDER,
     agreement_summary,
     assigned_ids,
     consensus,
+    coverage_buckets,
     dataset_coverage,
+    expected_records,
     facet_rating_counts,
     final_qc_counts,
     off_list_ratings,
-    participant_level,
     rater_progress,
-    raters_per_participant,
+    records_rated,
     split_expected,
     task_status,
 )
-
-# Status colours (good / warning / serious / critical) and a neutral grey for missing.
-QC_COLORS = {"All-Pass": "#0ca30c", "Mixed": "#fab219", "All-Uncertain": "#ec835a", "All-Fail": "#d03b3b", "All-Missing": "#898781"}
-VALUE_COLORS = {"PASS": "#0ca30c", "UNCERTAIN": "#ec835a", "FAIL": "#d03b3b", "MISSING": "#898781"}
-COVERAGE_COLORS = {"0": "#e1e0d9", "1": "#9ec5f4", "2": "#3987e5", "3+": "#184f95"}
 
 
 def _download(label: str, df: pd.DataFrame, name: str, index: bool = False) -> None:
@@ -47,56 +43,87 @@ def _stacked_share(long: pd.DataFrame, y: str, color: str, order: list[str], col
         color_discrete_map=colors,
         labels={"n": "% of ratings", y: ""},
     )
-    fig.update_traces(marker_line_color="white", marker_line_width=1)
-    fig.update_layout(barnorm="percent", height=height, margin=dict(t=30, b=10), legend_title_text="", legend=dict(orientation="h", y=-0.15))
+    style_bars(fig, height)
+    fig.update_layout(barnorm="percent")
     fig.update_yaxes(categoryorder="category descending")
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     return fig
 
 
 def render(ctx: AdminContext) -> None:
-    c1, c2 = st.columns([3, 1])
-    prefer_transformed = c1.toggle(
+    alerts = st.container()  # every warning/error banner of this tab is collected here, above the content
+    prefer_transformed = st.toggle(
         "Use *_transformed checkpoint copies when available",
         value=True,
         help="Old checkpoints may have a *_transformed.tsv copy using the current facet names; it replaces the original of the same stamp.",
     )
-    if c2.button("🔄 Reload ratings"):
-        clear_collation_cache()
-
-    try:
-        pool_ids = read_participant_ids(ctx.participant_list)
-    except (OSError, ValueError) as exc:
-        st.error(f"Dataset participant list cannot be read: {exc}")
-        return
-    col = cached_collation(ctx, prefer_transformed)
+    pool_ids = ctx.pool_ids
+    col, qc_all = cached_ratings(ctx, prefer_transformed)
     if col.ratings.empty:
         st.info("No ratings saved yet.")
         return
-    qc_all = participant_level(col.ratings)
-    qc, qc_other = split_expected(qc_all, ctx.qc_pipeline, ctx.expected_tasks)
-    qc = qc.assign(pipeline=ctx.qc_pipeline)  # normalise case so expected tasks line up
-    ratings_exp = col.ratings[col.ratings["pipeline"].str.lower().eq(ctx.qc_pipeline.lower()) & col.ratings["qc_task"].isin(ctx.expected_tasks)]
+    tasks = ctx.expected_tasks  # the qc.json prescription, including tasks nobody has started
+    qc, qc_other = split_expected(qc_all, ctx.qc_pipeline, tasks)
+    ratings_exp, _ = split_expected(col.ratings, ctx.qc_pipeline, tasks)
     assigned = assigned_ids(ctx.cfg)
-    tasks = list(ctx.expected_tasks)  # the qc.json prescription, including tasks nobody has started
     started = [t for t in tasks if t in set(qc["qc_task"])]
     not_started = [t for t in tasks if t not in started]
 
-    m = st.columns(4)
-    m[0].metric("Raters with ratings", f"{col.sources['rater_id'].nunique()} / {len(ctx.cfg.users)}")
-    m[1].metric("Participant-level ratings", len(qc))
-    m[2].metric("Facet ratings", len(col.ratings))
-    m[3].metric("Dataset participants", len(set(pool_ids)))
+    # Counts use participant-level ratings (one final_qc per rater × participant × session × task); facet ratings are never counted.
+    records = expected_records(ctx.pool, tasks, ctx.session_list)
+    n_rated = records_rated(qc, records)
+    pct_rated = 100 * n_rated / len(records) if len(records) else 0.0
+    per_task = qc.groupby("qc_task").agg(
+        ratings=("participant_id", "size"), participants=("participant_id", "nunique"), raters=("rater_id", "nunique")
+    )
+    per_task = per_task.reindex(tasks, fill_value=0)
+    n_participants_rated = len(set(qc["participant_id"]) & set(pool_ids))
+    pct_participants = 100 * n_participants_rated / len(pool_ids) if pool_ids else 0.0
+    m = st.columns(3 + len(tasks))  # one row of bordered tiles
+    m[0].metric("Raters with ratings", f"{col.sources['rater_id'].nunique()} / {len(ctx.cfg.users)}", border=True, height="stretch")
+    m[1].metric(
+        "Participant-level ratings",
+        f"{n_participants_rated:,} / {len(pool_ids):,}",
+        delta=f"{pct_participants:.1f}% of dataset participants",
+        delta_color="off",
+        delta_arrow="off",
+        help="Dataset participants with at least one rating (any session or task) / all dataset participants. "
+        "Each participant counts once however many raters rated them.",
+        border=True,
+        height="stretch",
+    )
+    m[2].metric(
+        "Record-level ratings",
+        f"{n_rated:,} / {len(records):,}",
+        delta=f"{pct_rated:.1f}% of QC records",
+        delta_color="off",
+        delta_arrow="off",
+        help=f"QC records with at least one rating / total QC records (dataset participants × sessions × {len(tasks)} task(s) in qc.json). "
+        "Each record counts once however many raters rated it.",
+        border=True,
+        height="stretch",
+    )
+    for c, (task, row) in zip(m[3:], per_task.iterrows()):
+        c.metric(
+            task,
+            f"{int(row['ratings']):,}",
+            delta="not started" if row["ratings"] == 0 else None,
+            delta_color="off",
+            delta_arrow="off",
+            help=f"Participant-level ratings for this task: {int(row['participants'])} distinct participants rated by {int(row['raters'])} rater(s)",
+            border=True,
+            height="stretch",
+        )
     if col.raters_without_files:
         st.caption("No status/checkpoint files yet: " + ", ".join(col.raters_without_files))
     if col.warnings:
         with st.expander(f"⚠️ {len(col.warnings)} file warning(s)"):
             st.markdown("\n".join(f"- {w}" for w in col.warnings))
     if not_started:
-        st.warning(f"Not started by any rater: {', '.join(not_started)}")
+        alerts.warning(f"Not started by any rater: {', '.join(not_started)}")
     if not qc_other.empty:
         other = qc_other.groupby(["pipeline", "qc_task"]).size()
-        st.warning(
+        alerts.warning(
             "Ratings for task(s) not in qc.json are left out of the reports below (still in the facet/participant exports): "
             + ", ".join(f"{p}/{t} ({n})" for (p, t), n in other.items())
         )
@@ -104,13 +131,24 @@ def render(ctx: AdminContext) -> None:
         st.info("No ratings for the expected tasks yet.")
         return
 
-    # --- Sources -------------------------------------------------------------
-    st.subheader("Rating file used per rater and task")
-    st.caption("The rater's qc_status.tsv when present, otherwise their newest checkpoint.")
-    st.dataframe(col.sources, hide_index=True, width="stretch")
-    flagged = col.sources[col.sources["in_latest_ckpt_not_in_status"] > 0]
-    if not flagged.empty:
-        st.warning("The newest checkpoint has participants that are missing from the status file for: " + ", ".join(flagged["source_file"]))
+    # --- Coverage ------------------------------------------------------------
+    st.subheader("Dataset coverage")
+    coverage = dataset_coverage(qc, pool_ids, assigned, tasks=tasks, pipeline=ctx.qc_pipeline)
+    st.dataframe(coverage, hide_index=True, width="stretch")
+    dist = coverage_buckets(qc, pool_ids, tasks).reset_index().melt(id_vars="qc_task", var_name="raters", value_name="n")
+    fig = px.bar(
+        dist,
+        x="n",
+        y="qc_task",
+        color="raters",
+        orientation="h",
+        category_orders={"raters": list(COVERAGE_COLORS)},
+        color_discrete_map=COVERAGE_COLORS,
+        labels={"n": f"Dataset participants (n={len(pool_ids):,})", "qc_task": ""},
+    )
+    style_bars(fig, height=140 + 50 * len(tasks))
+    fig.update_layout(legend_title_text="Raters")
+    st.plotly_chart(fig, width="stretch")
 
     st.subheader("final_qc per task")
     counts = final_qc_counts(qc).reindex(pd.MultiIndex.from_product([[ctx.qc_pipeline], tasks], names=["pipeline", "qc_task"]), fill_value=0)
@@ -124,40 +162,27 @@ def render(ctx: AdminContext) -> None:
     cnt = progress.pivot(index="rater_id", columns="qc_task", values="rated_assigned").reindex(index=all_raters, columns=tasks)
     text = pct.round(0).astype("Int64").astype(str).where(pct.notna(), "–") + "% (" + cnt.astype("Int64").astype(str).where(cnt.notna(), "0") + ")"
     text = text.where(pct.notna(), "–")
-    fig = px.imshow(pct, color_continuous_scale="Blues", zmin=0, zmax=100, aspect="auto", labels=dict(color="% of own list"))
+    fig = px.imshow(pct, zmin=0, zmax=100, aspect="auto", labels=dict(color="% of own list"))
     fig.update_traces(text=text.values, texttemplate="%{text}", hovertemplate="%{y} · %{x}<br>%{text}<extra></extra>")
-    fig.update_layout(height=max(300, 26 * len(pct) + 100), margin=dict(t=10, b=10))
+    style_heatmap(fig, z=pct, height=max(300, 26 * len(pct) + 100))
     st.plotly_chart(fig, width="stretch")
     st.caption("% of each rater's own participant list rated (number rated). – = task not started.")
     st.dataframe(progress, hide_index=True, width="stretch")
     off = off_list_ratings(qc, assigned, pool_ids)
     if not off.empty:
-        st.warning(f"{len(off)} rating(s) of participants outside the rater's own list or outside the dataset list.")
-        with st.expander("Show them"):
+        alerts.warning(
+            f"{len(off)} rating(s) of participants outside the rater's own list or outside the dataset list (listed under Rater progress)."
+        )
+        with st.expander(f"{len(off)} rating(s) outside the rater's own list or the dataset list"):
             st.dataframe(off, hide_index=True, width="stretch")
 
-    # --- Coverage ------------------------------------------------------------
-    st.subheader("Dataset coverage")
-    coverage = dataset_coverage(qc, pool_ids, assigned, tasks=tasks, pipeline=ctx.qc_pipeline)
-    st.dataframe(coverage, hide_index=True, width="stretch")
-    dist = []
-    for task in tasks:
-        n_r = raters_per_participant(qc, pool_ids, task).clip(upper=3).astype(str).replace("3", "3+")
-        for b, n in n_r.value_counts().items():
-            dist.append({"qc_task": task, "raters": b, "n": int(n)})
-    fig = px.bar(
-        pd.DataFrame(dist),
-        x="n",
-        y="qc_task",
-        color="raters",
-        orientation="h",
-        category_orders={"raters": list(COVERAGE_COLORS)},
-        color_discrete_map=COVERAGE_COLORS,
-        labels={"n": f"Participants in dataset list (n={len(set(pool_ids))})", "qc_task": "", "raters": "Raters"},
-    )
-    fig.update_traces(marker_line_color="white", marker_line_width=1)
-    fig.update_layout(height=120 + 50 * len(tasks), margin=dict(t=10, b=10), legend=dict(orientation="h", y=-0.4))
-    st.plotly_chart(fig, width="stretch")
+    # --- Sources -------------------------------------------------------------
+    with st.expander("Rating file used per rater and task"):
+        st.caption("The rater's qc_status.tsv when present, otherwise their newest checkpoint.")
+        st.dataframe(col.sources, hide_index=True, width="stretch")
+    flagged = col.sources[col.sources["in_latest_ckpt_not_in_status"] > 0]
+    if not flagged.empty:
+        alerts.warning("The newest checkpoint has participants that are missing from the status file for: " + ", ".join(flagged["source_file"]))
 
     # --- Distributions -------------------------------------------------------
     st.subheader("final_qc by rater")
@@ -207,9 +232,12 @@ def render(ctx: AdminContext) -> None:
             _download(name, df, name)
     if ctx.output_dir is None:
         st.caption("Start the admin app with --output_dir to also save these reports on the server.")
+    elif not ctx.can_edit:
+        st.caption(f"View-only access: download the reports above (only admins save them to `{ctx.output_dir}`).")
     elif st.button(f"💾 Save reports to {ctx.output_dir}"):
+        require_editor(ctx)
         ctx.output_dir.mkdir(parents=True, exist_ok=True)
         for name, df in reports.items():
             df.to_csv(ctx.output_dir / f"{name}.tsv", sep="\t", index=False)
-        log_admin_action(ctx.admin_email, f"saved {len(reports)} reports to {ctx.output_dir}")
+        log_admin_action(ctx.email, f"saved {len(reports)} reports to {ctx.output_dir}")
         st.success(f"Saved {len(reports)} reports to `{ctx.output_dir}`")
