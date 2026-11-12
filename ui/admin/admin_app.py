@@ -7,7 +7,11 @@ and (in production) behind its own Cloudflare Access application:
     streamlit run ui/admin/admin_app.py --server.port=8502 --server.address=127.0.0.1 -- \\
         --users_config /data/qc-raters/users.json \\
         --participant_list /data/qc_participants.tsv \\
+        --qc_json ../pipelines/fsqc/qc.json [--qc_pipeline fsqc] [--qc_task all] \\
         [--output_dir /data/qc-raters/reports] [--session_list ses-BL]
+
+The tasks in qc.json are the ones raters are expected to complete. The pipeline comes from
+qc.json's "__pipeline__" key, else --qc_pipeline (they must agree if both are given).
 
 This script lives in its own folder so Streamlit does not add the rater app's ``ui/pages``
 to this app's sidebar.

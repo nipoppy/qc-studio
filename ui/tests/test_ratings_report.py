@@ -6,8 +6,13 @@ import pandas as pd
 import pytest
 
 from utils.ratings_report import (
+    ALL_TASKS,
+    IN_PROGRESS,
+    NOT_EXPECTED,
+    NOT_STARTED,
     agreement_summary,
     assigned_ids,
+    assignment_completion,
     collate_ratings,
     consensus,
     dataset_coverage,
@@ -16,6 +21,8 @@ from utils.ratings_report import (
     off_list_ratings,
     participant_level,
     rater_progress,
+    split_expected,
+    task_status,
 )
 
 POOL = ["sub-01", "sub-02", "sub-03", "sub-04"]
@@ -145,3 +152,59 @@ def test_empty_config(tmp_path):
     assert col.ratings.empty and col.sources.empty
     qc = participant_level(col.ratings)
     assert qc.empty and consensus(qc).empty
+
+
+def test_assignment_completion(config):
+    qc = participant_level(collate_ratings(config).ratings)
+    comp = assignment_completion(qc, assigned_ids(config)).set_index("qc_task")
+    task = comp.loc["FS_volume_workflow"]
+    # lists: alice 2, bob 2, carol 1 (no ratings) -> 5 assigned; alice rated 2, bob 2 of his own
+    assert (task["assigned"], task["rated_assigned"], task["pct_complete"]) == (5, 4, 80.0)
+    assert (task["raters_started"], task["raters_with_list"]) == (2, 3)
+    assert comp.loc[ALL_TASKS, "assigned"] == 5 and comp.loc[ALL_TASKS, "pct_complete"] == 80.0
+
+
+def test_assignment_completion_pools_tasks(config, tmp_path):
+    rows = _rows("alice", "sub-01", "All-Pass", ["PASS"], task="FS_surface_workflow")
+    _save(tmp_path / "alice" / "qc-output" / "alice_fsqc_fs_surface_workflow_qc_status.tsv", rows)
+    qc = participant_level(collate_ratings(config).ratings)
+    comp = assignment_completion(qc, assigned_ids(config)).set_index("qc_task")
+    assert comp.loc["FS_surface_workflow", "rated_assigned"] == 1 and comp.loc["FS_surface_workflow", "pct_complete"] == 20.0
+    assert (comp.loc[ALL_TASKS, "assigned"], comp.loc[ALL_TASKS, "rated_assigned"]) == (10, 5)
+    assert comp.loc[ALL_TASKS, "pct_complete"] == 50.0
+
+
+def test_assignment_completion_empty(tmp_path):
+    path = tmp_path / "users.json"
+    path.write_text(json.dumps({"users": {}}))
+    assert assignment_completion(participant_level(collate_ratings(path).ratings), {}).empty
+
+
+EXPECTED = ["FS_preproc_workflow", "FS_volume_workflow"]
+
+
+def test_task_status_reports_unstarted_and_unexpected(config, tmp_path):
+    rows = _rows("alice", "sub-01", "All-Pass", ["PASS"], task="old_task")
+    _save(tmp_path / "alice" / "qc-output" / "alice_fsqc_old_task_qc_status.tsv", rows)
+    qc = participant_level(collate_ratings(config).ratings)
+    status = task_status(qc, "fsqc", EXPECTED).set_index("qc_task")
+    assert list(status.index) == ["FS_preproc_workflow", "FS_volume_workflow", "old_task"]
+    assert status.loc["FS_preproc_workflow", "status"] == NOT_STARTED and status.loc["FS_preproc_workflow", "ratings"] == 0
+    assert status.loc["FS_volume_workflow", "status"] == IN_PROGRESS and status.loc["FS_volume_workflow", "raters_started"] == 2
+    assert status.loc["old_task", "status"] == NOT_EXPECTED and not status.loc["old_task", "in_qc_json"]
+
+    expected, other = split_expected(qc, "FSQC", EXPECTED)  # pipeline match ignores case
+    assert set(expected["qc_task"]) == {"FS_volume_workflow"} and set(other["qc_task"]) == {"old_task"}
+
+
+def test_unstarted_expected_tasks_in_completion_and_coverage(config):
+    qc = participant_level(collate_ratings(config).ratings)
+    comp = assignment_completion(qc, assigned_ids(config), tasks=EXPECTED).set_index("qc_task")
+    assert comp.loc["FS_preproc_workflow", "rated_assigned"] == 0 and comp.loc["FS_preproc_workflow", "pct_complete"] == 0.0
+    assert comp.loc["FS_preproc_workflow", "raters_started"] == 0
+    # the unstarted task counts in the overall denominator
+    assert (comp.loc[ALL_TASKS, "assigned"], comp.loc[ALL_TASKS, "rated_assigned"], comp.loc[ALL_TASKS, "pct_complete"]) == (10, 4, 40.0)
+
+    cov = dataset_coverage(qc, POOL, assigned_ids(config), tasks=EXPECTED, pipeline="fsqc").set_index("qc_task")
+    assert cov.loc["FS_preproc_workflow", "rated_1+"] == 0 and cov.loc["FS_preproc_workflow", "not_rated"] == len(POOL)
+    assert cov.loc["FS_volume_workflow", "rated_1+"] == 3

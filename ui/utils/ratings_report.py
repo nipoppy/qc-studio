@@ -189,6 +189,52 @@ def rater_progress(qc: pd.DataFrame, assigned: dict[str, set[str]], pool_ids) ->
     return pd.DataFrame(rows, columns=cols + QC_ORDER)
 
 
+COMPLETION_COLUMNS = ["qc_task", "assigned", "rated_assigned", "pct_complete", "raters_started", "raters_with_list"]
+ALL_TASKS = "All tasks"
+
+
+def assignment_completion(qc: pd.DataFrame, assigned: dict[str, set[str]], tasks=None) -> pd.DataFrame:
+    """Share of assigned participants rated, per QC task and over all tasks.
+
+    For each task, ``assigned`` sums the list size of every rater with a non-empty list (raters
+    who haven't started the task count as 0 rated) and ``rated_assigned`` sums each rater's rated
+    participants that are on their own list (as in :func:`rater_progress`). ``tasks`` defaults to
+    the tasks present in ``qc``, so a task nobody has started is not listed. The last row,
+    ``ALL_TASKS``, pools every task.
+    """
+    tasks = sorted(qc["qc_task"].unique()) if tasks is None else list(tasks)
+    lists = {r: ids for r, ids in assigned.items() if ids}
+    n_assigned = sum(len(ids) for ids in lists.values())
+    rows = []
+    for task in tasks:
+        g = qc[qc["qc_task"] == task]
+        rated = g.groupby("rater_id")["participant_id"].agg(set)
+        done = sum(len(rated.get(r, set()) & ids) for r, ids in lists.items())
+        rows.append(
+            {
+                "qc_task": task,
+                "assigned": n_assigned,
+                "rated_assigned": done,
+                "raters_started": int(sum(1 for r in lists if r in rated.index)),
+                "raters_with_list": len(lists),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=COMPLETION_COLUMNS)
+    out = pd.DataFrame(rows)
+    started_any = set(qc.loc[qc["qc_task"].isin(tasks), "rater_id"]) & set(lists)
+    total = {
+        "qc_task": ALL_TASKS,
+        "assigned": int(out["assigned"].sum()),
+        "rated_assigned": int(out["rated_assigned"].sum()),
+        "raters_started": len(started_any),
+        "raters_with_list": len(lists),
+    }
+    out = pd.concat([out, pd.DataFrame([total])], ignore_index=True)
+    out["pct_complete"] = (100 * out["rated_assigned"] / out["assigned"]).where(out["assigned"] > 0).round(1)
+    return out[COMPLETION_COLUMNS]
+
+
 def off_list_ratings(qc: pd.DataFrame, assigned: dict[str, set[str]], pool_ids) -> pd.DataFrame:
     """Ratings of participants outside the rater's own list or outside the dataset pool."""
     pool = set(pool_ids)
@@ -206,13 +252,22 @@ def raters_per_participant(qc: pd.DataFrame, pool_ids, task: str) -> pd.Series:
     return g.groupby("participant_id")["rater_id"].nunique().reindex(sorted(set(pool_ids)), fill_value=0)
 
 
-def dataset_coverage(qc: pd.DataFrame, pool_ids, assigned: dict[str, set[str]] | None = None) -> pd.DataFrame:
-    """Per task: how many pool participants were rated by at least 1, 2 and 3 raters."""
+def dataset_coverage(qc: pd.DataFrame, pool_ids, assigned: dict[str, set[str]] | None = None, tasks=None, pipeline=None) -> pd.DataFrame:
+    """Per task: how many pool participants were rated by at least 1, 2 and 3 raters.
+
+    ``tasks`` (with ``pipeline``) lists the expected tasks, so tasks nobody has started get a
+    row of zeros; by default only tasks present in ``qc`` are listed.
+    """
     pool = set(pool_ids)
     any_assigned = set().union(*assigned.values()) if assigned else set()
+    if tasks is None:
+        keys = list(qc.groupby(["pipeline", "qc_task"]).groups) if not qc.empty else []
+    else:
+        keys = [(pipeline, t) for t in tasks]
     rows = []
-    for (pipe, task), g in qc.groupby(["pipeline", "qc_task"]):
-        n_r = raters_per_participant(qc[qc["pipeline"] == pipe], pool, task)
+    for pipe, task in keys:
+        g = qc[(qc["pipeline"] == pipe) & (qc["qc_task"] == task)]
+        n_r = raters_per_participant(g, pool, task)
         rated_ids = set(g["participant_id"])
         rows.append(
             {
@@ -231,6 +286,46 @@ def dataset_coverage(qc: pd.DataFrame, pool_ids, assigned: dict[str, set[str]] |
         )
     cols = ["pipeline", "qc_task", "pool", "assigned_to_any_rater", "rated_1+", "rated_2+", "rated_3+"]
     return pd.DataFrame(rows, columns=cols + ["not_rated", "pct_rated", "rated_not_in_pool", "n_sessions"])
+
+
+TASK_STATUS_COLUMNS = ["pipeline", "qc_task", "in_qc_json", "status", "raters_started", "participants_rated", "ratings"]
+NOT_STARTED, IN_PROGRESS, NOT_EXPECTED = "Not started", "In progress", "Not in qc.json"
+
+
+def split_expected(qc: pd.DataFrame, pipeline: str, tasks) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """``(expected, other)``: ratings of the expected pipeline tasks, and everything else."""
+    mask = (qc["pipeline"].str.lower() == str(pipeline).lower()) & qc["qc_task"].isin(list(tasks))
+    return qc[mask], qc[~mask]
+
+
+def task_status(qc: pd.DataFrame, pipeline: str, tasks) -> pd.DataFrame:
+    """Every expected task (``qc.json`` order) with its progress, then any rated task not in ``qc.json``.
+
+    ``status`` is ``Not started`` (no ratings), ``In progress``, or ``Not in qc.json`` for
+    ratings of tasks the prescription doesn't list (e.g. a different pipeline or a renamed task).
+    """
+    expected, other = split_expected(qc, pipeline, tasks)
+    rows = []
+
+    def _row(pipe, task, g, in_json):
+        status = (IN_PROGRESS if len(g) else NOT_STARTED) if in_json else NOT_EXPECTED
+        rows.append(
+            {
+                "pipeline": pipe,
+                "qc_task": task,
+                "in_qc_json": in_json,
+                "status": status,
+                "raters_started": g["rater_id"].nunique(),
+                "participants_rated": g["participant_id"].nunique(),
+                "ratings": len(g),
+            }
+        )
+
+    for task in tasks:
+        _row(pipeline, task, expected[expected["qc_task"] == task], True)
+    for (pipe, task), g in other.groupby(["pipeline", "qc_task"]) if not other.empty else []:
+        _row(pipe, task, g, False)
+    return pd.DataFrame(rows, columns=TASK_STATUS_COLUMNS)
 
 
 def consensus(qc: pd.DataFrame) -> pd.DataFrame:

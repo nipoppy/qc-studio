@@ -6,18 +6,43 @@ from models import QCConfig
 from constants import SUBSTITUTIONS_DICT
 
 
-def list_qc_tasks_from_json(qc_json) -> list[str]:
-    """Return top-level QC task keys from a ``qc.json`` file (JSON object keys, file order)."""
+# Top-level ``qc.json`` key naming the pipeline (issue #106), so it no longer has to be passed as
+# ``--qc_pipeline``. Keys of the form ``__name__`` are reserved for settings like this and are
+# never QC tasks.
+PIPELINE_KEY = "__pipeline__"
+
+
+def is_reserved_qc_key(key) -> bool:
+    """True for reserved ``qc.json`` keys such as ``__pipeline__`` (not QC tasks)."""
+    key = str(key)
+    return len(key) > 4 and key.startswith("__") and key.endswith("__")
+
+
+def _load_qc_json_object(qc_json) -> dict | None:
     qc_json_path = Path(qc_json) if qc_json else None
     if not qc_json_path or not qc_json_path.is_file():
-        return []
+        return None
     try:
         data = json.loads(qc_json_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
-    if not isinstance(data, dict):
-        return []
-    return list(data.keys())
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def list_qc_tasks_from_json(qc_json) -> list[str]:
+    """Return top-level QC task keys from a ``qc.json`` file (JSON object keys, file order).
+
+    Reserved keys such as ``__pipeline__`` are skipped.
+    """
+    data = _load_qc_json_object(qc_json)
+    return [k for k in data if not is_reserved_qc_key(k)] if data else []
+
+
+def qc_pipeline_from_json(qc_json) -> str | None:
+    """The pipeline named by the ``__pipeline__`` key of ``qc.json``, or None when absent or blank."""
+    data = _load_qc_json_object(qc_json) or {}
+    value = data.get(PIPELINE_KEY)
+    return (value.strip() or None) if isinstance(value, str) else None
 
 
 def build_substitution_values(participant_id: str, session_id: str) -> dict:

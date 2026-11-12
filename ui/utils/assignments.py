@@ -38,33 +38,40 @@ def read_participant_ids(path: str | Path) -> list[str]:
     return read_participant_list(path)["participant_id"].unique().tolist()
 
 
-def load_assignments(rater_config, list_glob: str | None = None, warn=print) -> pd.DataFrame:
+def restrict_to_pool(custom_ids, pool_ids) -> tuple[list[str], list[str]]:
+    """Split a custom participant list into ``(kept, not_in_pool)`` against the dataset pool.
+
+    Both are stripped, de-duplicated, non-blank and in the custom list's order.
+    """
+    pool = {str(p).strip() for p in pool_ids}
+    ids = [p for p in pd.unique(pd.Series(list(custom_ids), dtype=str).str.strip()) if p]
+    return [p for p in ids if p in pool], [p for p in ids if p not in pool]
+
+
+def load_assignments(rater_config, warn=print) -> pd.DataFrame:
     """Every rater's assigned rows as a long table with ``ASSIGNMENT_COLUMNS``.
 
-    Uses each rater's ``participant_list``; with ``list_glob`` (e.g. ``"*_participant_list.tsv"``)
-    also every matching file in the rater's ``rater_dir``. ``session_id`` is ``""`` for lists
-    without a session column. Rows are kept as listed (duplicates included). Raters without
-    an existing list, and unreadable lists, are reported through ``warn`` and contribute no rows.
+    A rater's assignments are the rows of their configured ``participant_list``. ``session_id``
+    is ``""`` for lists without a session column. Rows are kept as listed (duplicates included).
+    Raters without an existing list, and unreadable lists, are reported through ``warn`` and
+    contribute no rows.
     """
     cfg = as_users_config(rater_config)
     rows, no_list = [], []
     for u in cfg.users.values():
-        files = {Path(u["participant_list"])}
-        if list_glob:
-            files |= set(Path(u["rater_dir"]).glob(list_glob))
-        files = sorted(f for f in files if f.is_file())
-        if not files:
+        f = Path(u["participant_list"])
+        if not f.is_file():
             no_list.append(u["rater_id"])
-        for f in files:
-            try:
-                df = read_participant_list(f)
-            except ValueError as exc:
-                warn(f"{u['rater_id']}: {exc}; skipped")
-                continue
-            df = df.reindex(columns=["participant_id", "session_id"], fill_value="")
-            df.insert(0, "list_file", f.name)
-            df.insert(0, "rater_id", u["rater_id"])
-            rows.append(df)
+            continue
+        try:
+            df = read_participant_list(f)
+        except ValueError as exc:
+            warn(f"{u['rater_id']}: {exc}; skipped")
+            continue
+        df = df.reindex(columns=["participant_id", "session_id"], fill_value="")
+        df.insert(0, "list_file", f.name)
+        df.insert(0, "rater_id", u["rater_id"])
+        rows.append(df)
     if no_list:
         warn(f"Raters without an existing list (no assignments): {', '.join(sorted(no_list))}")
     if not rows:
@@ -164,12 +171,12 @@ def overlapping_pairs(assign: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols).sort_values(["shared", "jaccard"], ascending=False).reset_index(drop=True)
 
 
-def _rank(pool_ids, assignments: pd.DataFrame, seed=None, warn=print) -> pd.DataFrame:
+def _rank(pool_ids, assignments: pd.DataFrame, seed=None, warn=print, warn_outside_pool=True) -> pd.DataFrame:
     """Rank the pool by number of raters in ``assignments`` (fewest first, ties shuffled with ``seed``)."""
     pool = pd.Index(pd.unique(pd.Series(list(pool_ids), dtype=str).str.strip()))
     a = assignments.drop_duplicates(["participant_id", "rater_id"])
     outside = set(a["participant_id"]) - set(pool)
-    if outside:
+    if outside and warn_outside_pool:
         warn(f"{len(outside)} assigned participants are not in the pool and are ignored, e.g. {sorted(outside)[:5]}")
     per_pid = a.groupby("participant_id")["rater_id"]
     ranked = pd.DataFrame(
@@ -183,28 +190,49 @@ def _rank(pool_ids, assignments: pd.DataFrame, seed=None, warn=print) -> pd.Data
     return ranked.sort_values(["n_raters", "_tiebreak"]).drop(columns="_tiebreak").reset_index(drop=True)
 
 
-def rank_participants_by_rater_count(rater_config, pool_ids, seed=None, list_glob=None, exclude_raters=(), warn=print) -> pd.DataFrame:
+def rank_participants_by_rater_count(rater_config, pool_ids, seed=None, exclude_raters=(), warn=print) -> pd.DataFrame:
     """Every participant in the pool with its number of assigned raters, fewest first.
 
     ``exclude_raters``: rater_ids left out of the counts (e.g. the rater you are about to (re)create).
     Returns ``participant_id``, ``n_raters``, ``raters``.
     """
-    assignments = load_assignments(rater_config, list_glob, warn=warn)
+    assignments = load_assignments(rater_config, warn=warn)
     assignments = assignments[~assignments["rater_id"].isin(exclude_raters)]
     return _rank(pool_ids, assignments, seed, warn=warn)
 
 
-def create_rater_list(rater_id: str, n: int, pool_ids, assignments: pd.DataFrame, seed=None, warn=print) -> pd.DataFrame:
-    """Participant list for one rater: the ``n`` participants with the fewest raters.
+# How create_rater_list picks participants from the pool.
+POLICIES = {
+    "least_rated": "Least rated first: participants assigned to the fewest raters (ties broken at random with the seed)",
+    "random": "Random: a seeded random sample of the pool, regardless of existing assignments",
+    "all": "All: every participant of the pool (e.g. a custom list meant for one rater); the count is ignored",
+}
 
-    Existing rows for ``rater_id`` are ignored, so re-running for the same rater gives the same list.
+
+def create_rater_list(
+    rater_id: str, n: int | None, pool_ids, assignments: pd.DataFrame, seed=None, policy: str = "least_rated", warn=print, warn_outside_pool=True
+) -> pd.DataFrame:
+    """Participant list for one rater: ``n`` participants of ``pool_ids`` chosen by ``policy`` (see ``POLICIES``).
+
+    ``pool_ids`` may be the whole dataset list or a subset of it (see :func:`restrict_to_pool`).
+    With ``policy="all"`` every participant of the pool is taken and ``n`` is ignored.
+    Existing rows for ``rater_id`` are ignored, so re-running with the same seed gives the same list.
     Returns the chosen rows (``participant_id``, ``n_raters`` before this rater, ``raters``),
-    sorted by participant ID.
+    sorted by participant ID. Set ``warn_outside_pool=False`` when the pool is deliberately a subset.
     """
-    ranked = _rank(pool_ids, assignments[assignments["rater_id"] != rater_id], seed, warn=warn)
-    if n > len(ranked):
+    if policy not in POLICIES:
+        raise ValueError(f"unknown policy {policy!r} (choose from {', '.join(POLICIES)})")
+    ranked = _rank(pool_ids, assignments[assignments["rater_id"] != rater_id], seed, warn=warn, warn_outside_pool=warn_outside_pool)
+    if policy == "all":
+        n = len(ranked)
+    if n is None or n > len(ranked):
         raise ValueError(f"{rater_id}: asked for {n} participants but the pool has only {len(ranked)}")
-    chosen = ranked.head(n)
+    if policy in ("least_rated", "all"):
+        chosen = ranked.head(n)
+    else:  # random: sample in pool order so the result depends only on the pool and the seed
+        pool = pd.unique(pd.Series(list(pool_ids), dtype=str).str.strip())
+        picked = pool[np.random.default_rng(seed).choice(len(pool), size=n, replace=False)]
+        chosen = ranked.set_index("participant_id").loc[picked].reset_index()
     ids = chosen["participant_id"]
     order = sorted(range(len(chosen)), key=lambda i: (len(ids.iat[i]), ids.iat[i]))
     return chosen.iloc[order].reset_index(drop=True)

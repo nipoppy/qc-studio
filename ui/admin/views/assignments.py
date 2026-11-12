@@ -8,6 +8,7 @@ import streamlit as st
 
 from admin.core import AdminContext, log_admin_action, to_tsv_bytes
 from utils.assignments import (
+    POLICIES,
     add_units,
     create_rater_list,
     load_assignments,
@@ -17,15 +18,18 @@ from utils.assignments import (
     rater_count_distribution,
     rater_summary,
     read_participant_ids,
+    read_participant_list,
+    restrict_to_pool,
     write_participant_list,
 )
 
 _PREVIEW = "admin_new_list_preview"
+SOURCES = {"dataset": "Dataset participant list", "custom": "Custom list (upload a TSV)"}
 
 
-def _workloads(ctx: AdminContext, list_glob: str | None) -> pd.DataFrame | None:
+def _workloads(ctx: AdminContext) -> pd.DataFrame | None:
     notes: list[str] = []
-    assign = load_assignments(ctx.cfg, list_glob or None, warn=notes.append)
+    assign = load_assignments(ctx.cfg, warn=notes.append)
     for n in notes:
         st.caption(f"ℹ️ {n}")
     if assign.empty:
@@ -70,12 +74,43 @@ def _workloads(ctx: AdminContext, list_glob: str | None) -> pd.DataFrame | None:
     return assign
 
 
-def _new_list(ctx: AdminContext, list_glob: str | None) -> None:
+def _source_pool(pool_ids: list[str]) -> tuple[list[str] | None, str]:
+    """The participants to draw from (``None`` if unusable) and a label for the preview and audit log."""
+    source = st.radio("Draw participants from", list(SOURCES), format_func=SOURCES.get, horizontal=True, key="admin_list_source")
+    if source == "dataset":
+        return pool_ids, f"dataset list ({len(pool_ids)})"
+    upload = st.file_uploader(
+        "Custom participant list (TSV with a participant_id column)",
+        type=["tsv", "txt"],
+        key="admin_custom_list",
+        help="Only participants that are also in the dataset participant list are used.",
+    )
+    if upload is None:
+        st.info("Upload a custom list to continue.")
+        return None, ""
+    try:
+        custom_ids = read_participant_list(upload)["participant_id"].tolist()
+    except Exception as exc:  # pandas raises many types for malformed files
+        st.error(f"{upload.name} cannot be read: {exc}")
+        return None, ""
+    kept, dropped = restrict_to_pool(custom_ids, pool_ids)
+    st.caption(f"{len(kept)} of {len(kept) + len(dropped)} participants in {upload.name} are in the dataset participant list.")
+    if dropped:
+        with st.expander(f"⚠️ {len(dropped)} not in the dataset list (left out)"):
+            st.write(", ".join(dropped[:50]) + (" …" if len(dropped) > 50 else ""))
+    if not kept:
+        st.error("None of the uploaded participants are in the dataset participant list.")
+        return None, ""
+    return kept, f"custom list {upload.name} ({len(kept)} in dataset)"
+
+
+def _new_list(ctx: AdminContext) -> None:
     st.subheader("Create a participant list for a rater")
     st.markdown(
-        "Picks the participants of the dataset list assigned to the **fewest raters** (ties broken at random with the seed). "
-        "The rater's own current list is ignored, so re-running gives the same list. The file is written to the "
-        "`participant_list` path the users config gives that rater; add the rater in the **Raters** tab first."
+        "Draws participants from the dataset list, or from a custom list restricted to participants in the dataset list, "
+        "with the chosen policy. The rater's own current list is ignored, so re-running with the same seed gives the same "
+        "list. The file is written to the `participant_list` path the users config gives that rater; add the rater in the "
+        "**Raters** tab first."
     )
     try:
         pool_ids = read_participant_ids(ctx.participant_list)
@@ -86,21 +121,48 @@ def _new_list(ctx: AdminContext, list_glob: str | None) -> None:
     if not rater_ids:
         st.info("No valid raters in the users config.")
         return
+    source_ids, source_label = _source_pool(pool_ids)
+    if source_ids is None:
+        return
+    policy = st.radio("Policy", list(POLICIES), format_func=lambda k: POLICIES[k], key="admin_list_policy")
     with st.form("admin_new_list"):
         c = st.columns(3)
-        rater_id = c[0].selectbox("Rater", rater_ids)
-        n = c[1].number_input("Participants", min_value=1, max_value=len(pool_ids), value=min(100, len(pool_ids)), step=10)
-        seed = c[2].number_input("Seed", min_value=0, value=42, step=1)
+        rater_id = c[0].selectbox("Rater", rater_ids, index=None, placeholder="Choose a rater")
+        if policy == "all":
+            n, seed = len(source_ids), 0
+            c[1].markdown(f"**All {len(source_ids)}** participants of the source")
+        else:
+            n = c[1].number_input("Participants", min_value=1, max_value=len(source_ids), value=min(100, len(source_ids)), step=10)
+            seed = c[2].number_input("Seed", min_value=0, value=42, step=1)
         submitted = st.form_submit_button("Preview list")
     if submitted:
+        if rater_id is None:
+            st.warning("Choose a rater first.")
+            return
         notes: list[str] = []
-        assignments = load_assignments(ctx.cfg, list_glob or None, warn=notes.append)
+        assignments = load_assignments(ctx.cfg, warn=notes.append)
         try:
-            chosen = create_rater_list(rater_id, int(n), pool_ids, assignments, seed=int(seed), warn=notes.append)
+            chosen = create_rater_list(
+                rater_id,
+                int(n),
+                source_ids,
+                assignments,
+                seed=int(seed),
+                policy=policy,
+                warn=notes.append,
+                warn_outside_pool=source_ids is pool_ids,  # a custom subset leaves most assignments outside it
+            )
         except ValueError as exc:
             st.error(str(exc))
             return
-        st.session_state[_PREVIEW] = {"rater_id": rater_id, "list": chosen, "notes": notes, "seed": int(seed)}
+        st.session_state[_PREVIEW] = {
+            "rater_id": rater_id,
+            "list": chosen,
+            "notes": notes,
+            "seed": int(seed),
+            "policy": policy,
+            "source": source_label,
+        }
 
     preview = st.session_state.get(_PREVIEW)
     if not preview or preview["rater_id"] not in rater_ids:
@@ -108,7 +170,8 @@ def _new_list(ctx: AdminContext, list_glob: str | None) -> None:
     rid, chosen = preview["rater_id"], preview["list"]
     for n_ in preview["notes"]:
         st.caption(f"ℹ️ {n_}")
-    st.markdown(f"**{rid}**: {len(chosen)} participants (seed {preview['seed']}). Raters they already had:")
+    how = f"policy {preview['policy']}" + ("" if preview["policy"] == "all" else f", seed {preview['seed']}") + f", from {preview['source']}"
+    st.markdown(f"**{rid}**: {len(chosen)} participants ({how}). Raters they already had:")
     c1, c2 = st.columns([1, 2])
     c1.dataframe(chosen["n_raters"].value_counts().sort_index().rename_axis("prior_n_raters").rename("participants").to_frame(), width="stretch")
     c2.dataframe(chosen, hide_index=True, width="stretch", height=240)
@@ -121,7 +184,7 @@ def _new_list(ctx: AdminContext, list_glob: str | None) -> None:
     if st.button("💾 Write list", type="primary", disabled=exists and not overwrite):
         out, status = write_participant_list(chosen["participant_id"], ctx.cfg, rid, overwrite=overwrite)
         if status == "written":
-            log_admin_action(ctx.admin_email, f"wrote {len(chosen)} participants to {out} (overwrite={overwrite})")
+            log_admin_action(ctx.admin_email, f"wrote {len(chosen)} participants to {out} ({how}, overwrite={overwrite})")
             st.session_state.pop(_PREVIEW, None)
             st.success(f"Wrote {len(chosen)} participants to `{out}`")
         else:
@@ -129,13 +192,6 @@ def _new_list(ctx: AdminContext, list_glob: str | None) -> None:
 
 
 def render(ctx: AdminContext) -> None:
-    list_glob = st.text_input(
-        "Also count lists matching (optional)",
-        value="",
-        placeholder="*_participant_list.tsv",
-        help="By default each rater's assignments are their configured participant_list. "
-        "A glob here also counts every matching file in each rater's folder (e.g. secondary lists).",
-    ).strip()
-    _workloads(ctx, list_glob)
+    _workloads(ctx)
     st.divider()
-    _new_list(ctx, list_glob)
+    _new_list(ctx)

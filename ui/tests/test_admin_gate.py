@@ -69,8 +69,56 @@ def test_unreadable_config_stops(monkeypatch, setup, tmp_path):
     assert "could not be loaded" in st_mock.error.call_args[0][0]
 
 
+REQUIRED = ["--users_config", "u.json", "--participant_list", "p.tsv", "--qc_json", "qc.json"]
+
+
 def test_parse_admin_args():
-    args = core.parse_admin_args(["--users_config", "u.json", "--participant_list", "p.tsv"])
-    assert args.output_dir is None and args.session_list is None
-    with pytest.raises(SystemExit):
-        core.parse_admin_args(["--users_config", "u.json"])
+    args = core.parse_admin_args(REQUIRED)
+    assert args.output_dir is None and args.session_list is None and args.qc_task == "all" and args.qc_pipeline is None
+    for i in range(0, len(REQUIRED), 2):  # every one of them is required
+        with pytest.raises(SystemExit):
+            core.parse_admin_args(REQUIRED[:i] + REQUIRED[i + 2 :])
+
+
+@pytest.fixture
+def qc_json(tmp_path):
+    p = tmp_path / "qc.json"
+    p.write_text(json.dumps({"task_a": {}, "task_b": {}, "task_c": {}}))
+    return p
+
+
+def test_expected_tasks_all_in_file_order(qc_json):
+    assert core.expected_tasks(qc_json) == ["task_a", "task_b", "task_c"]
+    assert core.expected_tasks(qc_json, "ALL") == ["task_a", "task_b", "task_c"]
+
+
+def test_expected_tasks_subset(qc_json):
+    assert core.expected_tasks(qc_json, " task_c, task_a ") == ["task_c", "task_a"]
+    with pytest.raises(ValueError, match="task_x"):
+        core.expected_tasks(qc_json, "task_a,task_x")
+
+
+@pytest.mark.parametrize("content", [None, "not json", "[1, 2]", "{}"])
+def test_expected_tasks_unusable_qc_json(tmp_path, content):
+    p = tmp_path / "qc.json"
+    if content is not None:
+        p.write_text(content)
+    with pytest.raises(ValueError, match="no QC tasks"):
+        core.expected_tasks(p)
+
+
+def test_resolve_qc_json(qc_json, monkeypatch, tmp_path):
+    assert core.resolve_qc_json(str(qc_json)) == qc_json.resolve()
+    monkeypatch.chdir(tmp_path)
+    # a relative path that doesn't exist here is resolved against ui/, like the rater app
+    assert core.resolve_qc_json("../pipelines/fsqc/qc.json") == (core.UI_DIR.parent / "pipelines" / "fsqc" / "qc.json").resolve()
+
+
+def test_build_context_stops_on_bad_qc_json(monkeypatch, setup, tmp_path):
+    users, st_mock = setup
+    from utils.user_config import load_users_config
+
+    args = core.parse_admin_args(REQUIRED[:4] + ["--qc_pipeline", "fsqc", "--qc_json", str(tmp_path / "missing.json")])
+    with pytest.raises(_Stopped):
+        core.build_context(args, "lead@x.org", load_users_config(users))
+    assert "QC tasks could not be loaded" in st_mock.error.call_args[0][0]

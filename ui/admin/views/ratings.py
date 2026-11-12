@@ -6,14 +6,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from admin.core import AdminContext, file_signature, log_admin_action, ratings_signature, to_tsv_bytes
+from admin.core import AdminContext, cached_collation, clear_collation_cache, log_admin_action, to_tsv_bytes
 from utils.assignments import read_participant_ids
 from utils.ratings_report import (
     QC_ORDER,
     VALUE_ORDER,
     agreement_summary,
     assigned_ids,
-    collate_ratings,
     consensus,
     dataset_coverage,
     facet_rating_counts,
@@ -22,18 +21,14 @@ from utils.ratings_report import (
     participant_level,
     rater_progress,
     raters_per_participant,
+    split_expected,
+    task_status,
 )
 
 # Status colours (good / warning / serious / critical) and a neutral grey for missing.
 QC_COLORS = {"All-Pass": "#0ca30c", "Mixed": "#fab219", "All-Uncertain": "#ec835a", "All-Fail": "#d03b3b", "All-Missing": "#898781"}
 VALUE_COLORS = {"PASS": "#0ca30c", "UNCERTAIN": "#ec835a", "FAIL": "#d03b3b", "MISSING": "#898781"}
 COVERAGE_COLORS = {"0": "#e1e0d9", "1": "#9ec5f4", "2": "#3987e5", "3+": "#184f95"}
-
-
-@st.cache_data(show_spinner="Collating ratings…", max_entries=8)
-def _collate(config_path: str, config_mtime: int, signature: tuple, prefer_transformed: bool):
-    """Cached on the config and on every rating file's mtime, so a rater's save refreshes it."""
-    return collate_ratings(config_path, prefer_transformed=prefer_transformed)
 
 
 def _download(label: str, df: pd.DataFrame, name: str, index: bool = False) -> None:
@@ -67,20 +62,25 @@ def render(ctx: AdminContext) -> None:
         help="Old checkpoints may have a *_transformed.tsv copy using the current facet names; it replaces the original of the same stamp.",
     )
     if c2.button("🔄 Reload ratings"):
-        _collate.clear()
+        clear_collation_cache()
 
     try:
         pool_ids = read_participant_ids(ctx.participant_list)
     except (OSError, ValueError) as exc:
         st.error(f"Dataset participant list cannot be read: {exc}")
         return
-    col = _collate(str(ctx.users_config), file_signature(ctx.users_config), ratings_signature(ctx.cfg), prefer_transformed)
+    col = cached_collation(ctx, prefer_transformed)
     if col.ratings.empty:
         st.info("No ratings saved yet.")
         return
-    qc = participant_level(col.ratings)
+    qc_all = participant_level(col.ratings)
+    qc, qc_other = split_expected(qc_all, ctx.qc_pipeline, ctx.expected_tasks)
+    qc = qc.assign(pipeline=ctx.qc_pipeline)  # normalise case so expected tasks line up
+    ratings_exp = col.ratings[col.ratings["pipeline"].str.lower().eq(ctx.qc_pipeline.lower()) & col.ratings["qc_task"].isin(ctx.expected_tasks)]
     assigned = assigned_ids(ctx.cfg)
-    tasks = sorted(qc["qc_task"].unique())
+    tasks = list(ctx.expected_tasks)  # the qc.json prescription, including tasks nobody has started
+    started = [t for t in tasks if t in set(qc["qc_task"])]
+    not_started = [t for t in tasks if t not in started]
 
     m = st.columns(4)
     m[0].metric("Raters with ratings", f"{col.sources['rater_id'].nunique()} / {len(ctx.cfg.users)}")
@@ -92,6 +92,17 @@ def render(ctx: AdminContext) -> None:
     if col.warnings:
         with st.expander(f"⚠️ {len(col.warnings)} file warning(s)"):
             st.markdown("\n".join(f"- {w}" for w in col.warnings))
+    if not_started:
+        st.warning(f"Not started by any rater: {', '.join(not_started)}")
+    if not qc_other.empty:
+        other = qc_other.groupby(["pipeline", "qc_task"]).size()
+        st.warning(
+            "Ratings for task(s) not in qc.json are left out of the reports below (still in the facet/participant exports): "
+            + ", ".join(f"{p}/{t} ({n})" for (p, t), n in other.items())
+        )
+    if qc.empty:
+        st.info("No ratings for the expected tasks yet.")
+        return
 
     # --- Sources -------------------------------------------------------------
     st.subheader("Rating file used per rater and task")
@@ -102,7 +113,8 @@ def render(ctx: AdminContext) -> None:
         st.warning("The newest checkpoint has participants that are missing from the status file for: " + ", ".join(flagged["source_file"]))
 
     st.subheader("final_qc per task")
-    st.dataframe(final_qc_counts(qc), width="stretch")
+    counts = final_qc_counts(qc).reindex(pd.MultiIndex.from_product([[ctx.qc_pipeline], tasks], names=["pipeline", "qc_task"]), fill_value=0)
+    st.dataframe(counts, width="stretch")
 
     # --- Progress ------------------------------------------------------------
     st.subheader("Rater progress")
@@ -126,7 +138,7 @@ def render(ctx: AdminContext) -> None:
 
     # --- Coverage ------------------------------------------------------------
     st.subheader("Dataset coverage")
-    coverage = dataset_coverage(qc, pool_ids, assigned)
+    coverage = dataset_coverage(qc, pool_ids, assigned, tasks=tasks, pipeline=ctx.qc_pipeline)
     st.dataframe(coverage, hide_index=True, width="stretch")
     dist = []
     for task in tasks:
@@ -153,10 +165,12 @@ def render(ctx: AdminContext) -> None:
     order = QC_ORDER + sorted(set(long["final_qc"]) - set(QC_ORDER))
     fig = _stacked_share(long, "rater_id", "final_qc", order, QC_COLORS, facet_col="qc_task", height=120 + 24 * long["rater_id"].nunique())
     st.plotly_chart(fig, width="stretch")
+    if not_started:
+        st.caption(f"No ratings yet for: {', '.join(not_started)}")
 
     st.subheader("Facet ratings")
-    task = st.selectbox("QC task", tasks, key="admin_facet_task")
-    facets = facet_rating_counts(col.ratings, task)
+    task = st.selectbox("QC task", started, key="admin_facet_task")
+    facets = facet_rating_counts(ratings_exp, task)
     long = facets.reset_index().melt(id_vars="facet", var_name="rating_value", value_name="n")
     order = VALUE_ORDER + sorted(set(long["rating_value"]) - set(VALUE_ORDER))
     fig = _stacked_share(long, "facet", "rating_value", order, VALUE_COLORS, height=120 + 22 * len(facets))
@@ -180,10 +194,11 @@ def render(ctx: AdminContext) -> None:
     st.subheader("Export")
     reports = {
         "qc_ratings_facets": col.ratings,
-        "qc_ratings_participants": qc,
+        "qc_ratings_participants": qc_all,
         "qc_consensus": cons,
         "qc_rater_progress": progress,
         "qc_dataset_coverage": coverage,
+        "qc_task_status": task_status(qc_all, ctx.qc_pipeline, tasks),
         "qc_source_files": col.sources,
     }
     cols = st.columns(3)

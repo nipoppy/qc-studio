@@ -15,6 +15,7 @@ from utils.assignments import (
     rater_count_distribution,
     rater_summary,
     read_participant_ids,
+    restrict_to_pool,
     write_participant_list,
 )
 from utils.user_config import load_users_config
@@ -61,10 +62,11 @@ def test_load_assignments_accepts_loaded_config(config):
     assert len(load_assignments(load_users_config(config), warn=lambda _: None)) == 8
 
 
-def test_list_glob_adds_secondary_lists(config):
+def test_only_configured_list_is_used(config):
     pd.DataFrame({"participant_id": ["sub-09"]}).to_csv(config.parent / "alice" / "alice_secondary.tsv", sep="\t", index=False)
-    a = load_assignments(config, list_glob="*.tsv", warn=lambda _: None)
-    assert "sub-09" in set(a.loc[a["rater_id"] == "alice", "participant_id"])
+    a = load_assignments(config, warn=lambda _: None)
+    assert "sub-09" not in set(a["participant_id"])
+    assert set(a["list_file"]) == {"alice.tsv", "bob.tsv"}
 
 
 def test_overlap_statistics(config):
@@ -125,3 +127,58 @@ def test_write_participant_list_never_overwrites_by_default(config):
 def test_write_participant_list_unknown_rater(config):
     with pytest.raises(KeyError):
         write_participant_list(["sub-01"], config, "dave")
+
+
+def test_least_rated_is_the_default_policy(config):
+    a = load_assignments(config, warn=lambda _: None)
+    assert create_rater_list("carol", 5, POOL, a, seed=3).equals(create_rater_list("carol", 5, POOL, a, seed=3, policy="least_rated"))
+
+
+def test_random_policy(config):
+    a = load_assignments(config, warn=lambda _: None)
+    first = create_rater_list("carol", 5, POOL, a, seed=1, policy="random")
+    assert first.equals(create_rater_list("carol", 5, POOL, a, seed=1, policy="random"))
+    others = {tuple(create_rater_list("carol", 5, POOL, a, seed=s, policy="random")["participant_id"]) for s in range(2, 8)}
+    assert others - {tuple(first["participant_id"])}  # another seed gives another sample
+    assert set(first.columns) == {"participant_id", "n_raters", "raters"}
+    counts = {p: n for p, n in zip(first["participant_id"], first["n_raters"])}
+    assert all(counts[p] == (2 if p in ("sub-03", "sub-04") else 1 if p in ("sub-01", "sub-02", "sub-05", "sub-06") else 0) for p in counts)
+
+
+def test_random_ignores_existing_assignments(config):
+    # with the whole pool drawn, random must include already-assigned participants
+    a = load_assignments(config, warn=lambda _: None)
+    assert set(create_rater_list("carol", 10, POOL, a, seed=0, policy="random")["participant_id"]) == set(POOL)
+
+
+def test_unknown_policy(config):
+    with pytest.raises(ValueError, match="unknown policy"):
+        create_rater_list("carol", 2, POOL, load_assignments(config, warn=lambda _: None), policy="fair")
+
+
+def test_restrict_to_pool():
+    kept, dropped = restrict_to_pool([" sub-05", "sub-99", "sub-05", "", "sub-01", "sub-98"], POOL)
+    assert kept == ["sub-05", "sub-01"]
+    assert dropped == ["sub-99", "sub-98"]
+
+
+@pytest.mark.parametrize("policy", ["least_rated", "random"])
+def test_custom_source_only(config, policy):
+    kept, _ = restrict_to_pool(["sub-02", "sub-07", "sub-09", "sub-99"], POOL)
+    notes = []
+    a = load_assignments(config, warn=lambda _: None)
+    chosen = create_rater_list("carol", 3, kept, a, seed=4, policy=policy, warn=notes.append, warn_outside_pool=False)
+    assert set(chosen["participant_id"]) == {"sub-02", "sub-07", "sub-09"}
+    assert notes == []
+    with pytest.raises(ValueError, match="only 3"):
+        create_rater_list("carol", 4, kept, a, policy=policy, warn_outside_pool=False)
+
+
+def test_all_policy_takes_the_whole_source(config):
+    a = load_assignments(config, warn=lambda _: None)
+    kept, _ = restrict_to_pool(["sub-09", "sub-02", "sub-07"], POOL)
+    chosen = create_rater_list("carol", None, kept, a, policy="all", warn_outside_pool=False)
+    assert chosen["participant_id"].tolist() == ["sub-02", "sub-07", "sub-09"]
+    assert chosen.set_index("participant_id").loc["sub-02", "n_raters"] == 1
+    # the count is ignored
+    assert len(create_rater_list("carol", 1, POOL, a, policy="all")) == len(POOL)
