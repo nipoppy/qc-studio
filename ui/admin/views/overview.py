@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from admin import icons
 from admin.core import AdminContext, cached_ratings
 from utils.ratings_report import (
     ALL_TASKS,
@@ -35,18 +36,18 @@ def render(ctx: AdminContext) -> None:
 
 def _users(ctx: AdminContext, report, alerts) -> None:
     cfg = ctx.cfg
-    st.subheader("Users")
+    st.subheader(f"{icons.USERS} Users")
     c = st.columns(4)
     c[0].metric("Raters", len(cfg.users) + len(cfg.rejected), help="Rater entries in the users config")
     c[1].metric("Active", len(report.ready_users), help="Raters whose setup is complete, so they can sign in and rate")
-    c[2].metric("Admins", len(cfg.admins))
-    c[3].metric("Viewers", len(cfg.viewers), help="View-only access to this dashboard")
+    c[2].metric(f"{icons.ADMIN} Admins", len(cfg.admins))
+    c[3].metric(f"{icons.VIEWER} Viewers", len(cfg.viewers), help="View-only access to this dashboard")
     for lvl, msg in report.global_issues:
         (alerts.error if lvl == ERROR else alerts.warning)(msg)
 
 
 def _dataset(ctx: AdminContext) -> None:
-    st.subheader("Dataset")
+    st.subheader(f"{icons.DATASET} Dataset")
     sessions, source = dataset_sessions(ctx.pool, ctx.session_list)
     c = st.columns(2)
     c[0].metric("Participants", len(ctx.pool_ids))
@@ -54,14 +55,14 @@ def _dataset(ctx: AdminContext) -> None:
 
 
 def _qc_tasks(ctx: AdminContext) -> None:
-    st.subheader("QC tasks")
+    st.subheader(f"{icons.QC_TASKS} QC tasks")
     c = st.columns(2)
     c[0].metric("Pipeline", ctx.qc_pipeline)
     c[1].metric("Prescribed tasks", len(ctx.expected_tasks), help=", ".join(ctx.expected_tasks))
 
 
 def _raters(report, alerts) -> None:
-    st.subheader("Raters")
+    st.subheader(f"{icons.USERS} Raters")
     valid = [u for u in report.users if u.config_valid]
     rows = [
         {
@@ -90,7 +91,7 @@ def _raters(report, alerts) -> None:
 
 def _configuration(ctx: AdminContext, report, alerts) -> None:
     cfg = ctx.cfg
-    with st.expander("Configuration"):
+    with st.expander(f"{icons.CONFIG} Configuration"):
         st.markdown(
             f"- Users config: `{ctx.users_config}`\n"
             f"- Rater root: `{cfg.rater_root}`\n"
@@ -103,7 +104,7 @@ def _configuration(ctx: AdminContext, report, alerts) -> None:
 
 
 def _completion(ctx: AdminContext, alerts) -> None:
-    st.subheader("QC progress")
+    st.subheader(f"{icons.PROGRESS} QC progress")
     _, qc = cached_ratings(ctx)
     expected, _ = split_expected(qc, ctx.qc_pipeline, ctx.expected_tasks)
     comp = assignment_completion(expected, assigned_ids(ctx.cfg), tasks=ctx.expected_tasks)
@@ -114,7 +115,7 @@ def _completion(ctx: AdminContext, alerts) -> None:
         pct = 0.0 if pd.isna(row.pct_complete) else float(row.pct_complete)
         not_started = row.qc_task != ALL_TASKS and row.raters_started == 0
         col.metric(
-            row.qc_task,
+            row.qc_task if row.qc_task == ALL_TASKS else f"{icons.QC_TASKS} {row.qc_task}",
             f"{pct:.1f}%",
             delta="not started" if not_started else None,
             delta_color="off",

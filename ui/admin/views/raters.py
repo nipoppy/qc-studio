@@ -7,6 +7,7 @@ import json
 import pandas as pd
 import streamlit as st
 
+from admin import icons
 from admin.core import AdminContext, log_admin_action, require_editor
 from utils.users_config_writer import (
     ENTRY_KEYS,
@@ -16,6 +17,8 @@ from utils.users_config_writer import (
     prepare_remove_rater,
     prepare_update_rater,
 )
+
+ACTIONS = {f"{icons.ADD} Add rater": "Add rater", f"{icons.EDIT} Edit rater": "Edit rater", f"{icons.REMOVE} Remove rater": "Remove rater"}
 
 _PENDING = "admin_pending_config_change"
 
@@ -109,7 +112,7 @@ def render(ctx: AdminContext) -> None:
         "Saved changes apply to the rater app on the raters' next page load."
     )
 
-    action = st.radio("Action", ["Add rater", "Edit rater", "Remove rater"], horizontal=True, key="admin_rater_action")
+    action = ACTIONS[st.radio("Action", list(ACTIONS), horizontal=True, key="admin_rater_action")]
     all_emails = sorted(set(cfg.users) | set(cfg.rejected))
 
     if action == "Add rater":
@@ -119,12 +122,12 @@ def render(ctx: AdminContext) -> None:
     elif not all_emails:
         st.info("No raters in the users config yet.")
     elif action == "Edit rater":
-        email = st.selectbox("Rater", all_emails, key="admin_edit_email")
+        email = st.selectbox(f"{icons.RATER} Rater", all_emails, key="admin_edit_email")
         submitted, _, values = _entry_form(f"admin_edit_rater_{email}", _raw_entry(ctx, email), email_editable=False, email=email)
         if submitted:
             _prepare(prepare_update_rater, ctx.users_config, email, values)
     else:
-        email = st.selectbox("Rater", all_emails, key="admin_remove_email")
+        email = st.selectbox(f"{icons.RATER} Rater", all_emails, key="admin_remove_email")
         st.caption("Only the config entry is removed: the rater's participant list and rating files stay on disk.")
         if st.button("Preview removal"):
             _prepare(prepare_remove_rater, ctx.users_config, email)

@@ -6,9 +6,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from admin.charts import COVERAGE_COLORS, QC_COLORS, VALUE_COLORS, style_bars, style_heatmap
+from admin import icons
+from admin.charts import COVERAGE_COLORS, PROGRESS_COLORS, QC_COLORS, VALUE_COLORS, style_bars, style_points
 from admin.core import AdminContext, cached_ratings, log_admin_action, require_editor, to_tsv_bytes
 from utils.ratings_report import (
+    DEFAULT_BREAK_MINUTES,
     QC_ORDER,
     VALUE_ORDER,
     agreement_summary,
@@ -20,7 +22,10 @@ from utils.ratings_report import (
     facet_rating_counts,
     final_qc_counts,
     off_list_ratings,
+    pace_summary,
+    progress_grid,
     rater_progress,
+    rating_durations,
     records_rated,
     split_expected,
     task_status,
@@ -46,7 +51,37 @@ def _stacked_share(long: pd.DataFrame, y: str, color: str, order: list[str], col
     style_bars(fig, height)
     fig.update_layout(barnorm="percent")
     fig.update_yaxes(categoryorder="category descending")
-    fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    return fig
+
+
+def _progress_bars(grid: pd.DataFrame, tasks: list[str]):
+    """One progress bar per rater (rows) and task (panels): grey 0-100% track, blue fill labelled "pct% (rated / list)"."""
+    label = grid.apply(lambda r: f"{r.pct_complete:.0f}% ({r.rated_assigned} / {r.assigned})", axis=1)
+    bars = pd.concat([grid.assign(series="List", value=100.0, label=""), grid.assign(series="Rated", value=grid["pct_complete"], label=label)])
+    fig = px.bar(
+        bars,
+        x="value",
+        y="rater_id",
+        color="series",
+        facet_col="qc_task",
+        orientation="h",
+        barmode="overlay",
+        opacity=1,  # px overlay mode is translucent by default
+        text="label",
+        category_orders={"qc_task": tasks, "series": list(PROGRESS_COLORS)},
+        color_discrete_map=PROGRESS_COLORS,
+        labels={"value": "% of own list rated", "rater_id": ""},
+    )
+    raters = sorted(grid["rater_id"].unique())
+    style_bars(fig, height=120 + 26 * len(raters))
+    fig.update_traces(hoverinfo="skip", hovertemplate=None, selector=dict(name="List"))
+    # Label inside the fill when it is long enough, else just after it. No x range: setting one collapses the category axis.
+    for t in fig.select_traces(selector=dict(name="Rated")):
+        t.update(textposition=["inside" if v >= 50 else "outside" for v in t.x], insidetextanchor="end", cliponaxis=False)
+    fig.update_traces(hovertemplate="%{y}<br>%{text}<extra></extra>", selector=dict(name="Rated"))
+    fig.update_layout(showlegend=False)
+    fig.update_xaxes(tickvals=[0, 25, 50, 75, 100])
+    fig.update_yaxes(categoryorder="array", categoryarray=raters[::-1])  # first rater on top
     return fig
 
 
@@ -105,7 +140,7 @@ def render(ctx: AdminContext) -> None:
     )
     for c, (task, row) in zip(m[3:], per_task.iterrows()):
         c.metric(
-            task,
+            f"{icons.QC_TASKS} {task}",
             f"{int(row['ratings']):,}",
             delta="not started" if row["ratings"] == 0 else None,
             delta_color="off",
@@ -132,7 +167,7 @@ def render(ctx: AdminContext) -> None:
         return
 
     # --- Coverage ------------------------------------------------------------
-    st.subheader("Dataset coverage")
+    st.subheader(f"{icons.DATASET} Dataset coverage")
     coverage = dataset_coverage(qc, pool_ids, assigned, tasks=tasks, pipeline=ctx.qc_pipeline)
     st.dataframe(coverage, hide_index=True, width="stretch")
     dist = coverage_buckets(qc, pool_ids, tasks).reset_index().melt(id_vars="qc_task", var_name="raters", value_name="n")
@@ -150,23 +185,23 @@ def render(ctx: AdminContext) -> None:
     fig.update_layout(legend_title_text="Raters")
     st.plotly_chart(fig, width="stretch")
 
-    st.subheader("final_qc per task")
+    st.subheader(f"{icons.QC_TASKS} Final QC per task")
     counts = final_qc_counts(qc).reindex(pd.MultiIndex.from_product([[ctx.qc_pipeline], tasks], names=["pipeline", "qc_task"]), fill_value=0)
     st.dataframe(counts, width="stretch")
 
     # --- Progress ------------------------------------------------------------
-    st.subheader("Rater progress")
+    st.subheader(f"{icons.PROGRESS} Rater progress")
     progress = rater_progress(qc, assigned, pool_ids)
-    all_raters = sorted(u["rater_id"] for u in ctx.cfg.users.values())
-    pct = progress.pivot(index="rater_id", columns="qc_task", values="pct_complete").reindex(index=all_raters, columns=tasks)
-    cnt = progress.pivot(index="rater_id", columns="qc_task", values="rated_assigned").reindex(index=all_raters, columns=tasks)
-    text = pct.round(0).astype("Int64").astype(str).where(pct.notna(), "–") + "% (" + cnt.astype("Int64").astype(str).where(cnt.notna(), "0") + ")"
-    text = text.where(pct.notna(), "–")
-    fig = px.imshow(pct, zmin=0, zmax=100, aspect="auto", labels=dict(color="% of own list"))
-    fig.update_traces(text=text.values, texttemplate="%{text}", hovertemplate="%{y} · %{x}<br>%{text}<extra></extra>")
-    style_heatmap(fig, z=pct, height=max(300, 26 * len(pct) + 100))
-    st.plotly_chart(fig, width="stretch")
-    st.caption("% of each rater's own participant list rated (number rated). – = task not started.")
+    grid = progress_grid(progress, assigned, tasks)
+    if grid.empty:
+        st.info("No rater has a participant list.")
+    else:
+        fig = _progress_bars(grid, tasks)
+        st.plotly_chart(fig, width="stretch")
+        st.caption(
+            "% of each rater's own participant list rated (rated / list size), per task. "
+            "Only participants on the rater's list count; raters without a list are not shown."
+        )
     st.dataframe(progress, hide_index=True, width="stretch")
     off = off_list_ratings(qc, assigned, pool_ids)
     if not off.empty:
@@ -184,8 +219,70 @@ def render(ctx: AdminContext) -> None:
     if not flagged.empty:
         alerts.warning("The newest checkpoint has participants that are missing from the status file for: " + ", ".join(flagged["source_file"]))
 
+    # --- Pace ----------------------------------------------------------------
+    st.subheader(f"{icons.PACE} Rating pace")
+    break_min = st.slider(
+        "Break cutoff (minutes)",
+        min_value=1,
+        max_value=120,
+        value=DEFAULT_BREAK_MINUTES,
+        key="admin_pace_break",
+        help="A gap between two saves longer than this is a break: it starts a new sitting and is not counted as rating time.",
+    )
+    durations = rating_durations(qc, break_min)
+    pace = pace_summary(durations)
+    pace_task = pace_summary(durations, by=["qc_task"]).set_index("qc_task")
+    for c, task in zip(st.columns(len(started)), started):
+        with c.container(border=True, height="stretch"):
+            st.markdown(f"{icons.QC_TASKS} **{task}**")
+            if task not in pace_task.index:
+                st.caption("No timestamped ratings.")
+                continue
+            row = pace_task.loc[task]
+            a, b = st.columns(2)
+            a.metric(f"{icons.PACE} Median / rating", "–" if pd.isna(row["median_s"]) else f"{int(row['median_s'])} s")
+            b.metric(f"{icons.SITTINGS} Sittings", f"{int(row['sittings']):,}")
+            a.metric("Ratings", f"{int(row['n_ratings']):,}")
+            b.metric("Timed", f"{int(row['n_timed']):,}", help="Ratings with a duration: all but the first save of each sitting.")
+            st.caption(f"{row['first_rating']:%Y-%m-%d %H:%M} → {row['last_rating']:%Y-%m-%d %H:%M}")
+
+    pts = pace.dropna(subset=["median_s"]).assign(
+        hi=lambda d: d["p75_s"] - d["median_s"],
+        lo=lambda d: d["median_s"] - d["p25_s"],
+    )
+    if pts.empty:
+        st.info("No timed ratings yet: every rating is the first of its sitting.")
+    else:
+        raters = sorted(pts["rater_id"].unique())
+        fig = px.scatter(
+            pts,
+            x="median_s",
+            y="rater_id",
+            facet_col="qc_task",
+            error_x="hi",
+            error_x_minus="lo",
+            log_x=True,
+            category_orders={"qc_task": started, "rater_id": raters},
+            custom_data=["p25_s", "p75_s", "n_timed"],
+            labels={"median_s": "Seconds per rating (log)", "rater_id": ""},
+        )
+        fig.update_traces(
+            hovertemplate="%{y}<br>median %{x:.0f} s<br>p25–p75 %{customdata[0]:.0f}–%{customdata[1]:.0f} s<br>%{customdata[2]} timed<extra></extra>"
+        )
+        style_points(fig, height=120 + 24 * len(raters))
+        fig.update_xaxes(tickvals=[1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000])
+        st.plotly_chart(fig, width="stretch")
+    st.caption(
+        "Dot = median seconds per participant-level rating; bar = 25th–75th percentile. A rating's time is the gap since the rater's previous save, "
+        "in any task; the first save of each sitting has no duration. Re-rating a participant moves its timestamp, so medians are more reliable than totals."
+    )
+    st.markdown("**Per rater and task**")
+    st.dataframe(
+        pace[["rater_id", "qc_task", "n_ratings", "n_timed", "median_s", "sittings", "first_rating", "last_rating"]], hide_index=True, width="stretch"
+    )
+
     # --- Distributions -------------------------------------------------------
-    st.subheader("final_qc by rater")
+    st.subheader(f"{icons.FINAL_QC} Final QC by rater")
     long = qc.groupby(["qc_task", "rater_id", "final_qc"]).size().rename("n").reset_index()
     order = QC_ORDER + sorted(set(long["final_qc"]) - set(QC_ORDER))
     fig = _stacked_share(long, "rater_id", "final_qc", order, QC_COLORS, facet_col="qc_task", height=120 + 24 * long["rater_id"].nunique())
@@ -193,7 +290,7 @@ def render(ctx: AdminContext) -> None:
     if not_started:
         st.caption(f"No ratings yet for: {', '.join(not_started)}")
 
-    st.subheader("Facet ratings")
+    st.subheader(f"{icons.FACETS} Facet ratings")
     task = st.selectbox("QC task", started, key="admin_facet_task")
     facets = facet_rating_counts(ratings_exp, task)
     long = facets.reset_index().melt(id_vars="facet", var_name="rating_value", value_name="n")
@@ -204,7 +301,7 @@ def render(ctx: AdminContext) -> None:
     st.caption("Least-passing facets on top.")
 
     # --- Agreement -----------------------------------------------------------
-    st.subheader("Participants rated by more than one rater")
+    st.subheader(f"{icons.AGREEMENT} Participants rated by more than one rater")
     cons = consensus(qc)
     summary = agreement_summary(cons)
     if summary.empty:
@@ -225,6 +322,8 @@ def render(ctx: AdminContext) -> None:
         "qc_dataset_coverage": coverage,
         "qc_task_status": task_status(qc_all, ctx.qc_pipeline, tasks),
         "qc_source_files": col.sources,
+        "qc_rating_pace": pace.assign(break_minutes=break_min),
+        "qc_rating_durations": durations.assign(break_minutes=break_min),
     }
     cols = st.columns(3)
     for i, (name, df) in enumerate(reports.items()):

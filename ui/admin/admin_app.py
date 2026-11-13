@@ -35,6 +35,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(UI_DIR.parent / ".env")
 load_dotenv()
 
+from admin import icons  # noqa: E402
 from admin.core import build_context, parse_admin_args, require_dashboard_access  # noqa: E402
 from admin.views import assignments, overview, ratings, raters  # noqa: E402
 
@@ -52,7 +53,9 @@ def main() -> None:
         st.cache_data.clear()
         st.rerun()
 
-    tab_overview, tab_raters, tab_assign, tab_ratings = st.tabs(["Overview", "Raters", "Assignments", "Ratings"])
+    tab_overview, tab_raters, tab_assign, tab_ratings = st.tabs(
+        [f"{icons.OVERVIEW} Overview", f"{icons.USERS} Raters", f"{icons.ASSIGNMENTS} Assignments", f"{icons.RATINGS} Ratings"]
+    )
     with tab_overview:
         overview.render(ctx)
     with tab_raters:

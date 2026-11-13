@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from admin import icons
 from admin.charts import style_heatmap
 from admin.core import AdminContext, log_admin_action, require_editor, to_tsv_bytes
 from utils.cohort import parse_session_list
@@ -66,7 +67,7 @@ def _workloads(ctx: AdminContext, assign: pd.DataFrame) -> None:
 
 def _raters_per_participant(ctx: AdminContext, assign: pd.DataFrame) -> None:
     """One tile per number of assigned raters (0, 1, 2, 3+), as a share of the dataset participant list."""
-    st.subheader("Raters per participant")
+    st.subheader(f"{icons.USERS} Raters per participant")
     pool_ids = ctx.pool_ids
     buckets = rater_count_buckets(assign, pool_ids)
     for col, row in zip(st.columns(len(buckets)), buckets.itertuples()):
@@ -117,7 +118,7 @@ def _source_pool(pool_ids: list[str]) -> tuple[list[str] | None, str]:
 
 
 def _new_list(ctx: AdminContext, assign: pd.DataFrame) -> None:
-    st.subheader("Create a participant list for a rater")
+    st.subheader(f"{icons.NEW_LIST} Create a participant list for a rater")
     st.markdown(
         "Draws participants from the dataset list, or from a custom list restricted to participants in the dataset list, "
         "with the chosen policy. The file is written to the `participant_list` path the users config gives that rater. "
@@ -134,7 +135,7 @@ def _new_list(ctx: AdminContext, assign: pd.DataFrame) -> None:
     policy = st.radio("Policy", list(POLICIES), format_func=lambda k: POLICIES[k], key="admin_list_policy")
     with st.form("admin_new_list"):
         c = st.columns(3)
-        rater_id = c[0].selectbox("Rater", rater_ids, index=None, placeholder="Choose a rater")
+        rater_id = c[0].selectbox(f"{icons.RATER} Rater", rater_ids, index=None, placeholder="Choose a rater")
         if policy == "all":
             n, seed = len(source_ids), 0
             c[1].markdown(f"**All {len(source_ids)}** participants of the source")

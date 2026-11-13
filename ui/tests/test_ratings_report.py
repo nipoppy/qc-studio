@@ -24,7 +24,10 @@ from utils.ratings_report import (
     facet_rating_counts,
     final_qc_counts,
     off_list_ratings,
+    pace_summary,
+    progress_grid,
     participant_level,
+    rating_durations,
     rater_progress,
     split_expected,
     task_status,
@@ -259,3 +262,77 @@ def test_coverage_buckets_per_task():
     out = coverage_buckets(qc, ["s1", "s2", "s3"], ["t1", "t2"])
     assert out.loc["t1"].to_dict() == {"0": 1, "1": 1, "2": 1, "3+": 0}
     assert out.loc["t2"].to_dict() == {"0": 3, "1": 0, "2": 0, "3+": 0}  # s9 is outside the pool
+
+
+def _qc(rows):
+    """Participant-level ratings from (rater, task, participant, timestamp) tuples."""
+    return pd.DataFrame(
+        [
+            {
+                "rater_id": r,
+                "pipeline": "fsqc",
+                "qc_task": t,
+                "participant_id": p,
+                "session_id": "ses-BL",
+                "task_id": "",
+                "run_id": "",
+                "timestamp": ts,
+            }
+            for r, t, p, ts in rows
+        ]
+    )
+
+
+def test_rating_durations_splits_sittings_at_breaks():
+    qc = _qc(
+        [
+            ("r1", "A", "sub-01", "2026-11-01 10:00:00"),
+            ("r1", "A", "sub-02", "2026-11-01 10:00:30"),
+            ("r1", "B", "sub-01", "2026-11-01 10:01:30"),  # task switch: still the same stream
+            ("r1", "A", "sub-03", "2026-11-01 11:00:00"),  # 58.5 min later: new sitting
+            ("r1", "A", "sub-04", "2026-11-01 11:00:20"),
+            ("r2", "A", "sub-01", "2026-11-01 10:00:10"),  # other rater: own stream
+            ("r2", "A", "sub-02", "not a time"),  # dropped
+        ]
+    )
+    d = rating_durations(qc, break_minutes=15)
+    assert len(d) == 6
+    r1 = d[d["rater_id"] == "r1"]
+    assert r1["seconds"].fillna(-1).tolist() == [-1, 30.0, 60.0, -1, 20.0]  # -1 = first of a sitting
+    assert r1["sitting"].tolist() == [1, 1, 1, 2, 2]
+    assert d[d["rater_id"] == "r2"]["sitting"].tolist() == [1]
+
+    # A longer cutoff joins the two sittings.
+    assert rating_durations(qc, break_minutes=60).query("rater_id == 'r1'")["sitting"].max() == 1
+
+
+def test_pace_summary_per_rater_task_and_task():
+    qc = _qc([("r1", "A", f"sub-0{i}", f"2026-11-01 10:00:{10 * i:02d}") for i in range(5)] + [("r2", "A", "sub-01", "2026-11-02 09:00:00")])
+    d = rating_durations(qc)
+    s = pace_summary(d).set_index(["rater_id", "qc_task"])
+    row = s.loc[("r1", "A")]
+    assert (row["n_ratings"], row["n_timed"], row["median_s"], row["sittings"], row["days"]) == (5, 4, 10, 1, 1)
+    assert row["active_min"] == round(40 / 60, 1)
+    assert row["per_hour"] == 360.0
+    assert s.loc[("r2", "A"), "n_timed"] == 0 and pd.isna(s.loc[("r2", "A"), "median_s"])
+    t = pace_summary(d, by=["qc_task"]).set_index("qc_task")
+    assert (t.loc["A", "n_ratings"], t.loc["A", "sittings"], t.loc["A", "days"]) == (6, 2, 2)
+
+
+def test_pace_empty():
+    assert rating_durations(pd.DataFrame()).empty
+    assert pace_summary(rating_durations(pd.DataFrame())).empty
+
+
+def test_progress_grid_fills_unstarted_tasks():
+    assigned = {"r1": {"sub-01", "sub-02", "sub-03", "sub-04"}, "r2": {"sub-01", "sub-02"}, "r3": set()}
+    qc = _qc([("r1", "A", "sub-01", "2026-11-01 10:00:00")]).assign(final_qc="All-Pass")
+    progress = rater_progress(qc, assigned, POOL)
+    g = progress_grid(progress, assigned, ["A", "B"])
+    assert g[["rater_id", "qc_task", "rated_assigned", "pct_complete"]].values.tolist() == [
+        ["r1", "A", 1, 25.0],
+        ["r1", "B", 0, 0.0],
+        ["r2", "A", 0, 0.0],
+        ["r2", "B", 0, 0.0],
+    ]  # r3 has no list: left out
+    assert progress_grid(progress.iloc[0:0], {}, ["A"]).empty

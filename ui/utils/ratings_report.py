@@ -190,6 +190,20 @@ def rater_progress(qc: pd.DataFrame, assigned: dict[str, set[str]], pool_ids) ->
     return pd.DataFrame(rows, columns=cols + QC_ORDER)
 
 
+def progress_grid(progress: pd.DataFrame, assigned: dict[str, set[str]], tasks) -> pd.DataFrame:
+    """Every rater with a participant list × every task, with completion from :func:`rater_progress`.
+
+    Tasks a rater hasn't started get ``rated_assigned = 0`` and ``pct_complete = 0``, so each
+    rater has one row per task. Raters with an empty or unreadable list are left out.
+    """
+    raters = sorted(r for r, ids in assigned.items() if ids)
+    grid = pd.MultiIndex.from_product([raters, list(tasks)], names=["rater_id", "qc_task"]).to_frame(index=False)
+    grid["assigned"] = grid["rater_id"].map(lambda r: len(assigned[r]))
+    done = progress[["rater_id", "qc_task", "rated_assigned", "pct_complete"]]
+    grid = grid.merge(done, on=["rater_id", "qc_task"], how="left").fillna({"rated_assigned": 0, "pct_complete": 0.0})
+    return grid.astype({"rated_assigned": int})
+
+
 COMPLETION_COLUMNS = ["qc_task", "assigned", "rated_assigned", "pct_complete", "raters_started", "raters_with_list"]
 ALL_TASKS = "All tasks"
 
@@ -417,6 +431,66 @@ def agreement_summary(cons: pd.DataFrame) -> pd.DataFrame:
     out = multi.groupby("qc_task").agg(n=("unanimous", "size"), unanimous=("unanimous", "sum"))
     out["pct_unanimous"] = (100 * out["unanimous"] / out["n"]).round(1)
     return out
+
+
+DEFAULT_BREAK_MINUTES = 15
+DURATION_COLUMNS = ["rater_id", "pipeline", "qc_task"] + ID_COLS + ["timestamp", "seconds", "sitting"]
+PACE_STATS = ["n_ratings", "n_timed", "median_s", "p25_s", "p75_s", "active_min", "per_hour", "sittings", "days", "first_rating", "last_rating"]
+
+
+def rating_durations(qc: pd.DataFrame, break_minutes: float = DEFAULT_BREAK_MINUTES) -> pd.DataFrame:
+    """Seconds spent on each participant-level rating, from the gap to the rater's previous save.
+
+    ``qc`` is participant-level (one ``timestamp`` per rater and QC record, the last save). Each
+    rater's saves are taken as one stream across tasks, sorted by time; a rating's ``seconds``
+    is the gap since the rater's previous save, so time is attributed to the task being rated.
+    A gap longer than ``break_minutes`` starts a new ``sitting`` (numbered per rater from 1)
+    and, like the rater's first save, gets ``seconds = NaN``. Rows with unparsable timestamps
+    are dropped. Re-rating a record moves its timestamp, so prefer medians over means.
+    """
+    if qc.empty:
+        return pd.DataFrame(columns=DURATION_COLUMNS)
+    df = qc[DURATION_COLUMNS[:-2]].copy()  # all but the computed seconds and sitting
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df = df.dropna(subset=["timestamp"]).sort_values(["rater_id", "timestamp"], kind="stable").reset_index(drop=True)
+    if df.empty:
+        return pd.DataFrame(columns=DURATION_COLUMNS)
+    gap = df.groupby("rater_id")["timestamp"].diff().dt.total_seconds()
+    new_sitting = gap.isna() | (gap > break_minutes * 60)
+    df["seconds"] = gap.where(~new_sitting)
+    df["sitting"] = new_sitting.astype(int).groupby(df["rater_id"]).cumsum()
+    return df[DURATION_COLUMNS]
+
+
+def pace_summary(durations: pd.DataFrame, by=("rater_id", "qc_task")) -> pd.DataFrame:
+    """Rating pace per group of :func:`rating_durations` rows.
+
+    ``n_timed`` ratings have a duration (not the first of a sitting); ``median_s``/``p25_s``/``p75_s``
+    are seconds per rating over those; ``active_min`` sums them and ``per_hour`` is
+    ``n_timed`` per active hour. ``sittings`` counts distinct (rater, sitting) pairs and ``days``
+    distinct calendar days with a rating.
+    """
+    by = list(by)
+    if durations.empty:
+        return pd.DataFrame(columns=by + PACE_STATS)
+    d = durations.assign(_sitting=durations.groupby(["rater_id", "sitting"]).ngroup(), _day=durations["timestamp"].dt.normalize())
+    out = d.groupby(by).agg(
+        n_ratings=("seconds", "size"),
+        n_timed=("seconds", "count"),
+        median_s=("seconds", "median"),
+        p25_s=("seconds", lambda x: x.quantile(0.25)),
+        p75_s=("seconds", lambda x: x.quantile(0.75)),
+        active_min=("seconds", "sum"),
+        sittings=("_sitting", "nunique"),
+        days=("_day", "nunique"),
+        first_rating=("timestamp", "min"),
+        last_rating=("timestamp", "max"),
+    )
+    out["active_min"] = out["active_min"] / 60
+    out["per_hour"] = (out["n_timed"] / (out["active_min"] / 60)).where(out["active_min"] > 0)
+    out[["median_s", "p25_s", "p75_s"]] = out[["median_s", "p25_s", "p75_s"]].round(0)
+    out[["active_min", "per_hour"]] = out[["active_min", "per_hour"]].round(1)
+    return out.reset_index()[by + PACE_STATS]
 
 
 def facet_rating_counts(ratings: pd.DataFrame, task: str) -> pd.DataFrame:
