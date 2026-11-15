@@ -750,6 +750,92 @@ class TestQcViewerLayout:
             "/dataset",
         )
 
+    @patch("components.qc_viewer.NiivueViewerManager.render_controls_panel")
+    @patch("components.qc_viewer.NiivueViewerManager.render_viewer")
+    @patch("managers.niivue_viewer_manager.st")
+    @patch("components.qc_viewer.st")
+    def test_full_width_viewer_applies_selection_from_same_rerun(self, mock_qc_st, mock_mgr_st, mock_render_viewer, mock_render_controls):
+        """Regression test for #98: the viewer must get the selection, not last rerun's config.
+
+        Streamlit commits widget values to session state before the script runs, so the
+        widget key holds the fresh value while ``niivue_config`` still holds the value
+        written at the end of the *previous* rerun. The viewer reads the former.
+        """
+        from components.qc_viewer import _display_niivue_full_width
+        from managers.niivue_viewer_manager import NiivueViewerConfig, NiivueViewerManager
+
+        stale_config = NiivueViewerConfig(
+            view_mode="multiplanar",
+            overlay_colormap="cool",
+            show_crosshair=False,
+            radiological=False,
+            show_colorbar=True,
+            interpolation=True,
+            show_overlay=False,
+        )
+        state = {
+            NiivueViewerManager.config_state_key(): stale_config,
+            NiivueViewerManager.control_widget_keys()["view_mode"]: "axial",
+        }
+        mock_qc_st.session_state = state
+        mock_mgr_st.session_state = state
+        mock_qc_st.expander.return_value = MagicMock()
+
+        _display_niivue_full_width(
+            dataset_dir="/dataset",
+            qc_config={"base_mri_image_path": "sub-01_T1w.nii.gz"},
+            participant_id="sub-01",
+            session_id="ses-01",
+            task_suffix="",
+        )
+
+        rendered_config = mock_render_viewer.call_args.args[2]
+        assert rendered_config.view_mode == "axial"
+        assert rendered_config.view_mode != stale_config.view_mode
+        mock_render_controls.assert_called_once_with(state_suffix="", has_overlay=False)
+
+    @patch("components.qc_viewer.NiivueViewerManager.render_controls_panel")
+    @patch("components.qc_viewer.NiivueViewerManager.render_viewer")
+    @patch("managers.niivue_viewer_manager.st")
+    @patch("components.qc_viewer.st")
+    def test_secondary_panel_viewer_applies_selection_from_same_rerun(self, mock_qc_st, mock_mgr_st, mock_render_viewer, mock_render_controls):
+        """Same as #98, on the 3-column layout where controls are rendered after the viewer."""
+        from components.qc_viewer import _display_niivue_with_secondary_panel
+        from managers.niivue_viewer_manager import NiivueViewerConfig, NiivueViewerManager
+
+        task = "anat_wf_qc"
+        stale_config = NiivueViewerConfig(
+            view_mode="multiplanar",
+            overlay_colormap="cool",
+            show_crosshair=False,
+            radiological=False,
+            show_colorbar=True,
+            interpolation=True,
+            show_overlay=False,
+        )
+        state = {
+            NiivueViewerManager.config_state_key(task): stale_config,
+            NiivueViewerManager.control_widget_keys(task)["view_mode"]: "sagittal",
+        }
+        mock_qc_st.session_state = state
+        mock_mgr_st.session_state = state
+        mock_qc_st.columns.return_value = (MagicMock(), MagicMock())
+        mock_qc_st.expander.return_value = MagicMock()
+
+        _display_niivue_with_secondary_panel(
+            dataset_dir="/dataset",
+            selected_panels={"montage": False, "iqm": False},
+            qc_config={"base_mri_image_path": "sub-01_T1w.nii.gz"},
+            qc_config_path="qc.json",
+            participant_id="sub-01",
+            session_id="ses-01",
+            task_suffix=task,
+        )
+
+        rendered_config = mock_render_viewer.call_args.args[2]
+        assert rendered_config.view_mode == "sagittal"
+        mock_render_controls.assert_called_once_with(state_suffix=task, has_overlay=False)
+
 
 class TestSessionStateManagement:
     """Test session state management in app."""

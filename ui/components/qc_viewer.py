@@ -13,14 +13,11 @@ from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
 from constants import (
-    MONTAGE_HEIGHT,
     MESSAGES,
     ERROR_MESSAGES,
     SUCCESS_MESSAGES,
     INFO_MESSAGES,
     QC_RATINGS,
-    VIEW_MODES,
-    OVERLAY_COLORMAPS,
     RATING_FACET_COLUMNS,
     DEFAULT_QC_RATING_NONE,
 )
@@ -29,7 +26,7 @@ from utils.config import parse_qc_config
 from utils.navigation import request_navigation_rerun
 from utils.path_helpers import sanitize_qc_task_slug
 from utils.export import build_qc_results_dataframe, save_qc_results_to_csv, normalize_note_value
-from managers.niivue_viewer_manager import NiivueViewerManager, NiivueViewerConfig
+from managers.niivue_viewer_manager import NiivueViewerManager
 from managers.session_manager import SessionManager
 from models import QCRecord
 from components.iqm_viewer import _display_iqm_panel as display_iqm_distribution_panel
@@ -398,7 +395,7 @@ def _display_niivue_with_secondary_panel(
 
         # Render controls in expander at bottom
         with st.expander("🎮 Niivue Controls", expanded=False):
-            NiivueViewerManager.render_controls_panel(state_suffix=task_suffix)
+            NiivueViewerManager.render_controls_panel(state_suffix=task_suffix, has_overlay=bool(qc_config.get("overlay_mri_image_path")))
 
     # Right column: Montage or IQM panel
     with panel_col:
@@ -438,25 +435,16 @@ def _display_niivue_full_width(dataset_dir, qc_config, participant_id: str = Non
 
     # Render controls in expander at bottom
     with st.expander("🎮 Niivue Controls", expanded=False):
-        NiivueViewerManager.render_controls_panel(state_suffix=task_suffix)
+        NiivueViewerManager.render_controls_panel(state_suffix=task_suffix, has_overlay=bool(qc_config.get("overlay_mri_image_path")))
 
 
 def _get_or_render_niivue_config(state_suffix: str = "", has_overlay: bool = False):
-    """Return NiivueViewerConfig; use per-task session state when ``state_suffix`` is set."""
-    state_key = "niivue_config" if not state_suffix else f"niivue_config_{state_suffix}"
-    if state_key not in st.session_state:
-        default_config = NiivueViewerConfig(
-            view_mode=VIEW_MODES[0],
-            overlay_colormap=OVERLAY_COLORMAPS[0],
-            show_crosshair=False,
-            radiological=False,
-            show_colorbar=True,
-            interpolation=True,
-            show_overlay=has_overlay,
-        )
-        st.session_state[state_key] = default_config
-
-    return st.session_state[state_key]
+    """Return NiivueViewerConfig for the current control widget values.
+    Args:
+        state_suffix: Per-task suffix selecting the widget/config keys.
+        has_overlay: Default for the overlay toggle before its widget renders.
+    """
+    return NiivueViewerManager.build_config_from_widget_state(state_suffix, has_overlay=has_overlay)
 
 
 @st.cache_data(show_spinner=False, max_entries=128)
