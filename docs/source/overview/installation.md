@@ -23,8 +23,7 @@ cd qc-studio
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -r requirements.txt
-uv pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
+uv pip install ".[niivue]"
 ```
 
 ### Option B — `pip` and `venv`
@@ -32,8 +31,9 @@ uv pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-stream
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt
+# pip 25.1+ is required for `pip install --group` (see Developer setup)
+python -m pip install --upgrade pip
+pip install .
 pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
 ```
 
@@ -47,21 +47,30 @@ python ui/main.py --help
 
 ```bash
 git pull
-pip install -r requirements.txt
+
+# uv
+uv pip install ".[niivue]"
+
+# pip
+pip install .
 pip install --index-url https://test.pypi.org/simple/ --no-deps niivue-streamlit
 ```
 
 ## Developer setup
 
 ```bash
-pip install -r requirements-test.txt
+# uv
+uv pip install ".[niivue]" --group dev
+
+# pip
+pip install --group dev
+
 pre-commit install
 ```
 
 ### Building the documentation locally
 
 ```bash
-pip install -r docs/requirements.txt
 make -C docs html
 ```
 
