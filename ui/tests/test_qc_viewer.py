@@ -1229,6 +1229,39 @@ class TestRatingPersistenceNearAutoAdvance:
 
 class TestDisplayQcPagination:
 
+    @pytest.fixture(params=["sidebar", "top", "bottom"])
+    def render_nav(self, request, autoplay_session_state):
+        """Render the Previous/Next buttons with them placed in the sidebar, at the top and at the bottom of the page."""
+        state, _ = autoplay_session_state
+        state["button_placement"] = {"navigation": request.param, "playback": "sidebar", "checkpoint": "sidebar"}
+        if request.param == "sidebar":
+            return qc_viewer_module._display_qc_pagination_controls
+        return lambda **kwargs: qc_viewer_module._render_button_groups(request.param, **kwargs)
+
+    def test_each_group_renders_only_in_its_chosen_region(self, autoplay_session_state, monkeypatch):
+        """A group of controls shows in the region the rater picked and nowhere else."""
+        state, _ = autoplay_session_state
+        state["button_placement"] = {"navigation": "bottom", "playback": "top", "checkpoint": "sidebar"}
+        monkeypatch.setattr(st, "caption", MagicMock())
+
+        def rendered_keys(region):
+            fake_button = MagicMock(return_value=False)
+            monkeypatch.setattr(st, "button", fake_button)
+            qc_viewer_module._render_button_groups(
+                region,
+                current_page=2,
+                total_participants=3,
+                participant_id="sub-CMH0002",
+                session_id="ses-01",
+                qc_pipeline="fmriprep",
+                qc_tasks=["anat_wf_qc"],
+            )
+            return {call.kwargs.get("key") for call in fake_button.call_args_list}
+
+        assert rendered_keys("sidebar") == {"create_checkpoint"}
+        assert rendered_keys("top") == {"autoplay_play", "autoplay_pause"}
+        assert rendered_keys("bottom") == {"pag_next", "pag_prev"}
+
     @staticmethod
     def _button_returns_true_for(*keys_to_click):
         def fake_button(*args, **kwargs):
@@ -1275,7 +1308,7 @@ class TestDisplayQcPagination:
         assert state["autoplay_start_time"] > 0.0
         mock_rerun.assert_called_once()
 
-    def test_prev_button_decrements_page_and_resets_autoplay_start_time(self, autoplay_session_state, monkeypatch):
+    def test_prev_button_decrements_page_and_resets_autoplay_start_time(self, autoplay_session_state, monkeypatch, render_nav):
         """Clicking the previous button should decrement the current page and reset autoplay start time."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 2
@@ -1287,7 +1320,7 @@ class TestDisplayQcPagination:
         monkeypatch.setattr(st, "button", self._button_returns_true_for(prev_button_key))
 
         # Call the function that renders the pagination controls
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=2, total_participants=3, participant_id="sub-CMH0001", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1295,7 +1328,7 @@ class TestDisplayQcPagination:
         assert state["autoplay_start_time"] > old_start_time
         mock_rerun.assert_called_once()
 
-    def test_previous_button_goes_back_a_page(self, autoplay_session_state, monkeypatch):
+    def test_previous_button_goes_back_a_page(self, autoplay_session_state, monkeypatch, render_nav):
         """Clicking the previous button should go back one page."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 2
@@ -1306,7 +1339,7 @@ class TestDisplayQcPagination:
         monkeypatch.setattr(st, "button", self._button_returns_true_for(prev_button_key))
 
         # Call the function that renders the pagination controls
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=2, total_participants=3, participant_id="sub-CMH0001", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1314,7 +1347,7 @@ class TestDisplayQcPagination:
         assert state["autoplay_enabled"] is False
         mock_rerun.assert_called_once()
 
-    def test_previous_button_not_rendered_on_page_1(self, autoplay_session_state, monkeypatch):
+    def test_previous_button_not_rendered_on_page_1(self, autoplay_session_state, monkeypatch, render_nav):
         """Clicking the previous button on page 1 should not go below page 1."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
@@ -1326,7 +1359,7 @@ class TestDisplayQcPagination:
         monkeypatch.setattr(st, "button", fake_button)
 
         # Call the function that renders the pagination controls
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=1, total_participants=3, participant_id="sub-CMH0001", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1334,7 +1367,7 @@ class TestDisplayQcPagination:
         called_keys = [call.kwargs.get("key") for call in fake_button.call_args_list]
         assert prev_button_key not in called_keys
 
-    def test_previous_button_does_not_flush_ratings(self, autoplay_session_state, monkeypatch):
+    def test_previous_button_does_not_flush_ratings(self, autoplay_session_state, monkeypatch, render_nav):
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 2
         state["autoplay_enabled"] = False
@@ -1344,7 +1377,7 @@ class TestDisplayQcPagination:
 
         monkeypatch.setattr(st, "button", self._button_returns_true_for("pag_prev"))
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=2,
             total_participants=3,
             participant_id="sub-CMH0001",
@@ -1355,7 +1388,7 @@ class TestDisplayQcPagination:
 
         assert SessionManager.get_qc_record_for_participant("sub-CMH0001", "ses-01", "anat_wf_qc") is None
 
-    def test_next_button_increments_page_and_resets_autoplay_start_time(self, autoplay_session_state, monkeypatch):
+    def test_next_button_increments_page_and_resets_autoplay_start_time(self, autoplay_session_state, monkeypatch, render_nav):
         """Clicking the next button should increment the current page and reset autoplay start time."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
@@ -1367,7 +1400,7 @@ class TestDisplayQcPagination:
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
         # Call the function that renders the pagination controls
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=1, total_participants=3, participant_id="sub-CMH0001", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1375,7 +1408,7 @@ class TestDisplayQcPagination:
         assert state["autoplay_start_time"] > old_start_time
         mock_rerun.assert_called_once()
 
-    def test_next_button_renders_on_last_page_for_completion_checks(self, autoplay_session_state, monkeypatch):
+    def test_next_button_renders_on_last_page_for_completion_checks(self, autoplay_session_state, monkeypatch, render_nav):
         """The single Next button remains available on the final page so it can save and finish the cohort."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
@@ -1385,7 +1418,7 @@ class TestDisplayQcPagination:
         fake_button = MagicMock(return_value=False)
         monkeypatch.setattr(st, "button", fake_button)
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=3, total_participants=3, participant_id="sub-CMH0003", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1393,7 +1426,7 @@ class TestDisplayQcPagination:
         called_keys = [call.kwargs.get("key") for call in fake_button.call_args_list]
         assert next_button_key in called_keys
 
-    def test_next_button_flushes_ratings_before_advance(self, autoplay_session_state, monkeypatch):
+    def test_next_button_flushes_ratings_before_advance(self, autoplay_session_state, monkeypatch, render_nav):
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
         state["autoplay_enabled"] = False
@@ -1401,7 +1434,7 @@ class TestDisplayQcPagination:
 
         monkeypatch.setattr(st, "button", self._button_returns_true_for("pag_next"))
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=1,
             total_participants=3,
             participant_id="sub-CMH0001",
@@ -1415,7 +1448,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 2
         mock_rerun.assert_called_once()
 
-    def test_next_button_when_autoplay_enabled_only_saves_ratings_and_not_advance(self, autoplay_session_state, monkeypatch):
+    def test_next_button_when_autoplay_enabled_only_saves_ratings_and_not_advance(self, autoplay_session_state, monkeypatch, render_nav):
         """Clicking the next button should save ratings but not advance the page when autoplay is enabled."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 1
@@ -1425,7 +1458,7 @@ class TestDisplayQcPagination:
         next_button_key = "pag_next"
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=1, total_participants=3, participant_id="sub-CMH0001", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1434,7 +1467,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 2
         mock_rerun.assert_called_once()
 
-    def test_next_button_when_autoplay_disabled_saves_ratings_and_advances_if_not_last_page(self, autoplay_session_state, monkeypatch):
+    def test_next_button_when_autoplay_disabled_saves_ratings_and_advances_if_not_last_page(self, autoplay_session_state, monkeypatch, render_nav):
         """Clicking the next button should save ratings and advance the page when autoplay is disabled."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
@@ -1449,7 +1482,7 @@ class TestDisplayQcPagination:
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
         # Call the function that renders the pagination controls
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=3, total_participants=4, participant_id="sub-CMH0003", session_id="ses-01", qc_pipeline="fmriprep", qc_tasks=["anat_wf_qc"]
         )
 
@@ -1458,7 +1491,7 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4  # Page should advance
         mock_rerun.assert_called_once()
 
-    def test_confirm_and_next_button_keeps_filtered_view_active_when_subset_is_complete(self, autoplay_session_state, monkeypatch):
+    def test_confirm_and_next_button_keeps_filtered_view_active_when_subset_is_complete(self, autoplay_session_state, monkeypatch, render_nav):
         """A filtered view should remain in-place at the end of the visible list instead of jumping to the congratulations page."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 4
@@ -1479,7 +1512,7 @@ class TestDisplayQcPagination:
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
         monkeypatch.setattr(st, "info", MagicMock())
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=4,
             total_participants=4,
             participant_id="sub-CMH0004",
@@ -1551,7 +1584,7 @@ class TestDisplayQcPagination:
         st.info.assert_not_called()
         mock_rerun.assert_called_once()
 
-    def test_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch):
+    def test_next_button_does_not_advance_when_cohort_incomplete(self, autoplay_session_state, monkeypatch, render_nav):
         """On the last page with an incomplete cohort, Next should save ratings but not advance."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
@@ -1568,7 +1601,7 @@ class TestDisplayQcPagination:
         next_button_key = "pag_next"
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=3,
             total_participants=3,
             participant_id="sub-CMH0003",
@@ -1584,7 +1617,7 @@ class TestDisplayQcPagination:
         assert "_pending_incomplete_cohort_msg" in state
         mock_rerun.assert_called_once()
 
-    def test_next_button_builds_cohort_from_participant_ids_and_advances_when_complete(self, autoplay_session_state, monkeypatch):
+    def test_next_button_builds_cohort_from_participant_ids_and_advances_when_complete(self, autoplay_session_state, monkeypatch, render_nav):
         """With no qc_cohort but participant_ids given, Next should build a cohort on the fly and
         advance to the congratulations page once every participant in it is rated."""
         state, mock_rerun = autoplay_session_state
@@ -1600,7 +1633,7 @@ class TestDisplayQcPagination:
         next_button_key = "pag_next"
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=3,
             total_participants=3,
             participant_id="sub-CMH0003",
@@ -1613,7 +1646,9 @@ class TestDisplayQcPagination:
         assert state["current_page"] == 4  # total_participants + 1 -> congratulations page
         mock_rerun.assert_called_once()
 
-    def test_next_button_builds_cohort_from_participant_ids_and_does_not_advance_when_incomplete(self, autoplay_session_state, monkeypatch):
+    def test_next_button_builds_cohort_from_participant_ids_and_does_not_advance_when_incomplete(
+        self, autoplay_session_state, monkeypatch, render_nav
+    ):
         """Same fallback cohort-building path, but must not advance while that cohort is still incomplete."""
         state, mock_rerun = autoplay_session_state
         state["current_page"] = 3
@@ -1627,7 +1662,7 @@ class TestDisplayQcPagination:
         next_button_key = "pag_next"
         monkeypatch.setattr(st, "button", self._button_returns_true_for(next_button_key))
 
-        qc_viewer_module._display_qc_pagination_controls(
+        render_nav(
             current_page=3,
             total_participants=3,
             participant_id="sub-CMH0003",

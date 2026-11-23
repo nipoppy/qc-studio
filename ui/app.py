@@ -106,4 +106,5 @@ def app(
         total_participants=total_participants,
         participant_ids=participant_ids,
         qc_cohort=qc_cohort_eff,
+        out_dir=out_dir,
     )

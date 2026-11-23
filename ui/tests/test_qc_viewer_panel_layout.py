@@ -25,6 +25,7 @@ def patched_layout(monkeypatch):
     monkeypatch.setattr(qc_viewer, "_display_niivue_full_width", MagicMock())
     monkeypatch.setattr(qc_viewer, "_display_qc_rating_for_task", MagicMock())
     monkeypatch.setattr(qc_viewer, "_render_autoplay_countdown_main_banner", MagicMock())
+    monkeypatch.setattr(qc_viewer, "_render_button_groups", MagicMock())
     monkeypatch.setattr(qc_viewer.st, "subheader", MagicMock())
     monkeypatch.setattr(qc_viewer.st, "divider", MagicMock())
     return qc_viewer
