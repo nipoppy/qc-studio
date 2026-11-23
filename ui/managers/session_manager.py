@@ -2,6 +2,7 @@
 
 import streamlit as st
 from constants import (
+    DEFAULT_BUTTON_PLACEMENT,
     DEFAULT_PANELS,
     SESSION_KEYS,
     DEFAULT_MONTAGE_MAX_ROWS,
@@ -39,6 +40,7 @@ class SessionManager:
             SESSION_KEYS["all_tasks_mode_locked"]: False,
             SESSION_KEYS["default_qc_rating"]: DEFAULT_QC_RATING,
             SESSION_KEYS["selected_panels"]: DEFAULT_PANELS.copy(),
+            SESSION_KEYS["button_placement"]: DEFAULT_BUTTON_PLACEMENT.copy(),
             SESSION_KEYS["montage_max_rows"]: DEFAULT_MONTAGE_MAX_ROWS,
             SESSION_KEYS["montage_max_cols"]: DEFAULT_MONTAGE_MAX_COLS,
             SESSION_KEYS["sidebar_subject_search"]: "",
@@ -221,6 +223,18 @@ class SessionManager:
             panels = SessionManager.get_selected_panels()
             panels[panels_data] = panels_data  # This shouldn't happen, but keeping for safety
             st.session_state[SESSION_KEYS["selected_panels"]] = panels
+
+    @staticmethod
+    def get_button_placement() -> dict:
+        """Get the region (sidebar/top/bottom) for each group of controls."""
+        if SESSION_KEYS["button_placement"] not in st.session_state:
+            st.session_state[SESSION_KEYS["button_placement"]] = DEFAULT_BUTTON_PLACEMENT.copy()
+        return st.session_state[SESSION_KEYS["button_placement"]]
+
+    @staticmethod
+    def set_button_placement(placement: dict) -> None:
+        """Set the region for each group of controls."""
+        st.session_state[SESSION_KEYS["button_placement"]] = placement
 
     @staticmethod
     def get_panel_count() -> int:

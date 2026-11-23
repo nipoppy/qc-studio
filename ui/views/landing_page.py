@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from constants import (
+    BUTTON_REGIONS,
     EXPERIENCE_LEVELS,
     FATIGUE_LEVELS,
     SCREEN_SIZES,
@@ -455,6 +456,8 @@ def show_landing_page(
         PanelLayoutManager.render_panel_header_with_controls()
         st.divider()
         _display_montage_settings()
+        st.divider()
+        _display_button_placement()
 
     # Right column: CSV Upload
     with col3:
@@ -685,6 +688,54 @@ def _display_csv_upload(
 	- Upload a previous **checkpoint** to resume or review work
 	"""
     )
+
+
+def _display_button_placement() -> None:
+    """Choose where each group of controls is shown; every group appears in exactly one place.
+
+    Saved on every change, like the panel selection (it is outside the rater form).
+    """
+    st.markdown(f"#### {MESSAGES['button_placement_header']}")
+    st.caption(MESSAGES["button_placement_help"])
+    current_placement = SessionManager.get_button_placement()
+    region_options = list(BUTTON_REGIONS)
+
+    default_navigation_idx = 0
+    if current_placement.get("navigation") in region_options:
+        default_navigation_idx = region_options.index(current_placement["navigation"])
+    default_playback_idx = 0
+    if current_placement.get("playback") in region_options:
+        default_playback_idx = region_options.index(current_placement["playback"])
+    default_checkpoint_idx = 0
+    if current_placement.get("checkpoint") in region_options:
+        default_checkpoint_idx = region_options.index(current_placement["checkpoint"])
+
+    navigation_col, playback_col, checkpoint_col = st.columns(3)
+    with navigation_col:
+        navigation_region = st.selectbox(
+            MESSAGES["navigation_placement_prompt"],
+            region_options,
+            index=default_navigation_idx,
+            format_func=BUTTON_REGIONS.get,
+            help=MESSAGES["navigation_placement_help"],
+        )
+    with playback_col:
+        playback_region = st.selectbox(
+            MESSAGES["playback_placement_prompt"],
+            region_options,
+            index=default_playback_idx,
+            format_func=BUTTON_REGIONS.get,
+            help=MESSAGES["playback_placement_help"],
+        )
+    with checkpoint_col:
+        checkpoint_region = st.selectbox(
+            MESSAGES["checkpoint_placement_prompt"],
+            region_options,
+            index=default_checkpoint_idx,
+            format_func=BUTTON_REGIONS.get,
+            help=MESSAGES["checkpoint_placement_help"],
+        )
+    SessionManager.set_button_placement({"navigation": navigation_region, "playback": playback_region, "checkpoint": checkpoint_region})
 
 
 def _display_montage_settings() -> None:

@@ -19,6 +19,10 @@ SCREEN_SIZES = [
 # Default panel selections
 DEFAULT_PANELS = {"niivue": True, "montage": True, "iqm": False}
 
+# Where each group of controls is shown (one region per group; picked on the landing page)
+BUTTON_REGIONS = {"sidebar": "Sidebar", "top": "Top", "bottom": "Bottom"}
+DEFAULT_BUTTON_PLACEMENT = {"navigation": "sidebar", "playback": "sidebar", "checkpoint": "sidebar"}
+
 # Panel configuration metadata
 PANEL_CONFIG = {
     "niivue": {"label": "3D MRI (Niivue)", "description": "Display interactive 3D MRI viewer", "default": True},
@@ -86,6 +90,7 @@ SESSION_KEYS = {
     "all_tasks_mode_locked": "all_tasks_mode_locked",
     "default_qc_rating": "default_qc_rating",
     "selected_panels": "selected_panels",
+    "button_placement": "button_placement",
     "montage_max_rows": "montage_max_rows",
     "montage_max_cols": "montage_max_cols",
     # Set once per Streamlit session after reading qc.json (avoid re-applying on every rerun)
@@ -127,6 +132,14 @@ MESSAGES = {
     "experience_prompt": "What is your QC experience level?",
     "fatigue_prompt": "How tired are you feeling?",
     "screen_size_prompt": "What is the screen size (inches) of the monitor you are using?",
+    "button_placement_header": "🎛️ Button Placement",
+    "button_placement_help": "Choose where each group of buttons appears while you rate. Each group is shown in one place only.",
+    "navigation_placement_prompt": "Navigation",
+    "navigation_placement_help": "Previous and Next buttons. Next saves your rating and notes, then moves to the next subject.",
+    "playback_placement_prompt": "Playback",
+    "playback_placement_help": "Play and Pause for autoplay, which moves to the next subject after the autoplay duration.",
+    "checkpoint_placement_prompt": "Checkpoint",
+    "checkpoint_placement_help": "Create checkpoint saves a backup file of your ratings so far.",
     "panels_header": "🖼️ Display Panels",
     "panels_help": "Select which panels to display during QC (at least one required).",
     "panels_validation_warning": "⚠️ You must select at least one panel to proceed!",

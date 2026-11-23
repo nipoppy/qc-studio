@@ -261,6 +261,7 @@ def display_qc_viewers(
     total_participants: int = None,
     participant_ids: list | None = None,
     qc_cohort: list | None = None,
+    out_dir: str | None = None,
 ) -> None:
     """Display QC viewers (Niivue, MONTAGE, IQM) for one or more tasks from ``qc.json``."""
     cohort_eff = qc_cohort
@@ -293,6 +294,19 @@ def display_qc_viewers(
     _render_autoplay_countdown_main_banner()
 
     # st.markdown(f"**{compact_session_label(participant_id, session_id)}**")
+
+    button_group_kwargs = dict(
+        current_page=SessionManager.get_current_page(),
+        total_participants=total_participants or 0,
+        participant_id=participant_id,
+        session_id=session_id,
+        qc_pipeline=qc_pipeline,
+        qc_tasks=tasks,
+        participant_ids=participant_ids,
+        qc_cohort=cohort_eff,
+        out_dir=out_dir,
+    )
+    _render_button_groups("top", **button_group_kwargs)
 
     for i, tname in enumerate(tasks):
         qc_config = parse_qc_config(qc_config_path, tname, substitution_values)
@@ -358,6 +372,8 @@ def display_qc_viewers(
             rating_config=rating_cfg,
             task_has_data_sources=task_has_data_sources,
         )
+
+    _render_button_groups("bottom", **button_group_kwargs)
 
 
 def _display_niivue_with_secondary_panel(
@@ -1302,19 +1318,8 @@ def _display_qc_pagination_header(current_page: int, total_participants: int) ->
     st.write(f"**Page {current_page} of {total_participants}**")
 
 
-def _display_qc_pagination_controls(
-    current_page: int,
-    total_participants: int,
-    participant_id: str,
-    session_id: str,
-    qc_pipeline: str,
-    qc_tasks: list,
-    participant_ids: list | None = None,
-    qc_cohort: list | None = None,
-    out_dir: str | None = None,
-    drop_duplicates: bool = True,
-) -> None:
-    """Sidebar: autoplay, page buttons, save CSV (call inside ``with st.sidebar:``)."""
+def _render_playback_group(participant_id: str, session_id: str, qc_pipeline: str, qc_tasks: list) -> None:
+    """Play/Pause buttons and the autoplay status."""
     autoplay_col1, autoplay_col2 = st.columns([1, 1])
     with autoplay_col1:
         if st.button(MESSAGES["play_button"], width="stretch", key="autoplay_play"):
@@ -1333,6 +1338,19 @@ def _display_qc_pagination_controls(
         else:
             st.caption("Autoplay on — countdown starts on **Play**.")
 
+
+def _render_navigation_group(
+    region: str,
+    current_page: int,
+    total_participants: int,
+    participant_id: str,
+    session_id: str,
+    qc_pipeline: str,
+    qc_tasks: list,
+    participant_ids: list | None = None,
+    qc_cohort: list | None = None,
+) -> None:
+    """Previous/Next buttons for the given placement region."""
     if pending := st.session_state.pop("_pending_filtered_subject_msg", None):
         st.info(pending)
 
@@ -1347,20 +1365,35 @@ def _display_qc_pagination_controls(
         session_id=session_id,
     )
 
-    _render_next_page_button(
-        next_page,
-        participant_id=participant_id,
-        session_id=session_id,
-        qc_pipeline=qc_pipeline,
-        qc_tasks=qc_tasks,
-        participant_ids=participant_ids,
-        qc_cohort=qc_cohort,
-        total_participants=total_participants,
-    )
+    def render_next() -> None:
+        _render_next_page_button(
+            next_page,
+            participant_id=participant_id,
+            session_id=session_id,
+            qc_pipeline=qc_pipeline,
+            qc_tasks=qc_tasks,
+            participant_ids=participant_ids,
+            qc_cohort=qc_cohort,
+            total_participants=total_participants,
+        )
 
-    if prev_page is not None:
-        _render_previous_page_button(prev_page)
+    if region == "sidebar":
+        render_next()
+        if prev_page is not None:
+            _render_previous_page_button(prev_page)
+        return
 
+    # Main area: Previous on the left, Next on the right.
+    prev_col, next_col = st.columns(2)
+    with prev_col:
+        if prev_page is not None:
+            _render_previous_page_button(prev_page)
+    with next_col:
+        render_next()
+
+
+def _render_checkpoint_group(participant_id: str, session_id: str, qc_pipeline: str, qc_tasks: list, out_dir: str | None = None) -> None:
+    """Output dir, "Create checkpoint" button and its status banner."""
     active_task_label = "all" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else qc_pipeline)
 
     resolved_out_dir = Path(out_dir).expanduser().resolve() if out_dir else Path.cwd().resolve()
@@ -1390,6 +1423,57 @@ def _display_qc_pagination_controls(
     if pending := st.session_state.pop("_pending_checkpoint_msg", None):
         kind, msg = pending
         _render_sidebar_status_banner(kind, msg)
+
+
+def _render_button_groups(
+    region: str,
+    current_page: int,
+    total_participants: int,
+    participant_id: str,
+    session_id: str,
+    qc_pipeline: str,
+    qc_tasks: list,
+    participant_ids: list | None = None,
+    qc_cohort: list | None = None,
+    out_dir: str | None = None,
+) -> None:
+    """Render the button groups (playback, navigation, checkpoint) the rater placed in ``region``."""
+    placement = SessionManager.get_button_placement()
+    if placement.get("playback") == region:
+        _render_playback_group(participant_id, session_id, qc_pipeline, qc_tasks)
+    if placement.get("navigation") == region:
+        _render_navigation_group(
+            region, current_page, total_participants, participant_id, session_id, qc_pipeline, qc_tasks, participant_ids, qc_cohort
+        )
+    if placement.get("checkpoint") == region:
+        _render_checkpoint_group(participant_id, session_id, qc_pipeline, qc_tasks, out_dir)
+
+
+def _display_qc_pagination_controls(
+    current_page: int,
+    total_participants: int,
+    participant_id: str,
+    session_id: str,
+    qc_pipeline: str,
+    qc_tasks: list,
+    participant_ids: list | None = None,
+    qc_cohort: list | None = None,
+    out_dir: str | None = None,
+    drop_duplicates: bool = True,
+) -> None:
+    """Sidebar: autoplay, page buttons, save CSV (call inside ``with st.sidebar:``)."""
+    _render_button_groups(
+        "sidebar",
+        current_page,
+        total_participants,
+        participant_id,
+        session_id,
+        qc_pipeline,
+        qc_tasks,
+        participant_ids,
+        qc_cohort,
+        out_dir,
+    )
 
 
 def _display_qc_pagination(

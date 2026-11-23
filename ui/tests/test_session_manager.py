@@ -125,6 +125,23 @@ class TestPanelMethods:
         result = SessionManager.get_selected_panels()
         assert result == new_panels
 
+    def test_button_placement_defaults_to_sidebar(self, mock_session_state):
+        """Every group of controls starts in the sidebar."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        assert SessionManager.get_button_placement() == {"navigation": "sidebar", "playback": "sidebar", "checkpoint": "sidebar"}
+
+    def test_set_button_placement(self, mock_session_state):
+        """A saved placement is returned unchanged."""
+        st.session_state = mock_session_state.data
+        SessionManager.init_session_state()
+
+        placement = {"navigation": "bottom", "playback": "top", "checkpoint": "sidebar"}
+        SessionManager.set_button_placement(placement)
+
+        assert SessionManager.get_button_placement() == placement
+
     def test_is_panel_selected(self, mock_session_state):
         """Test checking if a specific panel is selected."""
         st.session_state = mock_session_state.data
