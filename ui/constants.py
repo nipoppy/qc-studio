@@ -32,6 +32,7 @@ DEFAULT_QC_RATING = "PASS"
 DEFAULT_QC_RATING_NONE = "None"
 DEFAULT_QC_RATING_OPTIONS = QC_RATINGS + [DEFAULT_QC_RATING_NONE]
 RATING_FACET_COLUMNS = 12
+AUTO_CHECKPOINT_EVERY = 10
 
 # Columns used to identify duplicate QC rows when merging/saving results
 QC_DEDUP_KEYS = ["participant_id", "session_id", "pipeline", "qc_task"]

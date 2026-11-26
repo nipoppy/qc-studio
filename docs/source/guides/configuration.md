@@ -189,6 +189,7 @@ Choosing **Auto-calculate** will derive a near-square layout from the number of 
 | Action | Output | Where it lands |
 |--------|--------|----------------|
 | **🏁 Create checkpoint** | Checkpoint: a periodic snapshot of your work with a unique timestamp (never overwritten) | `<output_dir>/checkpoints/<rater>_<pipeline>_<task>_checkpoint_<timestamp>.tsv` |
+| *(automatic)* | Autocheckpoint: written every 10 saves. Overwritten each time; a manual checkpoint resets the count | `<output_dir>/checkpoints/<rater>_<pipeline>_<task>_autocheckpoint.tsv` |
 | **💾 Export Final Results** | QC status TSV: the final QC ratings file (overwritten on user confirmation) | Anywhere you choose; defaults to `<output_dir>/<rater>_<pipeline>_<task>_qc_status.tsv` |
 
 ## Exported results (TSV)
