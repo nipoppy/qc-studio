@@ -2055,6 +2055,71 @@ class TestDisplayQcPagination:
         assert "fmriprep" in Path(path).name
         assert Path(path).name.count("20240102T030405Z") == 1
 
+    def test_auto_checkpoint_written_only_when_save_count_is_reached(self, autoplay_session_state, tmp_path):
+        """Saving a page should write the autocheckpoint file only on the AUTO_CHECKPOINT_EVERY-th save."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        SessionManager.set_qc_session_checkpoint_dir(str(tmp_path / "checkpoints"))
+        auto_path = tmp_path / "checkpoints" / "rater1_fmriprep_anat_wf_qc_autocheckpoint.tsv"
+
+        for _ in range(qc_viewer_module.AUTO_CHECKPOINT_EVERY - 1):
+            _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+        assert not auto_path.exists()
+
+        _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+        auto_df = pd.read_csv(auto_path, sep="\t", dtype=str)
+        assert auto_df["participant_id"].tolist() == ["sub-CMH0001"]
+        assert auto_df["final_qc"].tolist() == ["PASS"]
+
+    def test_auto_checkpoint_overwrites_one_file_with_latest_records(self, autoplay_session_state, tmp_path):
+        """Later autocheckpoints should overwrite the same file instead of adding new ones."""
+        state, _ = autoplay_session_state
+        SessionManager.set_qc_session_checkpoint_dir(str(tmp_path / "checkpoints"))
+
+        for rating in ("PASS", "FAIL"):
+            state[_rating_widget_key("anat_wf_qc", 0)] = rating
+            for _ in range(qc_viewer_module.AUTO_CHECKPOINT_EVERY):
+                _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+
+        checkpoint_files = list((tmp_path / "checkpoints").glob("*.tsv"))
+        assert [p.name for p in checkpoint_files] == ["rater1_fmriprep_anat_wf_qc_autocheckpoint.tsv"]
+        assert pd.read_csv(checkpoint_files[0], sep="\t", dtype=str)["final_qc"].tolist() == ["FAIL"]
+
+    def test_auto_checkpoint_skipped_without_session_checkpoint_dir(self, autoplay_session_state, monkeypatch, tmp_path):
+        """Without a session checkpoint dir (no CLI run), saves should never write an autocheckpoint into cwd."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        monkeypatch.chdir(tmp_path)
+
+        for _ in range(qc_viewer_module.AUTO_CHECKPOINT_EVERY):
+            _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+
+        assert not (tmp_path / "checkpoints").exists()
+
+    def test_create_checkpoint_button_resets_auto_checkpoint_count(self, autoplay_session_state, monkeypatch, tmp_path):
+        """A manual checkpoint should restart the autocheckpoint save count from zero."""
+        state, _ = autoplay_session_state
+        state[_rating_widget_key("anat_wf_qc", 0)] = "PASS"
+        SessionManager.set_qc_session_checkpoint_dir(str(tmp_path / "checkpoints"))
+        for _ in range(qc_viewer_module.AUTO_CHECKPOINT_EVERY - 1):
+            _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+        monkeypatch.setattr(st, "button", self._button_returns_true_for("create_checkpoint"))
+        monkeypatch.setattr(st, "markdown", MagicMock())
+
+        qc_viewer_module._display_qc_pagination_controls(
+            current_page=1,
+            total_participants=3,
+            participant_id="sub-CMH0001",
+            session_id="ses-01",
+            qc_pipeline="fmriprep",
+            qc_tasks=["anat_wf_qc"],
+            out_dir=str(tmp_path),
+            drop_duplicates=True,
+        )
+        _record_all_qc_tasks("sub-CMH0001", "ses-01", "fmriprep", ["anat_wf_qc"])
+
+        assert not list((tmp_path / "checkpoints").glob("*_autocheckpoint.tsv"))
+
 
 # pure autoplay
 class TestAutoplayCountdownTiming:

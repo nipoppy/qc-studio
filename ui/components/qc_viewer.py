@@ -23,6 +23,7 @@ from constants import (
     OVERLAY_COLORMAPS,
     RATING_FACET_COLUMNS,
     DEFAULT_QC_RATING_NONE,
+    AUTO_CHECKPOINT_EVERY,
 )
 from utils.data_loaders import load_montage_data as _load_montage_data_uncached
 from utils.config import parse_qc_config
@@ -911,6 +912,25 @@ def _record_all_qc_tasks(participant_id: str, session_id: str, qc_pipeline: str,
         latest_nver = _latest_widget_version_for_task(t, "qc_notes_", nver)
         notes = st.session_state.get(_notes_widget_key(t, latest_nver), "")
         _record_qc_for_current_participant(participant_id, session_id, qc_pipeline, t, rating, notes, ratings=ratings)
+    _auto_checkpoint_tick(qc_pipeline, qc_tasks)
+
+
+def _auto_checkpoint_tick(qc_pipeline: str, qc_tasks: list) -> None:
+    """Count save events and overwrite the session autocheckpoint file every ``AUTO_CHECKPOINT_EVERY`` saves."""
+    if not SessionManager.get_qc_session_checkpoint_dir():
+        return
+    count = st.session_state.get("_auto_checkpoint_count", 0) + 1
+    if count < AUTO_CHECKPOINT_EVERY:
+        st.session_state["_auto_checkpoint_count"] = count
+        return
+    st.session_state["_auto_checkpoint_count"] = 0
+    records = SessionManager.get_latest_qc_records_for_task_set(qc_tasks)
+    if not records:
+        return
+    task_label = "all" if len(qc_tasks) > 1 else (qc_tasks[0] if qc_tasks else qc_pipeline)
+    rater_id = str(SessionManager.get_rater_id() or "rater").strip().lower() or "rater"
+    filename = f"{rater_id}_{_sanitize_pipeline_slug(qc_pipeline)}_{_sanitize_qc_task_slug(task_label)}_autocheckpoint.tsv"
+    _checkpoint_frame_for_records(records).to_csv(_checkpoint_dir_for_session(None) / filename, sep="\t", index=False)
 
 
 def _cohort_entries_for_filter(
@@ -1372,6 +1392,7 @@ def _display_qc_pagination_controls(
         key="create_checkpoint",
         help=MESSAGES["create_checkpoint_help"],
     ):
+        st.session_state["_auto_checkpoint_count"] = 0
         _save_current_page_qc_state(participant_id, session_id, qc_pipeline, qc_tasks)
         records = SessionManager.get_latest_qc_records_for_task_set(qc_tasks)
         if not records:
